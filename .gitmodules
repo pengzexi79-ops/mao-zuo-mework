@@ -1,0 +1,4 @@
+[submodule "tools/hyperframes-upstream"]
+	path = tools/hyperframes-upstream
+	url = https://github.com/heygen-com/hyperframes.git
+	ignore = dirty
