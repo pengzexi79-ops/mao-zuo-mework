@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>猫作 · Mework</title>
+    <meta name="theme-color" content="#1f2430" />
+    <style>.boot-state{min-height:100vh;display:grid;place-items:center;padding:24px;font:16px/1.6 system-ui,"Microsoft YaHei",sans-serif;color:#475569;background:#f6f8fb;text-align:center}.boot-error{color:#b42318}</style>
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+  </head>
+  <body>
+    <div id="app"><div class="boot-state">正在加载猫作…</div></div>
+    <script>
+      window.addEventListener('error', function (event) {
+        if (event.target && (event.target.tagName === 'SCRIPT' || event.target.tagName === 'LINK')) {
+          document.getElementById('app').innerHTML = '<div class="boot-state boot-error">页面资源加载失败。请按 Ctrl + F5 强制刷新；若仍失败，请重新执行前端构建后启动最新 Jar。</div>'
+        }
+      }, true)
+    </script>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

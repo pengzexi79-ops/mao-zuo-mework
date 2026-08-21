@@ -1,0 +1,7 @@
+# Verified on Windows x64 with Python 3.13 for the bundled local media workflow.
+# Keep this list explicit so startup repair never installs arbitrary packages.
+# Pinned versions make offline/support diagnostics reproducible; bootstrap skips pip when all modules are already present.
+edge-tts==7.2.8
+faster-whisper==1.2.1
+rapidocr-onnxruntime==1.4.4
+ffmpeg-normalize==1.33.1

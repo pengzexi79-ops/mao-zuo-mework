@@ -1,0 +1,32 @@
+# Secrets and local environment overrides
+.env
+.env.*
+!.env.example
+backend/src/main/resources/application-local.yml
+backend/src/main/resources/application-*.local.yml
+
+# Runtime data and logs
+backend/data/
+data/
+logs/
+temp/
+*.log
+
+# Build output, dependencies, bundled runtimes, and delivery artifacts
+backend/target/
+backend/.venv/
+frontend/node_modules/
+frontend/dist/
+backend/tools/__pycache__/
+portable/
+installer/output/
+installer/*.log
+installer/*.log.err
+sample-materials/
+
+# IDE and OS files
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db

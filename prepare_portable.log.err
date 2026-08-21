@@ -1,0 +1,10 @@
+python.exe : ERROR: Could not install packages due to an OSError: [WinError 206] 文件名或扩展名太长。: 'C:\\Users\\Wind
+ows\\WorkBuddy\\2026-08-09-14-55-27\\ai-douyin-mixcut\\backend\\.venv\\Lib\\site-packages\\torch-2.13.0.dist-info\\lice
+nses\\third_party\\kineto\\libkineto\\third_party\\dynolog\\third_party\\prometheus-cpp\\3rdparty\\civetweb\\src\\third
+_party\\duktape-1.5.2'
+所在位置 C:\Users\Windows\WorkBuddy\2026-08-09-14-55-27\ai-douyin-mixcut\prepare_portable.ps1:57 字符: 3
++   & $venvPy -m pip install --disable-pip-version-check --no-input dem ...
++   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (ERROR: Could no...\duktape-1.5.2':String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 

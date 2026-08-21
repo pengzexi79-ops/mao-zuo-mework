@@ -1,0 +1,59 @@
+{
+  "format": "mixcut-workflow",
+  "schemaVersion": 1,
+  "name": "AI 素材导演带货混剪",
+  "version": "1.0",
+  "description": "面向抖音带货成片：AI 识别项目、本地匹配、公开素材补齐、强钩子快切、严格去重和可选旧字幕清理。",
+  "definition": {
+    "steps": [
+      {
+        "skill": "select_materials",
+        "args": {
+          "roles": ["hook", "body", "celebrity", "product", "endcard", "voice", "bgm"],
+          "limit": 300,
+          "keyword": "带货 种草 产品 实拍 达人 口播 细节"
+        }
+      },
+      {
+        "skill": "set_duration",
+        "args": { "minSec": 50, "maxSec": 120, "dense": true }
+      },
+      {
+        "skill": "set_slice",
+        "args": { "sliceSec": 2.2, "jitter": 0.4, "explode": true, "maxPerMaterial": 3 }
+      },
+      {
+        "skill": "set_structure",
+        "args": { "hookSec": 3, "celebrityRatio": 0.2, "productSlots": 5, "productSec": 2.6, "endcard": true }
+      },
+      {
+        "skill": "set_canvas",
+        "args": { "width": 1080, "height": 1920, "fps": 30 }
+      },
+      {
+        "skill": "set_quality",
+        "args": {
+          "autoUseCrawledMaterials": true,
+          "projectRelevantOnly": true,
+          "dedupStrictness": "strict",
+          "cleanSourceSubtitles": true,
+          "sourceSubtitleCleanMode": "subtitle-safe-band",
+          "autoSubtitles": false,
+          "burnAiVoiceCaptions": true
+        }
+      },
+      {
+        "skill": "gen_hook",
+        "args": {
+          "extra": "以前3秒强钩子开场，优先使用画面冲击、结果对比、痛点反常识；口播短句、有停顿、有成交导向。"
+        }
+      },
+      {
+        "skill": "pick_audio",
+        "args": { "bgmVolume": 0.16, "autoMatchAudio": true, "hookAudioVolume": 1.0 }
+      }
+    ]
+  },
+  "source": "Mework local ZCode delivery",
+  "sourceRepo": "local/Mework"
+}

@@ -1,0 +1,137 @@
+package com.douyin.mixcut.web;
+
+import com.douyin.mixcut.config.AppProps;
+import com.douyin.mixcut.domain.Job;
+import com.douyin.mixcut.external.FfmpegTool;
+import com.douyin.mixcut.repository.Repositories.JobOutputRepo;
+import com.douyin.mixcut.repository.Repositories.JobRepo;
+import com.douyin.mixcut.service.DeliveryRepairService;
+import com.douyin.mixcut.service.JobService;
+import com.douyin.mixcut.service.MaterialGapService;
+import com.douyin.mixcut.service.RenderPreparationService;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+@ExtendWith(MockitoExtension.class)
+class JobControllerTest {
+    @Mock private JobService jobService;
+    @Mock private RenderPreparationService preparationService;
+    @Mock private JobRepo jobRepo;
+    @Mock private JobOutputRepo outputRepo;
+    @Mock private DeliveryRepairService deliveryRepairService;
+    @Mock private FfmpegTool ffmpeg;
+
+    private JobController controller;
+
+    @BeforeEach
+    void setUp() {
+        controller = new JobController(jobService, preparationService, jobRepo, outputRepo,
+                deliveryRepairService, new AppProps(), ffmpeg);
+    }
+
+    @Test
+    void batchDeleteRemovesTerminalJobsAndSkipsUnknownIds() {
+        JobController.BatchDeleteReq req = new JobController.BatchDeleteReq();
+        req.setIds(List.of(10L, 99L, 10L));
+        Job job = new Job();
+        job.setId(10L);
+        when(jobRepo.findById(10L)).thenReturn(Optional.of(job));
+        when(jobRepo.findById(99L)).thenReturn(Optional.empty());
+
+        R<Map<String, Object>> result = controller.batchDelete(req);
+
+        assertTrue(result.isOk());
+        assertEquals(1, result.getData().get("deleted"));
+        List<?> skipped = (List<?>) result.getData().get("skipped");
+        assertEquals(1, skipped.size());
+        verify(jobService).deleteJob(10L);
+    }
+
+    @Test
+    void batchDeleteKeepsActiveJobsWhenServiceRejectsThem() {
+        JobController.BatchDeleteReq req = new JobController.BatchDeleteReq();
+        req.setIds(List.of(20L));
+        Job job = new Job();
+        job.setId(20L);
+        when(jobRepo.findById(20L)).thenReturn(Optional.of(job));
+        doThrow(new IllegalArgumentException("运行中或已暂停的任务请先取消，确认停止后再删除记录"))
+                .when(jobService).deleteJob(20L);
+
+        R<Map<String, Object>> result = controller.batchDelete(req);
+
+        assertTrue(result.isOk());
+        assertEquals(0, result.getData().get("deleted"));
+        List<?> skipped = (List<?>) result.getData().get("skipped");
+        assertEquals(1, skipped.size());
+        assertFalse(skipped.isEmpty());
+    }
+
+    @Test
+    void prepareReturnsAsyncTaskSnapshotWithoutWaiting() {
+        RenderPreparationService.PrepareRequest req = new RenderPreparationService.PrepareRequest();
+        req.setProjectId(7L);
+        RenderPreparationService.PrepareResult snapshot = new RenderPreparationService.PrepareResult();
+        snapshot.setId(42L);
+        snapshot.setStatus("running");
+        when(preparationService.prepare(req)).thenReturn(snapshot);
+
+        R<RenderPreparationService.PrepareResult> result = controller.prepare(req);
+
+        assertTrue(result.isOk());
+        assertEquals(42L, result.getData().getId());
+        assertEquals("running", result.getData().getStatus());
+    }
+
+    @Test
+    void prepareStatusExposesPollingSnapshotOrFailsForUnknownTask() {
+        RenderPreparationService.PrepareResult done = new RenderPreparationService.PrepareResult();
+        done.setId(42L);
+        done.setStatus("done");
+        done.setReady(true);
+        done.setFinalGap(new MaterialGapService.MaterialGapResult());
+        when(preparationService.status(42L)).thenReturn(done);
+        when(preparationService.status(999L)).thenThrow(new IllegalArgumentException("准备任务不存在"));
+
+        R<RenderPreparationService.PrepareResult> found = controller.prepareStatus(42L);
+        assertTrue(found.isOk());
+        assertEquals("done", found.getData().getStatus());
+        assertTrue(found.getData().isReady());
+        assertNotNull(found.getData().getFinalGap());
+
+        R<RenderPreparationService.PrepareResult> missing = controller.prepareStatus(999L);
+        assertFalse(missing.isOk());
+        assertEquals("准备任务不存在", missing.getMessage());
+    }
+
+    @Test
+    void prepareListReturnsRecentTasks() {
+        RenderPreparationService.PrepareResult first = new RenderPreparationService.PrepareResult();
+        first.setId(2L);
+        first.setStatus("running");
+        RenderPreparationService.PrepareResult second = new RenderPreparationService.PrepareResult();
+        second.setId(1L);
+        second.setStatus("timedout");
+        when(preparationService.recent()).thenReturn(List.of(first, second));
+
+        R<List<RenderPreparationService.PrepareResult>> result = controller.prepareList();
+
+        assertTrue(result.isOk());
+        assertEquals(2, result.getData().size());
+        assertEquals(2L, result.getData().get(0).getId());
+    }
+}
