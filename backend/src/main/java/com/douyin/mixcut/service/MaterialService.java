@@ -6,6 +6,7 @@ import com.douyin.mixcut.domain.MaterialFolder;
 import com.douyin.mixcut.domain.MaterialRole;
 import com.douyin.mixcut.domain.UseCase;
 import com.douyin.mixcut.external.FfmpegTool;
+import com.douyin.mixcut.external.ProcessRegistry;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.douyin.mixcut.repository.MaterialStore;
@@ -786,6 +787,13 @@ public class MaterialService {
     /** 核心登记：probe + 自动打标 + 缩略图 */
     public Material register(String absPath, Long folderId, boolean autoRole,
                              Material.Source source, String sourceUrl) {
+        return register(absPath, folderId, autoRole, source, sourceUrl, ProcessRegistry.CancellationContext.none());
+    }
+
+    public Material register(String absPath, Long folderId, boolean autoRole,
+                             Material.Source source, String sourceUrl,
+                             ProcessRegistry.CancellationContext context) {
+        context.throwIfCancelled();
         Material exist = materialRepo.findByFilePath(absPath).orElse(null);
         if (exist != null) return exist;
 
@@ -810,7 +818,10 @@ public class MaterialService {
         else if (IMAGE_EXT.contains(ext)) m.setFileType(Material.FileType.image);
         else m.setFileType(Material.FileType.video);
 
-        FfmpegTool.MediaInfo info = ffmpeg.probe(p.toString());
+        FfmpegTool.MediaInfo info = context != null && context.isTracked()
+                ? ffmpeg.probe(p.toString(), context)
+                : ffmpeg.probe(p.toString());
+        context.throwIfCancelled();
         if (m.getFileType() == Material.FileType.image) {
             // 图片在时间线上按静帧处理，默认 3 秒；ffprobe 负责确认尺寸/文件可读。
             m.setDurationSec(3.0);
@@ -829,18 +840,30 @@ public class MaterialService {
         m.setTags(guessTags(fname));
         applyQualityAdmission(m);
 
+        context.throwIfCancelled();
         Material saved = materialRepo.save(m);
-        updateThumbnail(saved);
+        context.throwIfCancelled();
+        updateThumbnail(saved, context);
+        context.throwIfCancelled();
         return saved;
     }
 
     private void updateThumbnail(Material m) {
+        updateThumbnail(m, ProcessRegistry.CancellationContext.none());
+    }
+
+    private void updateThumbnail(Material m, ProcessRegistry.CancellationContext context) {
+        context.throwIfCancelled();
         if (m.getFileType() == Material.FileType.audio) return;
         if (m.getDurationSec() == null || m.getDurationSec() <= 0.5) return;
         try {
             Path th = props.thumbs().resolve("m" + m.getId() + ".jpg");
             double at = m.getFileType() == Material.FileType.image ? 0 : Math.min(1.0, m.getDurationSec() / 3);
-            if (ffmpeg.thumbnail(m.getFilePath(), th, at)) {
+            boolean thumbnailOk = context != null && context.isTracked()
+                    ? ffmpeg.thumbnail(m.getFilePath(), th, at, context)
+                    : ffmpeg.thumbnail(m.getFilePath(), th, at);
+            if (thumbnailOk) {
+                context.throwIfCancelled();
                 m.setThumbnail("/files/thumbs/" + th.getFileName());
                 // 质量闸门拒绝的素材保持 failed，缩略图成功不得把状态翻回可用。
                 if (m.getStatus() != Material.Status.failed) {
@@ -855,6 +878,8 @@ public class MaterialService {
                 }
                 log.warn("image thumbnail generation failed, keeping material usable: {}", m.getFilePath());
             }
+        } catch (java.util.concurrent.CancellationException e) {
+            throw e;
         } catch (Exception e) {
             log.warn("thumbnail generation failed for {}: {}", m.getName(), e.toString());
         }
@@ -1043,12 +1068,17 @@ public class MaterialService {
      * 将一个原视频切成可直接参与混剪的短片段。原素材不会移动、覆盖或删除。
      */
     public List<Material> splitVideo(Long id, double clipSec) {
+        return splitVideo(id, clipSec, ProcessRegistry.CancellationContext.none());
+    }
+
+    public List<Material> splitVideo(Long id, double clipSec, ProcessRegistry.CancellationContext context) {
+        context.throwIfCancelled();
         Material source = materialRepo.findById(id).orElseThrow(() -> new IllegalArgumentException("素材不存在"));
         if (source.getFileType() != Material.FileType.video) throw new IllegalArgumentException("只有视频素材可以自动切片");
         if (source.getStatus() != Material.Status.ready) throw new IllegalArgumentException("素材尚未准备完成，请重新探测后再切片");
         if (clipSec < 1 || clipSec > 15) throw new IllegalArgumentException("每段时长请设置在 1 到 15 秒之间");
 
-        FfmpegTool.MediaInfo info = ffmpeg.probe(source.getFilePath());
+        FfmpegTool.MediaInfo info = ffmpeg.probe(source.getFilePath(), context);
         if (!info.isHasVideo() || info.getDuration() < 1) throw new IllegalArgumentException("无法读取原视频，请重新探测后再试");
         double duration = info.getDuration();
         int width = info.getWidth() > 0 ? info.getWidth() : 1080;
@@ -1058,25 +1088,38 @@ public class MaterialService {
         try { Files.createDirectories(dir); } catch (Exception e) { throw new IllegalStateException("无法创建切片目录", e); }
 
         List<Material> created = new ArrayList<>();
+        List<Path> outputs = new ArrayList<>();
         int sequence = 1;
+        try {
         for (double start = 0; start < duration - 0.15; start += clipSec, sequence++) {
+            context.throwIfCancelled();
             double partDuration = Math.min(clipSec, duration - start);
             if (partDuration < 1) break;
             String stem = safe(stripExtension(source.getName()));
             Path output = dir.resolve(stem + "_切片_" + String.format(Locale.ROOT, "%03d", sequence) + "_" + System.currentTimeMillis() + ".mp4");
-            if (!ffmpeg.cutNormalize(source.getFilePath(), start, partDuration, width, height, fps, output)) {
+            if (!ffmpeg.cutNormalize(source.getFilePath(), start, partDuration, width, height, fps, output, context)) {
                 log.warn("auto slice failed for material {} at {}s", id, start);
                 continue;
             }
-            Material clip = register(output.toString(), source.getFolderId(), false, Material.Source.generated, null);
+            outputs.add(output);
+            context.throwIfCancelled();
+            Material clip = register(output.toString(), source.getFolderId(), false, Material.Source.generated, null, context);
             clip.setRole(MaterialRole.body);
             clip.setTags(joinTags(source.getTags(), "自动切片"));
             materialRepo.save(clip);
             attachBrowserUrls(clip);
+            context.throwIfCancelled();
             created.add(clip);
         }
+        context.throwIfCancelled();
         if (created.isEmpty()) throw new IllegalStateException("自动切片失败，请检查 FFmpeg 是否可用以及原视频是否完整");
         return created;
+        } catch (RuntimeException | Error e) {
+            for (Path output : outputs) {
+                try { Files.deleteIfExists(output); } catch (Exception cleanup) { log.debug("slice cleanup failed: {}", cleanup.toString()); }
+            }
+            throw e;
+        }
     }
 
     private String stripExtension(String name) {

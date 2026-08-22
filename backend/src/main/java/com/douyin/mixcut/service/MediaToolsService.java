@@ -6,6 +6,7 @@ import com.douyin.mixcut.domain.Material;
 import com.douyin.mixcut.domain.MaterialRole;
 import com.douyin.mixcut.external.FfmpegTool;
 import com.douyin.mixcut.external.ProcRunner;
+import com.douyin.mixcut.external.ProcessRegistry;
 import com.douyin.mixcut.repository.Repositories.MediaTaskRepo;
 import com.douyin.mixcut.repository.MaterialStore;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -28,9 +29,11 @@ import java.util.Locale;
 import java.util.Map;
 import java.time.LocalDateTime;
 import java.util.UUID;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Future;
+import java.util.concurrent.FutureTask;
 import org.springframework.scheduling.annotation.Scheduled;
 
 /** Bounded local media operations exposed to the workbench. */
@@ -46,9 +49,12 @@ public class MediaToolsService {
     private final FfmpegTool ffmpeg;
     private final MaterialDeleteService materialDeleteService;
     private final MediaTaskRepo mediaTaskRepo;
+    private final ProcessRegistry processRegistry;
     @Qualifier("mediaExecutor") private final Executor mediaExecutor;
     private final Map<String, Task> tasks = new ConcurrentHashMap<>();
     private final Map<String, Future<?>> futures = new ConcurrentHashMap<>();
+    private final Set<String> startedTasks = ConcurrentHashMap.newKeySet();
+    private final Map<String, ProcessRegistry.CancellationContext> cancellationContexts = new ConcurrentHashMap<>();
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Data
@@ -142,7 +148,7 @@ public class MediaToolsService {
         if (source.getFileType() != Material.FileType.image) throw new IllegalArgumentException("图片工具只能处理图片素材");
         Path input = safeMaterialPath(source);
         String id = newTask("image", request);
-        dispatch(id, () -> runImage(id, source, input, request));
+        dispatch(id, () -> runImage(id, source, input, request, context(id)));
         return tasks.get(id);
     }
 
@@ -150,7 +156,7 @@ public class MediaToolsService {
         if (materialId == null) throw new IllegalArgumentException("请选择音视频素材");
         materials.findById(materialId).orElseThrow(() -> new IllegalArgumentException("素材不存在"));
         String id = newTask("audio-separate", Map.of("materialId", materialId));
-        dispatch(id, () -> runSeparation(id, materialId));
+        dispatch(id, () -> runSeparation(id, materialId, context(id)));
         return tasks.get(id);
     }
 
@@ -159,7 +165,7 @@ public class MediaToolsService {
         if (clipSec < 1 || clipSec > 15) throw new IllegalArgumentException("每段时长请设置在 1 到 15 秒之间");
         materials.findById(materialId).orElseThrow(() -> new IllegalArgumentException("素材不存在"));
         String id = newTask("video-split", Map.of("materialId", materialId, "clipSec", clipSec));
-        dispatch(id, () -> runSplit(id, materialId, clipSec));
+        dispatch(id, () -> runSplit(id, materialId, clipSec, context(id)));
         return tasks.get(id);
     }
 
@@ -183,7 +189,7 @@ public class MediaToolsService {
         String id = newTask("subtitle-cover", request);
         final double rangeStart = start;
         final double rangeEnd = end;
-        dispatch(id, () -> runCover(id, source, input, request, rangeStart, rangeEnd));
+        dispatch(id, () -> runCover(id, source, input, request, rangeStart, rangeEnd, context(id)));
         return tasks.get(id);
     }
 
@@ -205,7 +211,7 @@ public class MediaToolsService {
         if ("unmute".equals(audioMode) && !info.isHasAudio()) throw new IllegalArgumentException("原视频没有可恢复的音轨，无法解除静音");
         validateTimelineRequest(request, info.getDuration());
         String id = newTask("video-timeline", request);
-        dispatch(id, () -> runTimeline(id, source, input, request, info));
+        dispatch(id, () -> runTimeline(id, source, input, request, info, context(id)));
         return tasks.get(id);
     }
 
@@ -214,7 +220,7 @@ public class MediaToolsService {
         if (materialId == null) throw new IllegalArgumentException("请选择视频素材");
         materials.findById(materialId).orElseThrow(() -> new IllegalArgumentException("素材不存在"));
         String id = newTask("auto-trim", Map.of("materialId", materialId));
-        dispatch(id, () -> runAutoTrim(id, materialId));
+        dispatch(id, () -> runAutoTrim(id, materialId, context(id)));
         return tasks.get(id);
     }
 
@@ -226,10 +232,15 @@ public class MediaToolsService {
         persisted.setMessage("已取消媒体任务");
         persisted.setLastActivityAt(LocalDateTime.now());
         mediaTaskRepo.save(persisted);
+        ProcessRegistry.CancellationContext context = cancellationContexts.get(id);
+        if (context != null) processRegistry.cancel(context);
+        else processRegistry.cancel(id);
         Future<?> future = futures.remove(id);
         if (future != null) future.cancel(true);
         Task task = tasks.get(id);
         if (task != null) { task.setStatus("cancelled"); task.setMessage("已取消媒体任务"); }
+        cleanupTaskOutputs(id);
+        if (!startedTasks.contains(id)) releaseContext(id);
         return fromPersisted(persisted);
     }
 
@@ -284,6 +295,7 @@ public class MediaToolsService {
         task.setKind(kind);
         task.setOutputDirectory(props.mediaToolsOutput().toString());
         tasks.put(task.getId(), task);
+        cancellationContexts.put(task.getId(), processRegistry.create(task.getId()));
         MediaTask persisted = new MediaTask();
         persisted.setTaskKey(task.getId());
         persisted.setKind(kind);
@@ -300,17 +312,32 @@ public class MediaToolsService {
     }
 
     private void dispatch(String id, Runnable work) {
-        try {
-            if (mediaExecutor instanceof AsyncTaskExecutor async) {
-                Future<?> future = async.submit(() -> {
-                    update(tasks.get(id), "running", 1, "媒体任务已开始");
-                    work.run();
-                });
-                futures.put(id, future);
-            } else {
-                mediaExecutor.execute(() -> { update(tasks.get(id), "running", 1, "媒体任务已开始"); work.run(); });
+        FutureTask<Void> future = new FutureTask<>(() -> {
+            try {
+                checkpoint(id);
+                startedTasks.add(id);
+                update(tasks.get(id), "running", 1, "媒体任务已开始");
+                work.run();
+            } catch (java.util.concurrent.CancellationException cancelled) {
+                markCancelled(id);
+            } finally {
+                futures.remove(id);
+                startedTasks.remove(id);
+                if (isTerminal(id)) {
+                    MediaTask persisted = mediaTaskRepo.findByTaskKey(id).orElse(null);
+                    if (persisted != null && ("failed".equals(persisted.getStatus()) || "cancelled".equals(persisted.getStatus()))) {
+                        cleanupTaskOutputs(id);
+                    }
+                    releaseContext(id);
+                }
             }
+            return null;
+        });
+        futures.put(id, future);
+        try {
+            mediaExecutor.execute(future);
         } catch (RuntimeException error) {
+            futures.remove(id, future);
             Task task = tasks.get(id);
             if (task != null) update(task, "pending", 0, "媒体任务等待执行器资源");
             log.warn("媒体任务 {} 未进入执行队列：{}", id, error.toString());
@@ -322,31 +349,33 @@ public class MediaToolsService {
         String id = persisted.getTaskKey();
         Task task = fromPersisted(persisted);
         tasks.put(id, task);
+        cancellationContexts.put(id, processRegistry.create(id));
         String kind = persisted.getKind();
         if ("image".equals(kind)) {
             ImageRequest request = objectMapper.treeToValue(root, ImageRequest.class);
             Material source = materials.findById(request.getMaterialId()).orElseThrow(() -> new IllegalArgumentException("素材不存在"));
-            dispatch(id, () -> runImage(id, source, safeMaterialPath(source), request));
+            dispatch(id, () -> runImage(id, source, safeMaterialPath(source), request, context(id)));
         } else if ("audio-separate".equals(kind)) {
             Long materialId = root.path("materialId").asLong(0);
-            dispatch(id, () -> runSeparation(id, materialId));
+            dispatch(id, () -> runSeparation(id, materialId, context(id)));
         } else if ("video-split".equals(kind)) {
-            dispatch(id, () -> runSplit(id, root.path("materialId").asLong(0), root.path("clipSec").asDouble(3)));
+            dispatch(id, () -> runSplit(id, root.path("materialId").asLong(0), root.path("clipSec").asDouble(3), context(id)));
         } else if ("subtitle-cover".equals(kind)) {
             CoverRequest request = objectMapper.treeToValue(root, CoverRequest.class);
             Material source = materials.findById(request.getMaterialId()).orElseThrow(() -> new IllegalArgumentException("素材不存在"));
             FfmpegTool.MediaInfo info = ffmpeg.probe(safeMaterialPath(source).toString());
             dispatch(id, () -> runCover(id, source, safeMaterialPath(source), request,
                     source.getFileType() == Material.FileType.image ? 0 : request.getStart() == null ? 0 : request.getStart(),
-                    source.getFileType() == Material.FileType.image ? 1 : request.getEnd() == null ? info.getDuration() : request.getEnd()));
+                    source.getFileType() == Material.FileType.image ? 1 : request.getEnd() == null ? info.getDuration() : request.getEnd(),
+                    context(id)));
         } else if ("video-timeline".equals(kind)) {
             TimelineRequest request = objectMapper.treeToValue(root, TimelineRequest.class);
             Material source = materials.findById(request.getMaterialId()).orElseThrow(() -> new IllegalArgumentException("素材不存在"));
             Path input = safeMaterialPath(source);
             FfmpegTool.MediaInfo info = ffmpeg.probe(input.toString());
-            dispatch(id, () -> runTimeline(id, source, input, request, info));
+            dispatch(id, () -> runTimeline(id, source, input, request, info, context(id)));
         } else if ("auto-trim".equals(kind)) {
-            dispatch(id, () -> runAutoTrim(id, root.path("materialId").asLong(0)));
+            dispatch(id, () -> runAutoTrim(id, root.path("materialId").asLong(0), context(id)));
         } else throw new IllegalArgumentException("不支持恢复的媒体任务类型");
     }
 
@@ -354,6 +383,69 @@ public class MediaToolsService {
         String value = error == null ? "未知原因" : error.getMessage();
         if (value == null || value.isBlank()) return "未知原因";
         return value.length() > 400 ? value.substring(0, 400) : value;
+    }
+
+    private ProcessRegistry.CancellationContext context(String id) {
+        return cancellationContexts.computeIfAbsent(id, processRegistry::create);
+    }
+
+    private void checkpoint(String id) {
+        ProcessRegistry.CancellationContext context = context(id);
+        context.throwIfCancelled();
+        MediaTask persisted = mediaTaskRepo.findByTaskKey(id).orElse(null);
+        if (persisted != null && "cancelled".equals(persisted.getStatus())) {
+            processRegistry.cancel(context);
+            context.throwIfCancelled();
+        }
+    }
+
+    private boolean isCancelled(String id) {
+        ProcessRegistry.CancellationContext context = cancellationContexts.get(id);
+        if (context != null && context.isCancelled()) return true;
+        return mediaTaskRepo.findByTaskKey(id).map(task -> "cancelled".equals(task.getStatus())).orElse(false);
+    }
+
+    private void markCancelled(String id) {
+        Task task = tasks.get(id);
+        if (task != null) {
+            task.setStatus("cancelled");
+            task.setMessage("已取消媒体任务");
+            task.setUpdatedAt(System.currentTimeMillis());
+        }
+        cleanupTaskOutputs(id);
+        persistCancelled(id);
+    }
+
+    private void persistCancelled(String id) {
+        mediaTaskRepo.findByTaskKey(id).ifPresent(task -> {
+            if (!"cancelled".equals(task.getStatus())) {
+                task.setStatus("cancelled");
+                task.setMessage("已取消媒体任务");
+                task.setLastActivityAt(LocalDateTime.now());
+                mediaTaskRepo.save(task);
+            }
+        });
+    }
+
+    private boolean isTerminal(String id) {
+        return mediaTaskRepo.findByTaskKey(id).map(task ->
+                "done".equals(task.getStatus()) || "failed".equals(task.getStatus()) || "cancelled".equals(task.getStatus())
+        ).orElse(true);
+    }
+
+    private void releaseContext(String id) {
+        ProcessRegistry.CancellationContext context = cancellationContexts.remove(id);
+        if (context != null) processRegistry.forget(context);
+    }
+
+    private void cleanupTaskOutputs(String id) {
+        ProcessRegistry.CancellationContext context = cancellationContexts.get(id);
+        if (context != null) processRegistry.cleanupOutputs(context);
+    }
+
+    private void registerOutput(String id, Path output) {
+        ProcessRegistry.CancellationContext context = cancellationContexts.get(id);
+        if (context != null) processRegistry.registerOutput(context, output, props.mediaToolsOutput());
     }
 
     private void persist(String id) {
@@ -406,9 +498,11 @@ public class MediaToolsService {
         }
     }
 
-    private void runImage(String id, Material source, Path input, ImageRequest request) {
+    private void runImage(String id, Material source, Path input, ImageRequest request,
+                          ProcessRegistry.CancellationContext cancellation) {
         Task task = tasks.get(id);
         try {
+            cancellation.throwIfCancelled();
             update(task, "running", 10, "正在准备图片处理");
             Path dir = props.mediaToolsOutput().resolve("generated-images");
             Files.createDirectories(dir);
@@ -431,49 +525,69 @@ public class MediaToolsService {
                     task.setEngine("ImageMagick");
                 }
             }
+            registerOutput(id, output);
             update(task, "running", 35, "正在调用本地图片处理引擎：" + task.getEngine());
+            cancellation.throwIfCancelled();
             ProcRunner.Result result = runner.run(command, 180);
+            cancellation.throwIfCancelled();
             if (!result.ok() || !Files.isRegularFile(output) || Files.size(output) < 128) throw new IllegalStateException("图片处理失败：" + tail(result.out()));
             update(task, "running", 80, "正在登记生成图片");
-            Material generated = materialService.register(output.toString(), source.getFolderId(), false, Material.Source.generated, null);
+            cancellation.throwIfCancelled();
+            Material generated = materialService.register(output.toString(), source.getFolderId(), false, Material.Source.generated, null, cancellation);
             generated.setRole(MaterialRole.product);
             generated.setTags((source.getTags() == null ? "" : source.getTags() + ",") + "图片工具," + request.getOperation());
             materials.save(generated);
             materialService.attachBrowserUrls(generated);
             setResults(task, List.of(generated));
+            cancellation.throwIfCancelled();
             update(task, "done", 100, "图片处理完成，原图未覆盖");
+            processRegistry.forgetOutput(cancellation, output);
+        } catch (java.util.concurrent.CancellationException cancelled) {
+            markCancelled(id);
         } catch (Exception e) {
-            update(task, "failed", task.getProgress(), e.getMessage() == null ? "图片处理失败" : e.getMessage());
+            if (isCancelled(id)) markCancelled(id);
+            else update(task, "failed", task.getProgress(), e.getMessage() == null ? "图片处理失败" : e.getMessage());
         }
     }
 
-    private void runSeparation(String id, Long materialId) {
+    private void runSeparation(String id, Long materialId, ProcessRegistry.CancellationContext cancellation) {
         Task task = tasks.get(id);
         try {
+            cancellation.throwIfCancelled();
             task.setEngine("Demucs");
             update(task, "running", 10, "正在准备音频分离任务");
-            AudioEngineService.SeparationResult result = audioEngine.separateMaterial(materialId);
+            AudioEngineService.SeparationResult result = audioEngine.separateMaterial(materialId, cancellation);
+            cancellation.throwIfCancelled();
             setResults(task, List.of(result.getVocals(), result.getInstrumental()));
             update(task, "done", 100, result.getMessage());
+        } catch (java.util.concurrent.CancellationException cancelled) {
+            markCancelled(id);
         } catch (Exception e) {
-            update(task, "failed", task.getProgress(), e.getMessage() == null ? "音频分离失败" : e.getMessage());
+            if (isCancelled(id)) markCancelled(id);
+            else update(task, "failed", task.getProgress(), e.getMessage() == null ? "音频分离失败" : e.getMessage());
         }
     }
 
-    private void runSplit(String id, Long materialId, double clipSec) {
+    private void runSplit(String id, Long materialId, double clipSec, ProcessRegistry.CancellationContext cancellation) {
         Task task = tasks.get(id);
         try {
             task.setEngine("FFmpeg");
+            cancellation.throwIfCancelled();
             update(task, "running", 10, "正在分析视频并生成独立片段");
-            List<Material> clips = materialService.splitVideo(materialId, clipSec);
+            List<Material> clips = materialService.splitVideo(materialId, clipSec, cancellation);
+            cancellation.throwIfCancelled();
             setResults(task, clips);
             update(task, "done", 100, "视频切段完成，原视频未覆盖");
+        } catch (java.util.concurrent.CancellationException cancelled) {
+            markCancelled(id);
         } catch (Exception e) {
-            update(task, "failed", task.getProgress(), e.getMessage() == null ? "视频切段失败" : e.getMessage());
+            if (isCancelled(id)) markCancelled(id);
+            else update(task, "failed", task.getProgress(), e.getMessage() == null ? "视频切段失败" : e.getMessage());
         }
     }
 
-    private void runCover(String id, Material source, Path input, CoverRequest request, double start, double end) {
+    private void runCover(String id, Material source, Path input, CoverRequest request, double start, double end,
+                          ProcessRegistry.CancellationContext cancellation) {
         Task task = tasks.get(id);
         try {
             task.setEngine("FFmpeg drawbox");
@@ -482,27 +596,35 @@ public class MediaToolsService {
             Files.createDirectories(dir);
             String ext = source.getFileType() == Material.FileType.image ? "png" : "mp4";
             Path output = dir.resolve("cover-" + source.getId() + "-" + System.currentTimeMillis() + "." + ext);
+            registerOutput(id, output);
+            cancellation.throwIfCancelled();
             int x = request.getX();
             int y = request.getY();
             int width = request.getWidth();
             int height = request.getHeight();
             String color = safeCoverColor(request.getColor());
             boolean ok = source.getFileType() == Material.FileType.image
-                    ? ffmpeg.coverImageRect(input.toString(), x, y, width, height, color, output)
-                    : ffmpeg.coverVideoRect(input.toString(), x, y, width, height, color, start, end, output);
+                    ? ffmpeg.coverImageRect(input.toString(), x, y, width, height, color, output, cancellation)
+                    : ffmpeg.coverVideoRect(input.toString(), x, y, width, height, color, start, end, output, cancellation);
+            cancellation.throwIfCancelled();
             if (!ok) throw new IllegalStateException("字幕遮盖失败，请检查 FFmpeg 和遮盖区域");
-            FfmpegTool.MediaInfo outputInfo = ffmpeg.probe(output.toString());
+            FfmpegTool.MediaInfo outputInfo = ffmpeg.probe(output.toString(), cancellation);
             if (source.getFileType() == Material.FileType.video && (!outputInfo.isHasVideo() || outputInfo.getDuration() < 0.1)) throw new IllegalStateException("遮盖结果校验失败，原文件已保留");
             if (source.getFileType() == Material.FileType.image && !Files.isRegularFile(output)) throw new IllegalStateException("图片遮盖结果校验失败，原文件已保留");
-            Material generated = materialService.register(output.toString(), source.getFolderId(), false, Material.Source.generated, null);
+            Material generated = materialService.register(output.toString(), source.getFolderId(), false, Material.Source.generated, null, cancellation);
             generated.setRole(source.getRole() == null ? MaterialRole.none : source.getRole());
             generated.setTags(joinTags(source.getTags(), "字幕遮盖,有损处理"));
             materials.save(generated);
             materialService.attachBrowserUrls(generated);
             setResults(task, List.of(generated));
+            cancellation.throwIfCancelled();
             update(task, "done", 100, "字幕遮盖完成（有损处理），原文件未覆盖；无法从烧录字幕恢复原画面");
+            processRegistry.forgetOutput(cancellation, output);
+        } catch (java.util.concurrent.CancellationException cancelled) {
+            markCancelled(id);
         } catch (Exception e) {
-            update(task, "failed", task.getProgress(), e.getMessage() == null ? "字幕遮盖失败" : e.getMessage());
+            if (isCancelled(id)) markCancelled(id);
+            else update(task, "failed", task.getProgress(), e.getMessage() == null ? "字幕遮盖失败" : e.getMessage());
         }
     }
 
@@ -512,9 +634,11 @@ public class MediaToolsService {
         return value;
     }
 
-    private void runTimeline(String id, Material source, Path input, TimelineRequest request, FfmpegTool.MediaInfo sourceInfo) {
+    private void runTimeline(String id, Material source, Path input, TimelineRequest request, FfmpegTool.MediaInfo sourceInfo,
+                             ProcessRegistry.CancellationContext cancellation) {
         Task task = tasks.get(id);
         try {
+            cancellation.throwIfCancelled();
             task.setEngine("FFmpeg timeline");
             update(task, "running", 10, "正在校验时间线并准备视频轨道");
             List<double[]> retained = retainedRanges(request, sourceInfo.getDuration());
@@ -524,10 +648,13 @@ public class MediaToolsService {
             Files.createDirectories(dir);
             Path output = dir.resolve("timeline-" + source.getId() + "-" + System.currentTimeMillis() + ".mp4");
             update(task, "running", 35, "正在按时间线生成新视频");
-            if (!ffmpeg.editVideoRanges(input.toString(), retained, keepAudio, output)) {
+            registerOutput(id, output);
+            cancellation.throwIfCancelled();
+            if (!ffmpeg.editVideoRanges(input.toString(), retained, keepAudio, output, cancellation)) {
                 throw new IllegalStateException("FFmpeg 未生成有效时间线视频，请检查视频编码和本机 FFmpeg");
             }
-            FfmpegTool.MediaInfo outputInfo = ffmpeg.probe(output.toString());
+            cancellation.throwIfCancelled();
+            FfmpegTool.MediaInfo outputInfo = ffmpeg.probe(output.toString(), cancellation);
             if (!outputInfo.isHasVideo() || outputInfo.getDuration() < 0.1 || Files.size(output) < 1024) {
                 throw new IllegalStateException("输出视频校验失败，原视频已保留");
             }
@@ -538,7 +665,9 @@ public class MediaToolsService {
             if ("computer_only".equals(request.getResultPolicy())) {
                 setFileResult(task, output, "video", "仅保存到电脑，原视频已保留");
             } else {
-                Material generated = materialService.register(output.toString(), source.getFolderId(), false, Material.Source.generated, null);
+                cancellation.throwIfCancelled();
+                Material generated = materialService.register(output.toString(), source.getFolderId(), false, Material.Source.generated, null, cancellation);
+                cancellation.throwIfCancelled();
                 generated.setRole(source.getRole() == null ? MaterialRole.body : source.getRole());
                 generated.setTags(joinTags(source.getTags(), "时间线编辑," + request.getAudioMode()));
                 materials.save(generated);
@@ -556,14 +685,19 @@ public class MediaToolsService {
                 }
             }
             String audioSummary = keepAudio ? ("unmute".equals(request.getAudioMode()) ? "已保留并恢复原音轨" : "已保留原音轨") : "已输出静音视频";
+            cancellation.throwIfCancelled();
             update(task, "done", 100, String.format(Locale.ROOT,
                     "时间线编辑完成：保留 %.1f 秒，%s，%s", outputInfo.getDuration(), audioSummary, sourcePolicySummary));
+            processRegistry.forgetOutput(cancellation, output);
+        } catch (java.util.concurrent.CancellationException cancelled) {
+            markCancelled(id);
         } catch (Exception e) {
-            update(task, "failed", task.getProgress(), e.getMessage() == null ? "时间线编辑失败" : e.getMessage());
+            if (isCancelled(id)) markCancelled(id);
+            else update(task, "failed", task.getProgress(), e.getMessage() == null ? "时间线编辑失败" : e.getMessage());
         }
     }
 
-    private void runAutoTrim(String id, Long materialId) {
+    private void runAutoTrim(String id, Long materialId, ProcessRegistry.CancellationContext cancellation) {
         Task task = tasks.get(id);
         try {
             Material source = materials.findById(materialId).orElseThrow(() -> new IllegalArgumentException("素材不存在"));
@@ -573,6 +707,8 @@ public class MediaToolsService {
             Path dir = props.mediaToolsOutput().resolve("auto-trim");
             Files.createDirectories(dir);
             Path output = dir.resolve("trim-" + source.getId() + "-" + System.currentTimeMillis() + "." + extensionOf(input.toString()));
+            registerOutput(id, output);
+            cancellation.throwIfCancelled();
             // Run as a module so copied virtual environments do not depend on a build-machine console shim.
             List<String> cmd = List.of(props.localPythonPath(), "-m", "auto_editor", input.toString(),
                     "--output", output.toString(),
@@ -581,38 +717,52 @@ public class MediaToolsService {
                     "--margin", "0.2s",
                     "--no-open");
             update(task, "running", 40, "正在调用 Auto-Editor 智能剪辑");
+            cancellation.throwIfCancelled();
             ProcRunner.Result result = runner.run(cmd, 1800);
+            cancellation.throwIfCancelled();
             if (!result.ok() || !Files.isRegularFile(output) || Files.size(output) < 1024) {
                 // 降级策略：auto-editor 缺失/执行失败时回退 FFmpeg silenceremove 静音裁剪，
                 // 避免工具缺失直接导致整单失败；仅当回退也失败时才抛可读错误。
                 Path ffOutput = dir.resolve("trim-ff-" + source.getId() + "-" + System.currentTimeMillis() + "." + extensionOf(input.toString()));
+                registerOutput(id, ffOutput);
+                cancellation.throwIfCancelled();
                 List<String> ffCmd = List.of(props.getFfmpeg(), "-y", "-i", input.toString(),
                         "-af", "silenceremove=start_periods=1:start_threshold=-40dB:start_silence=0.5,areverse,silenceremove=start_periods=1:start_threshold=-40dB:start_silence=0.5,areverse",
                         "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", ffOutput.toString());
                 ProcRunner.Result ffResult = runner.run(ffCmd, 1800);
+                cancellation.throwIfCancelled();
                 if (ffResult.ok() && Files.isRegularFile(ffOutput) && Files.size(ffOutput) >= 1024) {
                     update(task, "running", 80, "Auto-Editor 不可用，已降级 FFmpeg 静音裁剪");
-                    Material generated = materialService.register(ffOutput.toString(), source.getFolderId(), false, Material.Source.generated, null);
+                    cancellation.throwIfCancelled();
+                    Material generated = materialService.register(ffOutput.toString(), source.getFolderId(), false, Material.Source.generated, null, cancellation);
                     generated.setRole(MaterialRole.body);
                     generated.setTags((source.getTags() == null ? "" : source.getTags() + ",") + "智能剪除,ffmpeg-silenceremove");
                     materials.save(generated);
                     materialService.attachBrowserUrls(generated);
                     setResults(task, List.of(generated));
+                    cancellation.throwIfCancelled();
                     update(task, "done", 100, "静音/废片剪除完成（降级：Auto-Editor 不可用，已用 FFmpeg 静音裁剪），原视频未覆盖");
+                    processRegistry.forgetOutput(cancellation, ffOutput);
                     return;
                 }
                 throw new IllegalStateException("智能剪除失败：" + tail(result.out()));
             }
             update(task, "running", 80, "正在登记剪除结果");
-            Material generated = materialService.register(output.toString(), source.getFolderId(), false, Material.Source.generated, null);
+            cancellation.throwIfCancelled();
+            Material generated = materialService.register(output.toString(), source.getFolderId(), false, Material.Source.generated, null, cancellation);
             generated.setRole(MaterialRole.body);
             generated.setTags((source.getTags() == null ? "" : source.getTags() + ",") + "智能剪除,auto-editor");
             materials.save(generated);
             materialService.attachBrowserUrls(generated);
             setResults(task, List.of(generated));
+            cancellation.throwIfCancelled();
             update(task, "done", 100, "静音/废片剪除完成，原视频未覆盖");
+            processRegistry.forgetOutput(cancellation, output);
+        } catch (java.util.concurrent.CancellationException cancelled) {
+            markCancelled(id);
         } catch (Exception e) {
-            update(task, "failed", task.getProgress(), e.getMessage() == null ? "智能剪除失败" : e.getMessage());
+            if (isCancelled(id)) markCancelled(id);
+            else update(task, "failed", task.getProgress(), e.getMessage() == null ? "智能剪除失败" : e.getMessage());
         }
     }
 
@@ -733,7 +883,15 @@ public class MediaToolsService {
     }
 
     private void update(Task task, String status, int progress, String message) {
-        task.setStatus(status); task.setProgress(Math.max(0, Math.min(100, progress))); task.setMessage(message); task.setUpdatedAt(System.currentTimeMillis());
+        if (task == null) return;
+        if (!"cancelled".equals(status) && isCancelled(task.getId())) {
+            markCancelled(task.getId());
+            return;
+        }
+        task.setStatus(status);
+        task.setProgress(Math.max(0, Math.min(100, progress)));
+        task.setMessage(message);
+        task.setUpdatedAt(System.currentTimeMillis());
         persist(task.getId());
     }
 
