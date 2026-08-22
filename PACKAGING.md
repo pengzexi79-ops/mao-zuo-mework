@@ -5,20 +5,18 @@
 2. 确认 .toolchain 在项目上一级（jdk-17.0.2 / mysql-8.0.28-winx64 / mysqldata / maven）
 3. 确认 ffmpeg（C:\DevTools\ffmpeg-9.0-full_build 或系统 PATH）
 
-## 步骤（一键：build_installer.bat 已串起 1-3）
+## 步骤（推荐由 build_installer.bat 统一执行）
 ```powershell
-# 1) 准备便携工具链到项目 portable\（真实复制，Inno Setup 不跟随 Junction）
 cd C:\Users\Windows\WorkBuddy\2026-08-09-14-55-27\ai-douyin-mixcut
-powershell -ExecutionPolicy Bypass -File .\prepare_portable.ps1 -Copy
-
-# 2) 构建后端（前端静态资源已由 npm run build 输出到 backend/src/main/resources/static）
-cd backend
-mvn -f pom.xml clean package -DskipTests -Ddelivery.jar.name=mixcut-delivery
-
-# 3) 编译安装器
-"C:\Program Files (x86)\Inno Setup 6\ISCC.exe" .\installer\Mework.iss
+# 默认只做本地离线检查，不执行 pip 或网络安装
+setup_runtime.bat verify
+# 只有明确需要联网修复时才执行：
+setup_runtime.bat repair
+# 构建时使用真实文件复制，不使用 Junction；默认不联网安装 venv 依赖
+build_installer.bat
 ```
-产物：installer\output\Mework-Setup-2.2.x.exe（实测约 780 MB，LZMA2 压缩，编译约 10-12 分钟）
+`build_installer.bat` 会生成 `installer\version.iss` 和 `installer\output\release-manifest.json`，并在编译前校验版本、关键运行时文件、SHA256 和 Junction。不要直接运行 `ISCC.exe installer\Mework.iss`，因为 `version.iss` 是构建时生成文件。
+产物：installer\output\Mework-Setup-{当前版本}.exe（实际大小取决于随包模型和运行时）。
 
 ## 发行包内容（Mework.iss 已配置）
 - start.bat / setup_runtime.bat / ensure_env.bat / start_mysql.bat / .env.example
@@ -27,12 +25,14 @@ mvn -f pom.xml clean package -DskipTests -Ddelivery.jar.name=mixcut-delivery
 - release-notes.json
 - portable\*（JDK17 / MySQL8+mysqldata[已含 ai_mix_video 全量 schema 与 mixcut 用户] / FFmpeg / Maven / backend\.venv）
 
-## 首次启动（全自动，无人工）
-- ensure_env.bat：无 .env 时自动生成（DB_URL=jdbc:mysql://127.0.0.1:3306/ai_mix_video，DB_USERNAME=mixcut，DB_PASSWORD 为内置本地强口令，与 portable\mysqldata 中 mixcut 用户一致）
-- start_mysql.bat：3306 已有 MySQL 则直接复用；否则用便携 MySQL 自动拉起（my.ini 生成于 data\mysql.ini，日志 data\logs\mysql.log），最多等 60 秒
-- start.bat：便携 JDK17 优先 → 校验 jar → 拉起 MySQL → venv 媒体依赖 bootstrap → 启动后端
-- 便携 FFmpeg 优先，缺则系统
-- venv 缺失自动创建 + bootstrap 装依赖
+## 启动与修复边界
+- `ensure_env.bat`：仅在缺少本机 `.env` 时生成默认本地配置和密钥；这是本地配置写入，不是联网安装。
+- `start_mysql.bat`：3306 已有 MySQL 则直接复用；否则用便携 MySQL 自动拉起，配置和日志写入应用 `data` 目录。
+- `start.bat`：便携 JDK17 优先 → 校验 JAR → 拉起 MySQL → **离线 verify 媒体运行时** → 启动后端；缺依赖时只告警，不自动 pip 安装。
+- `setup_runtime.bat verify`：只检查现有 venv、模块和便携运行时，不创建 venv、不联网。
+- `setup_runtime.bat repair`：用户明确选择后，才创建 venv 并执行 requirements 固定版本安装；修复日志位于 `data\logs\dependency-bootstrap.log`。
+- 便携 FFmpeg 优先，缺则系统；缺失时能力中心会显示明确状态。
+- `prepare_portable.ps1 -Copy` 默认只复制已准备好的 venv；构建机需要联网修复时必须显式传 `-RepairDependencies`。
 
 ## 能力交付边界
 - Windows x64 安装包必须预置 Java 17、MySQL 8、FFmpeg/FFprobe、Python 媒体运行时、yt-dlp、you-get、gallery-dl、Demucs、Rembg、Auto-Editor、OpenCV、whisper.cpp 与 ImageMagick；`build_installer.bat` 会在这些文件或基础 Python 模块缺失时直接失败（含便携 Python `portable\python\python.exe` 与离线转写模型缓存 `portable\whisper-models\hub\models--Systran--faster-whisper-small`）。
@@ -42,7 +42,6 @@ mvn -f pom.xml clean package -DskipTests -Ddelivery.jar.name=mixcut-delivery
 - ChatTTS 仅在随包运行时已经可用时显示“已安装可用”。当前不向浏览器提供 ChatTTS 的一键 pip 安装，避免不同 Python/PyTorch/Rust 组合造成不可复现安装。
 
 ## 版本记录
-每次发布前：cd backend && python tools/release_notes.py new --title "..."，填 pending，check，apply（自动生成新版本号），
-再改 installer\Mework.iss 的 AppVersion 并重编译安装器。
-注意：jar 内部版本来自 backend\src\main\java\com\douyin\mixcut\config\AppProps.java 的 version 字段，
-发布时确保它与 release-notes 最新版本号一致（2.2.36 起已对齐）。
+每次发布前：`cd backend && python tools/release_notes.py new --title "..."`，填 pending，check，apply（自动生成新版本号）。
+不要手工修改 `installer\Mework.iss` 的版本；`build_installer.bat` 会从 `release-notes.json` 读取当前版本，和 `AppProps.RELEASE_VERSION` 比较后生成 `installer\version.iss`。
+构建失败表示版本不一致，不能继续生成安装器。历史记录中的旧版本（例如 2.2.100）保留在 release history 中，不代表当前发行版本。

@@ -96,8 +96,24 @@ if not "%VERIFY_RESULT%"=="0" (
   exit /b 1
 )
 
-REM 5) Compile installer.
-echo [5/5] Compile installer...
+REM 5) Generate one version include and verify the release manifest inputs.
+echo [5/7] Generate release version and manifest...
+if not exist "%APP_DIR%installer\output" mkdir "%APP_DIR%installer\output"
+powershell -ExecutionPolicy Bypass -File "%APP_DIR%installer\generate_version_include.ps1" -Root "%APP_DIR%" -OutputPath "%APP_DIR%installer\version.iss"
+if errorlevel 1 (
+  echo [ERROR] Release version mismatch; installer was not built.
+  pause
+  exit /b 1
+)
+powershell -ExecutionPolicy Bypass -File "%APP_DIR%installer\generate_release_manifest.ps1" -Root "%APP_DIR%" -OutputPath "%APP_DIR%installer\output\release-manifest.json"
+if errorlevel 1 (
+  echo [ERROR] Release manifest verification failed; installer was not built.
+  pause
+  exit /b 1
+)
+
+REM 6) Compile installer.
+echo [6/7] Compile installer...
 set "APP_ROOT=%APP_DIR:~0,-1%"
 subst X: /d >nul 2>nul
 subst X: "%APP_ROOT%" >nul
