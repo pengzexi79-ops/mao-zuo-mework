@@ -39,13 +39,15 @@ class CapabilityManifestTest {
     @Test
     void loadsVersionedManifestWithAllExpectedCapabilities() {
         CapabilityManifest manifest = CapabilityManifest.load();
-        assertTrue(manifest.schemaVersion() >= 1, "schemaVersion 必须 >= 1");
+        assertTrue(manifest.schemaVersion() >= 2, "schemaVersion 必须 >= 2");
         assertTrue(!manifest.manifestVersion().isBlank(), "manifestVersion 不能为空");
         assertEquals(EXPECTED_KEYS.size(), manifest.size(), "能力数量与既有清单约定一致");
         Set<String> keys = new HashSet<>();
         for (CapabilityManifest.Entry entry : manifest.entries()) {
             keys.add(entry.key());
             assertTrue(entry.name() != null && !entry.name().isBlank());
+            assertTrue(entry.executionPolicy() != null && !entry.executionPolicy().isBlank());
+            assertTrue(entry.verifySteps() != null && !entry.verifySteps().isEmpty());
             if (entry.isExternal()) {
                 assertTrue(entry.installMode() != null && !entry.installMode().isBlank());
                 assertTrue(entry.officialUrl() != null && !entry.officialUrl().isBlank());
