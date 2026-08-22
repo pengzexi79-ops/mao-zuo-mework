@@ -89,6 +89,11 @@ public class FfmpegTool {
 
     /** 读取媒体信息 */
     public MediaInfo probe(String file) {
+        return probe(file, ProcessRegistry.CancellationContext.none());
+    }
+
+    public MediaInfo probe(String file, ProcessRegistry.CancellationContext context) {
+        context.throwIfCancelled();
         Path path = Path.of(file == null ? "" : file).toAbsolutePath().normalize();
         try {
             if (java.nio.file.Files.isRegularFile(path)) {
@@ -105,6 +110,7 @@ public class FfmpegTool {
         List<String> cmd = List.of(props.getFfprobe(), "-v", "error",
                 "-print_format", "json", "-show_format", "-show_streams", file);
         ProcRunner.SeparateResult r = runner.runSeparate(cmd, 60);
+        context.throwIfCancelled();
         if (!r.ok()) {
             log.warn("probe command failed {}: {}", file, tail(r.err()));
             return info;
@@ -443,11 +449,22 @@ public class FfmpegTool {
      * 统一规格是拼接不炸的前提——这一步偷懒后面 concat 一定出问题。
      */
     public boolean cutNormalize(String src, double start, double dur, int w, int h, double fps, Path dst) {
-        return cutNormalize(src, start, dur, w, h, fps, false, dst);
+        return cutNormalize(src, start, dur, w, h, fps, dst, ProcessRegistry.CancellationContext.none());
+    }
+
+    public boolean cutNormalize(String src, double start, double dur, int w, int h, double fps, Path dst,
+                                ProcessRegistry.CancellationContext context) {
+        return cutNormalize(src, start, dur, w, h, fps, false, dst, context);
     }
 
     /** Normalizes one source segment; preserving audio also pads silent sources for concat compatibility. */
     public boolean cutNormalize(String src, double start, double dur, int w, int h, double fps, boolean preserveAudio, Path dst) {
+        return cutNormalize(src, start, dur, w, h, fps, preserveAudio, dst, ProcessRegistry.CancellationContext.none());
+    }
+
+    public boolean cutNormalize(String src, double start, double dur, int w, int h, double fps, boolean preserveAudio, Path dst,
+                                ProcessRegistry.CancellationContext context) {
+        context.throwIfCancelled();
         String vf = String.format(
                 "scale=%d:%d:force_original_aspect_ratio=increase,crop=%d:%d,setsar=1,fps=%s,format=yuv420p",
                 w, h, w, h, trimNum(fps));
@@ -456,7 +473,8 @@ public class FfmpegTool {
                 "-ss", trimNum(start),
                 "-t", trimNum(dur),
                 "-i", src));
-        boolean sourceHasAudio = preserveAudio && probe(src).isHasAudio();
+        boolean sourceHasAudio = preserveAudio && probe(src, context).isHasAudio();
+        context.throwIfCancelled();
         if (preserveAudio && !sourceHasAudio) cmd.addAll(List.of("-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100"));
         cmd.addAll(List.of("-vf", vf));
         if (preserveAudio) {
@@ -469,7 +487,9 @@ public class FfmpegTool {
                 "-c:v", "libx264", "-preset", "veryfast", "-crf", "26",
                 "-video_track_timescale", "90000",
                 dst.toString()));
+        context.throwIfCancelled();
         ProcRunner.Result r = runner.run(cmd, 120);
+        context.throwIfCancelled();
         if (!r.ok()) log.warn("cutNormalize failed [{}]: {}", src, tail(r.out()));
         return r.ok() && dst.toFile().exists() && dst.toFile().length() > 1024;
     }
@@ -480,6 +500,12 @@ public class FfmpegTool {
      * into FFmpeg's filter graph and never accepts a raw filter string from a browser.
      */
     public boolean editVideoRanges(String src, List<double[]> ranges, boolean keepAudio, Path dst) {
+        return editVideoRanges(src, ranges, keepAudio, dst, ProcessRegistry.CancellationContext.none());
+    }
+
+    public boolean editVideoRanges(String src, List<double[]> ranges, boolean keepAudio, Path dst,
+                                   ProcessRegistry.CancellationContext context) {
+        context.throwIfCancelled();
         if (ranges == null || ranges.isEmpty()) return false;
         List<String> filters = new ArrayList<>();
         StringBuilder videoInputs = new StringBuilder();
@@ -498,6 +524,7 @@ public class FfmpegTool {
                 audioInputs.append("[a").append(index).append("]");
             }
         }
+        context.throwIfCancelled();
         int count = ranges.size();
         filters.add(videoInputs + "concat=n=" + count + ":v=1:a=0[vout]");
         if (keepAudio) filters.add(audioInputs + "concat=n=" + count + ":v=0:a=1[aout]");
@@ -507,18 +534,28 @@ public class FfmpegTool {
         else cmd.add("-an");
         cmd.addAll(List.of("-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
                 "-movflags", "+faststart", "-video_track_timescale", "90000", dst.toString()));
+        context.throwIfCancelled();
         ProcRunner.Result result = runner.run(cmd, 1800);
+        context.throwIfCancelled();
         if (!result.ok()) log.warn("editVideoRanges failed: {}", tail(result.out()));
         return result.ok() && dst.toFile().exists() && dst.toFile().length() > 1024;
     }
 
     /** Applies a user-confirmed rectangle over one image and writes a new PNG. */
     public boolean coverImageRect(String src, int x, int y, int width, int height, String color, Path dst) {
+        return coverImageRect(src, x, y, width, height, color, dst, ProcessRegistry.CancellationContext.none());
+    }
+
+    public boolean coverImageRect(String src, int x, int y, int width, int height, String color, Path dst,
+                                  ProcessRegistry.CancellationContext context) {
+        context.throwIfCancelled();
         if (width < 1 || height < 1 || x < 0 || y < 0) return false;
         String filter = String.format(Locale.ROOT, "drawbox=x=%d:y=%d:w=%d:h=%d:color=%s:t=fill", x, y, width, height, color);
         List<String> cmd = List.of(props.getFfmpeg(), "-y", "-i", src, "-vf", filter,
                 "-frames:v", "1", "-f", "image2", dst.toString());
+        context.throwIfCancelled();
         ProcRunner.Result result = runner.run(cmd, 180);
+        context.throwIfCancelled();
         if (!result.ok()) log.warn("coverImageRect failed: {}", tail(result.out()));
         return result.ok() && dst.toFile().exists() && dst.toFile().length() > 128;
     }
@@ -526,6 +563,14 @@ public class FfmpegTool {
     /** Applies a user-confirmed fixed rectangle over a video for a bounded time range. */
     public boolean coverVideoRect(String src, int x, int y, int width, int height, String color,
                                   double start, double end, Path dst) {
+        return coverVideoRect(src, x, y, width, height, color, start, end, dst,
+                ProcessRegistry.CancellationContext.none());
+    }
+
+    public boolean coverVideoRect(String src, int x, int y, int width, int height, String color,
+                                  double start, double end, Path dst,
+                                  ProcessRegistry.CancellationContext context) {
+        context.throwIfCancelled();
         if (width < 1 || height < 1 || start < 0 || end <= start) return false;
         String enable = String.format(Locale.ROOT, "between(t,%s,%s)", trimNum(start), trimNum(end));
         String filter = String.format(Locale.ROOT, "drawbox=x=%d:y=%d:w=%d:h=%d:color=%s:t=fill:enable='%s'",
@@ -533,7 +578,9 @@ public class FfmpegTool {
         List<String> cmd = List.of(props.getFfmpeg(), "-y", "-i", src, "-vf", filter,
                 "-map", "0:v:0", "-map", "0:a:0?", "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
                 "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", dst.toString());
+        context.throwIfCancelled();
         ProcRunner.Result result = runner.run(cmd, 1800);
+        context.throwIfCancelled();
         if (!result.ok()) log.warn("coverVideoRect failed: {}", tail(result.out()));
         return result.ok() && dst.toFile().exists() && dst.toFile().length() > 1024;
     }
@@ -908,10 +955,18 @@ public class FfmpegTool {
 
     /** 抽缩略图 */
     public boolean thumbnail(String src, Path dst, double at) {
+        return thumbnail(src, dst, at, ProcessRegistry.CancellationContext.none());
+    }
+
+    public boolean thumbnail(String src, Path dst, double at, ProcessRegistry.CancellationContext context) {
+        context.throwIfCancelled();
         List<String> cmd = List.of(props.getFfmpeg(), "-y",
                 "-ss", trimNum(at), "-i", src,
                 "-frames:v", "1", "-vf", "scale=360:-2", dst.toString());
-        return runner.run(cmd, 60).ok();
+        context.throwIfCancelled();
+        boolean ok = runner.run(cmd, 60).ok();
+        context.throwIfCancelled();
+        return ok;
     }
 
     /** 抽取分析缓存帧；与素材列表缩略图共用受控的 ffmpeg 调用和超时边界。 */

@@ -5,6 +5,7 @@ import com.douyin.mixcut.domain.Material;
 import com.douyin.mixcut.domain.MaterialRole;
 import com.douyin.mixcut.external.FfmpegTool;
 import com.douyin.mixcut.external.ProcRunner;
+import com.douyin.mixcut.external.ProcessRegistry;
 import com.douyin.mixcut.repository.MaterialStore;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -53,7 +54,7 @@ class AudioEngineServiceTest {
         FfmpegTool.MediaInfo info = new FfmpegTool.MediaInfo();
         info.setHasAudio(true);
         info.setAudioDuration(12);
-        when(ffmpeg.probe(sourceFile.toString())).thenReturn(info);
+        when(ffmpeg.probe(org.mockito.ArgumentMatchers.eq(sourceFile.toString()), any(ProcessRegistry.CancellationContext.class))).thenReturn(info);
         when(runner.run(any(), anyLong())).thenAnswer(invocation -> {
             List<String> cmd = invocation.getArgument(0);
             if (cmd.contains("-c") && cmd.contains("import demucs")) return new ProcRunner.Result(0, "ok");
@@ -71,7 +72,7 @@ class AudioEngineServiceTest {
             }
             return new ProcRunner.Result(1, "unexpected");
         });
-        when(materialService.register(argThat(path -> path.endsWith(".wav")), any(), any(Boolean.class), any(), any()))
+        when(materialService.register(argThat(path -> path.endsWith(".wav")), any(), any(Boolean.class), any(), any(), any(ProcessRegistry.CancellationContext.class)))
                 .thenAnswer(invocation -> {
                     Material material = new Material();
                     material.setFilePath(invocation.getArgument(0));
@@ -89,6 +90,21 @@ class AudioEngineServiceTest {
         assertEquals(MaterialRole.bgm, result.getInstrumental().getRole());
         assertTrue(Files.exists(Path.of(result.getVocals().getFilePath())));
         assertTrue(Files.exists(Path.of(result.getInstrumental().getFilePath())));
+    }
+
+    @Test
+    void cancellationBeforeSeparationDoesNotCreateStemFiles() throws Exception {
+        AppProps props = new AppProps();
+        props.setDataDir(temp.resolve("data").toString());
+        props.setMaterialsDir(temp.resolve("data/materials").toString());
+        props.setLocalPython("python");
+        ProcessRegistry registry = new ProcessRegistry();
+        ProcessRegistry.CancellationContext context = registry.create("cancelled-separation");
+        registry.cancel(context);
+        AudioEngineService service = new AudioEngineService(props, runner, ffmpeg, materialRepo, materialService, ttsService);
+
+        assertThrows(java.util.concurrent.CancellationException.class, () -> service.separateMaterial(8L, context));
+        assertTrue(Files.notExists(temp.resolve("data/materials/media-tools/generated-audio")));
     }
 
     @Test

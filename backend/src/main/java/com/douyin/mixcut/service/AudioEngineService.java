@@ -5,6 +5,7 @@ import com.douyin.mixcut.domain.Material;
 import com.douyin.mixcut.domain.MaterialRole;
 import com.douyin.mixcut.external.FfmpegTool;
 import com.douyin.mixcut.external.ProcRunner;
+import com.douyin.mixcut.external.ProcessRegistry;
 import com.douyin.mixcut.repository.MaterialStore;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
@@ -62,6 +63,11 @@ public class AudioEngineService {
     }
 
     public SeparationResult separateMaterial(Long materialId) {
+        return separateMaterial(materialId, ProcessRegistry.CancellationContext.none());
+    }
+
+    public SeparationResult separateMaterial(Long materialId, ProcessRegistry.CancellationContext context) {
+        context.throwIfCancelled();
         Material source = materialRepo.findById(materialId)
                 .orElseThrow(() -> new IllegalArgumentException("素材不存在"));
         if (source.getFileType() != Material.FileType.audio && source.getFileType() != Material.FileType.video) {
@@ -71,26 +77,35 @@ public class AudioEngineService {
         if (!Files.isRegularFile(sourcePath, LinkOption.NOFOLLOW_LINKS) || Files.isSymbolicLink(sourcePath)) {
             throw new IllegalArgumentException("素材文件不可读取或不是普通文件");
         }
-        FfmpegTool.MediaInfo info = ffmpeg.probe(sourcePath.toString());
+        FfmpegTool.MediaInfo info = ffmpeg.probe(sourcePath.toString(), context);
+        context.throwIfCancelled();
         if (!info.isHasAudio() || info.getAudioDuration() <= 0) throw new IllegalArgumentException("素材没有可分离的音轨");
+        context.throwIfCancelled();
         if (!demucsAvailable()) throw new IllegalStateException("人声分离能力不可用：请在能力中心修复 Demucs");
+        context.throwIfCancelled();
 
         String base = safeBaseName(source.getName() == null ? sourcePath.getFileName().toString() : source.getName());
         long stamp = System.currentTimeMillis();
         Path work = props.cache().resolve("audio-engine").resolve("sep-" + source.getId() + "-" + stamp);
         Path finalDir = props.mediaToolsOutput().resolve("generated-audio");
+        Path vocalsFinal = null;
+        Path instrumentalFinal = null;
         try {
             Files.createDirectories(work);
             Files.createDirectories(finalDir);
             Path input = work.resolve("input.wav");
+            context.throwIfCancelled();
             ProcRunner.Result extract = runner.run(List.of(props.getFfmpeg(), "-y", "-i", sourcePath.toString(),
                     "-vn", "-ac", "2", "-ar", "44100", input.toString()), 600);
+            context.throwIfCancelled();
             if (!extract.ok() || !Files.isRegularFile(input) || Files.size(input) < 1024) {
                 throw new IllegalStateException("音频提取失败：" + concise(extract.out()));
             }
             Path demucsOut = work.resolve("demucs");
+            context.throwIfCancelled();
             ProcRunner.Result separated = runner.run(List.of(props.localPythonPath(), "-m", "demucs",
                     "--two-stems", "vocals", "-o", demucsOut.toString(), input.toString()), 3600);
+            context.throwIfCancelled();
             if (!separated.ok()) throw new IllegalStateException("Demucs 分离失败：" + concise(separated.out()));
 
             Path vocals = findStem(demucsOut, "vocals.wav");
@@ -98,22 +113,31 @@ public class AudioEngineService {
             if (vocals == null || instrumental == null) {
                 throw new IllegalStateException("Demucs 未生成标准 vocals/no_vocals 输出");
             }
-            Path vocalsFinal = finalDir.resolve(base + "_vocals_" + stamp + ".wav");
-            Path instrumentalFinal = finalDir.resolve(base + "_instrumental_" + stamp + ".wav");
+            vocalsFinal = finalDir.resolve(base + "_vocals_" + stamp + ".wav");
+            instrumentalFinal = finalDir.resolve(base + "_instrumental_" + stamp + ".wav");
+            context.throwIfCancelled();
             Files.copy(vocals, vocalsFinal, StandardCopyOption.REPLACE_EXISTING);
+            context.throwIfCancelled();
             Files.copy(instrumental, instrumentalFinal, StandardCopyOption.REPLACE_EXISTING);
+            context.throwIfCancelled();
 
-            Material vocalsMaterial = materialService.register(vocalsFinal.toString(), source.getFolderId(), false, Material.Source.generated, null);
+            Material vocalsMaterial = materialService.register(vocalsFinal.toString(), source.getFolderId(), false, Material.Source.generated, null, context);
             vocalsMaterial.setName(base + " 人声分离");
             vocalsMaterial.setRole(MaterialRole.voice);
             vocalsMaterial.setTags(appendTag(source.getTags(), "人声分离,Demucs,vocals,source#" + source.getId()));
+            context.throwIfCancelled();
             vocalsMaterial = materialRepo.save(vocalsMaterial);
+            context.throwIfCancelled();
 
-            Material instrumentalMaterial = materialService.register(instrumentalFinal.toString(), source.getFolderId(), false, Material.Source.generated, null);
+            context.throwIfCancelled();
+            Material instrumentalMaterial = materialService.register(instrumentalFinal.toString(), source.getFolderId(), false, Material.Source.generated, null, context);
+            context.throwIfCancelled();
             instrumentalMaterial.setName(base + " 伴奏分离");
             instrumentalMaterial.setRole(MaterialRole.bgm);
             instrumentalMaterial.setTags(appendTag(source.getTags(), "人声分离,Demucs,instrumental,source#" + source.getId()));
+            context.throwIfCancelled();
             instrumentalMaterial = materialRepo.save(instrumentalMaterial);
+            context.throwIfCancelled();
 
             SeparationResult result = new SeparationResult();
             result.setSourceName(source.getName());
@@ -121,13 +145,22 @@ public class AudioEngineService {
             result.setInstrumental(instrumentalMaterial);
             result.setMessage("已分离人声和伴奏，并作为素材入库");
             return result;
-        } catch (IllegalArgumentException | IllegalStateException e) {
+        } catch (RuntimeException | Error e) {
+            deleteIfExists(vocalsFinal);
+            deleteIfExists(instrumentalFinal);
             throw e;
         } catch (Exception e) {
+            deleteIfExists(vocalsFinal);
+            deleteIfExists(instrumentalFinal);
             throw new IllegalStateException("音频分离处理失败：" + e.getMessage(), e);
         } finally {
             deleteTree(work);
         }
+    }
+
+    private void deleteIfExists(Path path) {
+        if (path == null) return;
+        try { Files.deleteIfExists(path); } catch (Exception cleanup) { log.debug("audio output cleanup failed: {}", cleanup.toString()); }
     }
 
     private boolean demucsAvailable() {
