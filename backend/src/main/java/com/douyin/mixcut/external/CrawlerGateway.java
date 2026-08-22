@@ -60,17 +60,20 @@ public class CrawlerGateway {
     private final AppProps props;
     private final ProcRunner runner;
     private final WikimediaSourceAdapter wikimediaAdapter;
+    private final InternetArchiveSourceAdapter archiveAdapter;
     private final ObjectMapper om = new ObjectMapper();
 
     public CrawlerGateway(AppProps props, ProcRunner runner) {
-        this(props, runner, new WikimediaSourceAdapter());
+        this(props, runner, new WikimediaSourceAdapter(), new InternetArchiveSourceAdapter());
     }
 
     @Autowired
-    public CrawlerGateway(AppProps props, ProcRunner runner, WikimediaSourceAdapter wikimediaAdapter) {
+    public CrawlerGateway(AppProps props, ProcRunner runner, WikimediaSourceAdapter wikimediaAdapter,
+                          InternetArchiveSourceAdapter archiveAdapter) {
         this.props = props;
         this.runner = runner;
         this.wikimediaAdapter = wikimediaAdapter;
+        this.archiveAdapter = archiveAdapter;
     }
 
     private static final String UA =
@@ -675,43 +678,8 @@ public class CrawlerGateway {
     }
 
     private List<RemoteItem> internetArchive(String kw, int limit, String type) {
-        String mediaType = "video".equals(type) ? "movies" : "audio";
-        String phrase = kw == null || kw.isBlank() ? "video footage" : kw.trim().replace('"', ' ');
-        String searchUrl = "https://archive.org/advancedsearch.php?q=" + enc("mediatype:" + mediaType + " AND title:(\"" + phrase + "\")")
-                + "&fl[]=identifier&fl[]=title&fl[]=licenseurl&rows=" + Math.min(10, Math.max(1, limit)) + "&output=json";
-        JsonNode docs = QUICK_PUBLIC_SEARCH.get() ? getJsonQuick(searchUrl) : getJson(searchUrl);
-        if (docs == null) return List.of();
-        List<RemoteItem> out = new ArrayList<>();
-        for (JsonNode doc : docs.path("response").path("docs")) {
-            String id = doc.path("identifier").asText("");
-            String licenseUrl = doc.path("licenseurl").asText("");
-            if (id.isBlank() || !isWhitelistedLicense(licenseUrl)) continue;
-            JsonNode meta = QUICK_PUBLIC_SEARCH.get()
-                    ? getJsonQuick("https://archive.org/metadata/" + encPath(id))
-                    : getJson("https://archive.org/metadata/" + encPath(id));
-            if (meta == null) continue;
-            for (JsonNode file : meta.path("files")) {
-                String name = file.path("name").asText("");
-                String lower = name.toLowerCase(Locale.ROOT);
-                boolean accepted = "audio".equals(type)
-                        ? lower.matches(".*\\.(mp3|ogg|opus|wav|flac|m4a|aac)$")
-                        : lower.matches(".*\\.(mp4|webm|mkv|mov|avi|m4v)$");
-                if (!accepted || isDemoPlaceholderTitle(name)) continue;
-                RemoteItem item = new RemoteItem();
-                item.setSource("archive");
-                item.setType(type);
-                item.setTitle(doc.path("title").asText(id) + " · " + name);
-                item.setPageUrl("https://archive.org/details/" + encPath(id));
-                item.setDownloadUrl("https://archive.org/download/" + encPath(id) + "/" + encPath(name));
-                item.setPreviewUrl(item.getDownloadUrl());
-                item.setDuration(file.path("length").asDouble(0) > 0 ? file.path("length").asDouble() : null);
-                item.setLicense(licenseLabel(licenseUrl));
-                item.setLicenseUrl(licenseUrl);
-                out.add(item);
-                break;
-            }
-        }
-        return out;
+        RemoteSourceAdapter.JsonFetcher fetcher = url -> QUICK_PUBLIC_SEARCH.get() ? getJsonQuick(url) : getJson(url);
+        return archiveAdapter.search(kw, type, limit, fetcher);
     }
 
     /**
