@@ -63,6 +63,16 @@ public class AppProps {
     /** 显式本地 AI Provider 可用的回环端口白名单。 */
     private String localAiAllowedPorts = "11434";
 
+    /** Shared outbound network limits; individual callers may only tighten these values. */
+    private int networkConnectTimeoutSec = 20;
+    private int networkReadTimeoutSec = 30;
+    private int networkTotalTimeoutSec = 120;
+    private int networkMaxRedirects = 3;
+    private int networkMaxRetries = 2;
+    private int networkRetryBackoffMs = 400;
+    private long networkMaxResponseBytes = 2_000_000L;
+    private long networkMaxDownloadBytes = 200_000_000L;
+
     /** Optional shared token. An empty value keeps local development login-free. */
     private String accessToken = "";
 
