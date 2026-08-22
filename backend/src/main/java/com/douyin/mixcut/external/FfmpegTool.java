@@ -4,8 +4,8 @@ import com.douyin.mixcut.config.AppProps;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.Data;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.nio.file.Path;
@@ -22,12 +22,23 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class FfmpegTool {
 
     private final AppProps props;
     private final ProcRunner runner;
+    private final TaskAwareProcRunner taskRunner;
     private final ObjectMapper om = new ObjectMapper();
+
+    public FfmpegTool(AppProps props, ProcRunner runner) {
+        this(props, runner, null);
+    }
+
+    @Autowired
+    public FfmpegTool(AppProps props, ProcRunner runner, TaskAwareProcRunner taskRunner) {
+        this.props = props;
+        this.runner = runner;
+        this.taskRunner = taskRunner;
+    }
     private final Map<String, CachedProbe> probeCache = new ConcurrentHashMap<>();
     private static final long PROBE_CACHE_MS = 30_000;
 
@@ -109,7 +120,7 @@ public class FfmpegTool {
         MediaInfo info = new MediaInfo();
         List<String> cmd = List.of(props.getFfprobe(), "-v", "error",
                 "-print_format", "json", "-show_format", "-show_streams", file);
-        ProcRunner.SeparateResult r = runner.runSeparate(cmd, 60);
+        ProcRunner.SeparateResult r = runTaskSeparate(cmd, 60, context);
         context.throwIfCancelled();
         if (!r.ok()) {
             log.warn("probe command failed {}: {}", file, tail(r.err()));
@@ -488,7 +499,7 @@ public class FfmpegTool {
                 "-video_track_timescale", "90000",
                 dst.toString()));
         context.throwIfCancelled();
-        ProcRunner.Result r = runner.run(cmd, 120);
+        ProcRunner.Result r = runTask(cmd, 120, context);
         context.throwIfCancelled();
         if (!r.ok()) log.warn("cutNormalize failed [{}]: {}", src, tail(r.out()));
         return r.ok() && dst.toFile().exists() && dst.toFile().length() > 1024;
@@ -535,7 +546,7 @@ public class FfmpegTool {
         cmd.addAll(List.of("-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
                 "-movflags", "+faststart", "-video_track_timescale", "90000", dst.toString()));
         context.throwIfCancelled();
-        ProcRunner.Result result = runner.run(cmd, 1800);
+        ProcRunner.Result result = runTask(cmd, 1800, context);
         context.throwIfCancelled();
         if (!result.ok()) log.warn("editVideoRanges failed: {}", tail(result.out()));
         return result.ok() && dst.toFile().exists() && dst.toFile().length() > 1024;
@@ -554,7 +565,7 @@ public class FfmpegTool {
         List<String> cmd = List.of(props.getFfmpeg(), "-y", "-i", src, "-vf", filter,
                 "-frames:v", "1", "-f", "image2", dst.toString());
         context.throwIfCancelled();
-        ProcRunner.Result result = runner.run(cmd, 180);
+        ProcRunner.Result result = runTask(cmd, 180, context);
         context.throwIfCancelled();
         if (!result.ok()) log.warn("coverImageRect failed: {}", tail(result.out()));
         return result.ok() && dst.toFile().exists() && dst.toFile().length() > 128;
@@ -579,7 +590,7 @@ public class FfmpegTool {
                 "-map", "0:v:0", "-map", "0:a:0?", "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
                 "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", dst.toString());
         context.throwIfCancelled();
-        ProcRunner.Result result = runner.run(cmd, 1800);
+        ProcRunner.Result result = runTask(cmd, 1800, context);
         context.throwIfCancelled();
         if (!result.ok()) log.warn("coverVideoRect failed: {}", tail(result.out()));
         return result.ok() && dst.toFile().exists() && dst.toFile().length() > 1024;
@@ -964,7 +975,7 @@ public class FfmpegTool {
                 "-ss", trimNum(at), "-i", src,
                 "-frames:v", "1", "-vf", "scale=360:-2", dst.toString());
         context.throwIfCancelled();
-        boolean ok = runner.run(cmd, 60).ok();
+        boolean ok = runTask(cmd, 60, context).ok();
         context.throwIfCancelled();
         return ok;
     }
@@ -977,6 +988,16 @@ public class FfmpegTool {
     public static String trimNum(double d) {
         if (d == Math.rint(d) && !Double.isInfinite(d)) return String.valueOf((long) d);
         return String.format(java.util.Locale.US, "%.3f", d);
+    }
+
+    private ProcRunner.Result runTask(List<String> command, long timeoutSec,
+                                      ProcessRegistry.CancellationContext context) {
+        return taskRunner == null ? runner.run(command, timeoutSec) : taskRunner.run(command, timeoutSec, context);
+    }
+
+    private ProcRunner.SeparateResult runTaskSeparate(List<String> command, long timeoutSec,
+                                                       ProcessRegistry.CancellationContext context) {
+        return taskRunner == null ? runner.runSeparate(command, timeoutSec) : taskRunner.runSeparate(command, timeoutSec, context);
     }
 
     private String tail(String s) {
