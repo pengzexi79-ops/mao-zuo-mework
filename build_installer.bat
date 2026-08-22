@@ -111,6 +111,12 @@ if errorlevel 1 (
   pause
   exit /b 1
 )
+powershell -NoProfile -ExecutionPolicy Bypass -File "%APP_DIR%verify_offline_bundle.ps1" -BundleRoot "%APP_DIR%" -ManifestPath "%APP_DIR%installer\output\release-manifest.json"
+if errorlevel 1 (
+  echo [ERROR] Offline media smoke test failed; installer was not built.
+  pause
+  exit /b 1
+)
 
 REM 6) Compile installer.
 echo [6/7] Compile installer...
