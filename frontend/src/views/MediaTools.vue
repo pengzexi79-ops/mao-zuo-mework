@@ -173,7 +173,7 @@
         <article v-for="row in tasks" :key="row.id" class="task-card">
           <div class="task-summary">
             <div><b>{{ taskKind(row.kind) }}</b><span class="muted">{{ row.engine || '本地引擎' }}</span></div>
-            <el-tag :type="taskType(row.status)">{{ taskLabel(row.status) }}</el-tag>
+            <div class="task-summary-actions"><el-tag :type="taskType(row.status)">{{ taskLabel(row.status) }}</el-tag><el-popconfirm v-if="['pending','running'].includes(row.status)" title="取消此媒体任务？已生成的源素材不会删除。" @confirm="cancelTask(row)"><template #reference><el-button link type="warning" size="small">取消</el-button></template></el-popconfirm></div>
           </div>
           <el-progress :percentage="row.progress || 0" :status="row.status === 'failed' ? 'exception' : row.status === 'done' ? 'success' : undefined" />
           <p class="task-message">{{ row.message || '等待处理' }}</p>
@@ -369,6 +369,11 @@ async function copyPath (path) {
   } catch {
     ElMessage.warning('浏览器不允许直接复制，请手动选择路径')
   }
+}
+
+async function cancelTask (row) {
+  try { await api.cancelMediaToolTask(row.id); await loadTasks(); ElMessage.success('媒体任务已取消') }
+  catch (error) { ElMessage.error(error.message || '取消媒体任务失败') }
 }
 
 async function loadTasks () {
@@ -787,7 +792,7 @@ onBeforeUnmount(() => {
 
 .task-list { display: flex; flex-direction: column; gap: 10px; }
 .task-card { min-width: 0; padding: 12px; border: 1px solid var(--el-border-color-lighter); border-radius: 8px; background: var(--el-bg-color-overlay, #fff); overflow: hidden; }
-.task-summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.task-summary-actions { display:flex; align-items:center; gap:6px; }.task-summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
 .task-summary div { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .task-message { margin: 8px 0; color: var(--el-text-color-regular); overflow-wrap: anywhere; }
 .task-path { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 8px; background: var(--el-fill-color-light); border-radius: 4px; font-size: 12px; }

@@ -264,6 +264,7 @@ export const api = {
   mediaToolOpenOutputDirectory: () => http.post('/api/media-tools/open-output-directory'),
   mediaToolTasks: (config) => get('/api/media-tools/tasks', config),
   mediaToolTask: (id, config) => get(`/api/media-tools/tasks/${id}`, config),
+  cancelMediaToolTask: (id) => http.post(`/api/media-tools/tasks/${id}/cancel`),
   uploadUrl: apiUrl('/api/materials/upload'),
   uploadHeaders: accessToken ? { 'X-Mixcut-Token': accessToken } : undefined,
   materialPreviewUrl: (id) => protectedUrl(`/api/materials/${id}/preview`),

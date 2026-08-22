@@ -53,6 +53,11 @@ public class MediaToolsController {
         return R.ok(service.recent());
     }
 
+    @PostMapping("/tasks/{id}/cancel")
+    public R<MediaToolsService.Task> cancel(@PathVariable String id) {
+        return R.ok(service.cancel(id));
+    }
+
     @GetMapping("/tasks/{id}")
     public R<MediaToolsService.Task> task(@PathVariable String id) {
         return R.ok(service.get(id));
