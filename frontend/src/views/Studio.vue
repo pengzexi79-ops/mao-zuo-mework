@@ -2327,9 +2327,21 @@ async function cancel(row) {
   await api.cancelJob(row.id)
   loadJobs()
 }
-function cancelPrepare() {
-  prepareCancelled.value = true
-  ElMessage.info('正在取消素材准备，将直接使用当前本地素材继续')
+async function cancelPrepare() {
+  const id = preparingSnapshot.value?.id
+  if (!id) {
+    prepareCancelled.value = true
+    ElMessage.info('当前准备任务尚未返回任务编号，已停止等待；后台不会被强制中断')
+    return
+  }
+  try {
+    const cancelled = await api.cancelPreparation(id)
+    preparingSnapshot.value = cancelled
+    prepareCancelled.value = true
+    ElMessage.info('准备任务已取消；已发起的公开素材任务不会被连带取消')
+  } catch (error) {
+    ElMessage.error(error.message || '取消准备失败，请稍后重试')
+  }
 }
 async function onJobRowDblClick(row) {
   const active = row.status === 'running' || row.status === 'pending' || row.status === 'paused' || row.status === 'awaiting_decision'

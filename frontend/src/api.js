@@ -358,6 +358,7 @@ export const api = {
   prepareRender: (body) => http.post('/api/jobs/prepare', body),
   // 异步出片准备轮询：POST /api/jobs/prepare 立即返回 { id, status }，此接口持续返回当前快照
   prepareRenderStatus: (id, config) => get(`/api/jobs/prepare/${id}`, config),
+  cancelPreparation: (id) => http.post(`/api/jobs/prepare/${id}/cancel`),
   recentPreparationTasks: (config) => get('/api/jobs/prepare', config),
   submitJob: (body) => http.post('/api/jobs', body),
   jobs: (config) => get('/api/jobs', config),

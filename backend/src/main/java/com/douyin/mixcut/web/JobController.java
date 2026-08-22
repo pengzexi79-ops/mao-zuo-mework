@@ -118,6 +118,12 @@ public class JobController {
         }
     }
 
+    @PostMapping("/prepare/{id}/cancel")
+    public R<RenderPreparationService.PrepareResult> cancelPreparation(@PathVariable Long id) {
+        try { return R.ok(renderPreparationService.cancel(id)); }
+        catch (IllegalArgumentException e) { return R.fail(e.getMessage() == null ? "准备任务取消失败" : e.getMessage()); }
+    }
+
     /** 最近出片准备任务列表（新的在前），便于前端恢复轮询或排查。 */
     @GetMapping("/prepare")
     public R<List<RenderPreparationService.PrepareResult>> prepareList() {

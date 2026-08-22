@@ -64,16 +64,36 @@ public class MediaGenerationService {
                     generationTaskRepo.save(persisted);
                 }
             }
-            for (MediaGenerationTask persisted : generationTaskRepo.findByStatusOrderByIdAsc("remote_submitted")) {
-                if (persisted.getRemoteTaskId() == null || persisted.getRemoteTaskId().isBlank()) continue;
-                persisted.setStatus("polling");
-                persisted.setPhase("polling");
-                persisted.setMessage("已恢复远端任务查询，不会重复提交生成请求");
-                persisted.setLastActivityAt(java.time.LocalDateTime.now());
-                generationTaskRepo.save(persisted);
+            for (MediaGenerationTask persisted : generationTaskRepo.findByPhaseAndRemoteTaskIdIsNotNullOrderByIdAsc("remote_submitted")) {
+                restoreVideoPolling(persisted);
+            }
+            for (MediaGenerationTask persisted : generationTaskRepo.findByPhaseAndRemoteTaskIdIsNotNullOrderByIdAsc("polling")) {
+                restoreVideoPolling(persisted);
             }
         } catch (Exception error) {
             // Database may be unavailable during setup mode; the next scheduled pass retries.
+        }
+    }
+
+    private void restoreVideoPolling(MediaGenerationTask persisted) {
+        try {
+            AiProvider provider = providers.findById(persisted.getProviderId())
+                    .orElseThrow(() -> new IllegalStateException("供应商已不存在，无法恢复远端视频任务"));
+            JsonNode snapshot = om.readTree(persisted.getInputSnapshot());
+            String prompt = snapshot.path("prompt").asText("");
+            String model = persisted.getModel();
+            String size = snapshot.path("size").asText("1280x720");
+            int seconds = snapshot.path("seconds").asInt(4);
+            Task task = fromPersisted(persisted);
+            tasks.put(task.getId(), task);
+            executor.execute(() -> pollVideoWorker(task, provider, model, persisted.getRemoteTaskId()));
+        } catch (Exception error) {
+            persisted.setStatus("failed_terminal");
+            persisted.setPhase("recovery_failed");
+            persisted.setError(concise(error));
+            persisted.setMessage("远端视频任务恢复失败：" + concise(error));
+            persisted.setLastActivityAt(java.time.LocalDateTime.now());
+            generationTaskRepo.save(persisted);
         }
     }
 
@@ -132,7 +152,7 @@ public class MediaGenerationService {
         String size = List.of("1024x1024", "1024x1536", "1536x1024").contains(request.getSize()) ? request.getSize() : "1024x1024";
         String quality = List.of("low", "medium", "high").contains(request.getQuality()) ? request.getQuality() : "medium";
         Task task = newTask("ai-image", "已确认官方计费，正在提交图片生成", provider, model,
-                Map.of("prompt", prompt, "size", size, "quality", quality));
+                Map.of("providerId", provider.getId(), "prompt", prompt, "model", model, "size", size, "quality", quality));
         executor.execute(() -> generateOpenAiImage(task, provider, prompt, model, size, quality));
         return task;
     }
@@ -146,7 +166,7 @@ public class MediaGenerationService {
         String size = List.of("1280x720", "720x1280", "1024x1024").contains(request.getSize()) ? request.getSize() : "1280x720";
         int seconds = request.getSeconds() == null ? 4 : Math.max(2, Math.min(12, request.getSeconds()));
         Task task = newTask("ai-video", "已确认官方计费，正在提交视频生成", provider, model,
-                Map.of("prompt", prompt, "size", size, "seconds", seconds));
+                Map.of("providerId", provider.getId(), "prompt", prompt, "model", model, "size", size, "seconds", seconds));
         executor.execute(() -> generateVideo(task, provider, prompt, model, size, seconds));
         return task;
     }
@@ -159,7 +179,7 @@ public class MediaGenerationService {
         String model = requiredModel(provider, "voice", request.getModel());
         String voice = List.of("alloy", "ash", "ballad", "coral", "echo", "fable", "onyx", "nova", "sage", "shimmer").contains(request.getVoice()) ? request.getVoice() : "coral";
         Task task = newTask("ai-voice", "已确认官方计费，正在生成配音", provider, model,
-                Map.of("input", input, "voice", voice, "instructions", request.getInstructions() == null ? "" : request.getInstructions().substring(0, Math.min(1000, request.getInstructions().length()))));
+                Map.of("providerId", provider.getId(), "input", input, "model", model, "voice", voice, "instructions", request.getInstructions() == null ? "" : request.getInstructions().substring(0, Math.min(1000, request.getInstructions().length()))));
         executor.execute(() -> generateVoice(task, provider, input, model, voice, request.getInstructions()));
         return task;
     }
@@ -229,15 +249,33 @@ public class MediaGenerationService {
             HttpURLConnection conn = openPost(endpoint(provider, "/v1/videos"), secret, "multipart/form-data; boundary=" + boundary, fields.getBytes(java.nio.charset.StandardCharsets.UTF_8), 120000);
             int status = conn.getResponseCode(); if (status < 200 || status >= 300) throw providerFailure(status, "视频生成");
             JsonNode result; try (InputStream in = conn.getInputStream()) { result = om.readTree(in); } finally { conn.disconnect(); }
-            String remoteId = result.path("id").asText(""); if (remoteId.isBlank()) throw new IllegalStateException("供应商未返回视频任务 ID"); task.setRemoteTaskId(remoteId); update(task, "running", 25, "视频任务已提交，正在等待供应商渲染");
+            String remoteId = result.path("id").asText("");
+            if (remoteId.isBlank()) throw new IllegalStateException("供应商未返回视频任务 ID");
+            task.setRemoteTaskId(remoteId);
+            update(task, "remote_submitted", 25, "视频任务已提交，等待受控轮询 worker");
+            pollVideoWorker(task, provider, model, remoteId);
+        } catch (Exception e) {
+            update(task, "failed_terminal", task.getProgress(), concise(e));
+        }
+    }
+
+    private void pollVideoWorker(Task task, AiProvider provider, String model, String remoteId) {
+        try {
+            String secret = secret(provider);
+            update(task, "polling", Math.max(25, task.getProgress()), "轮询远端视频任务状态");
             for (int i = 0; i < 120; i++) {
-                Thread.sleep(3000); JsonNode poll = getJson(endpoint(provider, "/v1/videos/" + remoteId), secret); String state = poll.path("status").asText("");
-                int progress = poll.path("progress").asInt(Math.min(90, 25 + i / 2)); update(task, "running", Math.max(25, Math.min(90, progress)), "供应商视频状态：" + (state.isBlank() ? "处理中" : state));
+                Thread.sleep(3000);
+                JsonNode poll = getJson(endpoint(provider, "/v1/videos/" + remoteId), secret);
+                String state = poll.path("status").asText("");
+                int progress = poll.path("progress").asInt(Math.min(90, 25 + i / 2));
+                update(task, "polling", Math.max(25, Math.min(90, progress)), "供应商视频状态：" + (state.isBlank() ? "处理中" : state));
                 if ("completed".equalsIgnoreCase(state)) { downloadVideo(task, provider, remoteId); return; }
                 if ("failed".equalsIgnoreCase(state) || "expired".equalsIgnoreCase(state) || "cancelled".equalsIgnoreCase(state)) throw new IllegalStateException("供应商视频任务未完成：" + state);
             }
             throw new IllegalStateException("视频生成等待超时，请在供应商控制台查看任务状态");
-        } catch (Exception e) { update(task, "failed", task.getProgress(), concise(e)); }
+        } catch (Exception e) {
+            update(task, "failed_terminal", task.getProgress(), concise(e));
+        }
     }
 
     private void downloadVideo(Task task, AiProvider provider, String remoteId) throws Exception {

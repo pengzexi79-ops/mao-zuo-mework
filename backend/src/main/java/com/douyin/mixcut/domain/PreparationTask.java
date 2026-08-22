@@ -19,6 +19,7 @@ public class PreparationTask {
     public static final String STATUS_DONE = "done";
     public static final String STATUS_TIMEDOUT = "timedout";
     public static final String STATUS_FAILED = "failed";
+    public static final String STATUS_CANCELLED = "cancelled";
 
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
