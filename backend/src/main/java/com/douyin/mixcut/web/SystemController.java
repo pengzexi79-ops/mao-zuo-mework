@@ -6,6 +6,7 @@ import com.douyin.mixcut.service.BootstrapService;
 import com.douyin.mixcut.service.MaterialService;
 import com.douyin.mixcut.service.ReleaseNotesService;
 import com.douyin.mixcut.service.LocalReleaseHistoryService;
+import com.douyin.mixcut.service.ConnectivityService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
@@ -34,11 +35,22 @@ public class SystemController {
     private final WorkflowRepo workflowRepo;
     private final ProjectRepo projectRepo;
     @Qualifier("renderExecutor") private final ThreadPoolTaskExecutor renderExecutor;
+    private final ConnectivityService connectivityService;
 
     @GetMapping("/env")
     public R<Map<String, Object>> env(
             @org.springframework.web.bind.annotation.RequestParam(defaultValue = "false") boolean refresh) {
         return R.ok(bootstrap.env(refresh));
+    }
+
+    @GetMapping("/connectivity")
+    public R<List<Map<String, Object>>> connectivity() {
+        return R.ok(connectivityService.checkAll());
+    }
+
+    @GetMapping("/connectivity/{target}")
+    public R<Map<String, Object>> connectivityTarget(@org.springframework.web.bind.annotation.PathVariable String target) {
+        return R.ok(connectivityService.check(target));
     }
 
     @GetMapping("/release-notes")

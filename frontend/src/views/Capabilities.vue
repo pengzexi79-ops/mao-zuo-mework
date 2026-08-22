@@ -6,9 +6,10 @@
       <el-tab-pane label="历史更新" name="history" />
     </el-tabs>
     <section v-if="activeView === 'environment'" class="environment-view">
-      <div class="system-view-head"><div><h2>环境中心</h2><p>集中检查本机运行时、凭据保护和需要修复的系统条件。</p></div><el-button :loading="environmentLoading" @click="loadEnvironment(true)">重新检测</el-button></div>
+      <div class="system-view-head"><div><h2>环境中心</h2><p>集中检查本机运行时、凭据保护和需要修复的系统条件。</p></div><div class="environment-head-actions"><el-button :loading="environmentLoading" @click="loadEnvironment(true)">重新检测</el-button><el-button type="primary" plain :loading="connectivityLoading" @click="loadConnectivity">检测联网能力</el-button></div></div>
       <el-alert v-if="environmentError" type="error" :closable="false" show-icon :title="environmentError" />
       <template v-else-if="environment">
+        <div v-if="connectivity.length" class="connectivity-strip"><div class="connectivity-strip-head"><b>联网增强</b><span class="muted">仅在点击“检测联网能力”后更新，不影响离线核心</span></div><div class="connectivity-targets"><div v-for="item in connectivity" :key="item.target" class="connectivity-target"><span>{{ item.target }}</span><el-tag size="small" :type="connectivityType(item)">{{ connectivityLabel(item) }}</el-tag><small v-if="item.httpStatus">HTTP {{ item.httpStatus }}</small><small v-else-if="item.errorCode">{{ item.errorCode }}</small></div></div></div>
         <div class="environment-summary">
           <div class="environment-tile"><span>后端与数据库</span><b>{{ environment.databaseConnected ? '已连接' : '需处理' }}</b></div>
           <div class="environment-tile"><span>渲染运行时</span><b>{{ environment.ffmpeg && environment.ffprobe ? 'FFmpeg 已就绪' : '需配置' }}</b></div>
@@ -235,6 +236,8 @@ const historySyncing = ref(false)
 const historyError = ref('')
 const environmentLoading = ref(false)
 const environmentError = ref('')
+const connectivity = ref([])
+const connectivityLoading = ref(false)
 const environmentTools = computed(() => [
   ['FFmpeg', environment.value?.ffmpeg, 'ffmpeg'],
   ['FFprobe', environment.value?.ffprobe, 'ffprobe'],
@@ -510,6 +513,34 @@ async function loadEnvironment (force = false) {
   }
 }
 
+async function loadConnectivity () {
+  connectivityLoading.value = true
+  try {
+    const result = await api.connectivity({ silent: true })
+    connectivity.value = Array.isArray(result) ? result : []
+    ElMessage.success('联网能力检测完成')
+  } catch (error) {
+    connectivity.value = []
+    ElMessage.error(error.message || '联网能力检测失败')
+  } finally {
+    connectivityLoading.value = false
+  }
+}
+
+function connectivityLabel (item) {
+  if (!item.configured) return '未配置'
+  if (item.rateLimited) return `限流${item.retryAfterSeconds ? ` · ${item.retryAfterSeconds}s 后重试` : ''}`
+  if (item.reachable) return '网络可达'
+  return item.errorCode || '不可达'
+}
+
+function connectivityType (item) {
+  if (item.rateLimited) return 'warning'
+  if (item.reachable) return 'success'
+  if (item.errorCode === 'NOT_CHECKED') return 'info'
+  return 'danger'
+}
+
 watch(activeView, async (view) => {
   if (view === 'environment') {
     if (route.query.view !== 'environment') await router.replace({ query: { ...route.query, view: 'environment' } })
@@ -558,7 +589,7 @@ onMounted(async () => {
 <style scoped>
 .system-tabs { margin-bottom: 14px; }
 .environment-view { display: flex; flex-direction: column; gap: 14px; }
-.system-view-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.environment-head-actions { display:flex; gap:8px; flex-wrap:wrap; }.connectivity-strip { padding:12px 14px; border:1px solid var(--el-border-color-lighter); border-radius:6px; background:var(--el-bg-color-overlay); }.connectivity-strip-head { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:8px; }.connectivity-targets { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:8px; }.connectivity-target { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:3px 6px; align-items:center; padding:7px 9px; border:1px solid var(--el-border-color-lighter); border-radius:5px; }.connectivity-target span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }.connectivity-target small { grid-column:1 / -1; color:var(--el-text-color-secondary); font-size:11px; }.system-view-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .system-view-head h2 { margin: 0; font-size: 20px; }
 .system-view-head p { margin: 5px 0 0; color: var(--el-text-color-secondary); font-size: 13px; }
 .environment-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
