@@ -6,8 +6,8 @@ import com.douyin.mixcut.security.UrlGuard;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.Data;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
@@ -55,12 +55,23 @@ import java.util.regex.Pattern;
  */
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class CrawlerGateway {
 
     private final AppProps props;
     private final ProcRunner runner;
+    private final WikimediaSourceAdapter wikimediaAdapter;
     private final ObjectMapper om = new ObjectMapper();
+
+    public CrawlerGateway(AppProps props, ProcRunner runner) {
+        this(props, runner, new WikimediaSourceAdapter());
+    }
+
+    @Autowired
+    public CrawlerGateway(AppProps props, ProcRunner runner, WikimediaSourceAdapter wikimediaAdapter) {
+        this.props = props;
+        this.runner = runner;
+        this.wikimediaAdapter = wikimediaAdapter;
+    }
 
     private static final String UA =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
@@ -647,41 +658,15 @@ public class CrawlerGateway {
      * MediaWiki 不会按逗号拆分该参数。</p>
      */
     String wikimediaQuery(String kw, String type, int limit) {
-        return "action=query&format=json&formatversion=2&generator=search&gsrnamespace=6&gsrlimit="
-                + Math.min(20, Math.max(1, limit)) + "&gsrsearch=" + enc((kw == null ? "" : kw) + " filetype:" + type)
-                + "&prop=imageinfo&iiprop=url%7Cextmetadata";
+        return wikimediaAdapter.query(kw, type, limit);
     }
 
     private List<RemoteItem> wikimedia(String kw, int limit, String type) {
         String query = wikimediaQuery(kw, type, limit);
-        JsonNode root = (QUICK_PUBLIC_SEARCH.get() ? getJsonQuick("https://commons.wikimedia.org/w/api.php?" + query) : getJson("https://commons.wikimedia.org/w/api.php?" + query));
-        if (root == null || !root.path("query").path("pages").isArray()) return List.of();
-        List<RemoteItem> out = new ArrayList<>();
-        for (JsonNode page : root.path("query").path("pages")) {
-            JsonNode info = page.path("imageinfo").path(0);
-            String download = info.path("url").asText("");
-            String license = info.path("extmetadata").path("LicenseShortName").path("value").asText("");
-            if (license.isBlank()) {
-                license = info.path("extmetadata").path("License").path("value").asText("");
-            }
-            String title = page.path("title").asText("");
-            // 只接受白名单许可，且不带许可、或明显是占位/示例文件的条目一律跳过
-            if (download.isBlank() || !isWhitelistedLicense(license) || isDemoPlaceholderTitle(title)) continue;
-            RemoteItem item = new RemoteItem();
-            item.setSource("wikimedia");
-            item.setType(type);
-            item.setTitle(title.replaceFirst("^File:", ""));
-            item.setPageUrl("https://commons.wikimedia.org/wiki/" + encPath(title));
-            item.setDownloadUrl(download);
-            item.setPreviewUrl(download);
-            item.setLicense(license);
-            item.setLicenseUrl(info.path("extmetadata").path("LicenseUrl").path("value").asText(""));
-            String artist = info.path("extmetadata").path("Artist").path("value").asText("").replaceAll("<[^>]+>", "").trim();
-            item.setTags(artist);
-            out.add(item);
-            if (out.size() >= limit) break;
-        }
-        return out;
+        JsonNode root = QUICK_PUBLIC_SEARCH.get()
+                ? getJsonQuick("https://commons.wikimedia.org/w/api.php?" + query)
+                : getJson("https://commons.wikimedia.org/w/api.php?" + query);
+        return wikimediaAdapter.map(root, type, limit);
     }
 
     /** Internet Archive：只接受带 CC0 / 公有领域 / CC BY 白名单许可声明的媒体文件。 */
