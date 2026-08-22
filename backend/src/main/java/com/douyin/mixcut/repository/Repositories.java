@@ -77,6 +77,13 @@ public interface Repositories {
         List<PreparationTask> findByStatusOrderByIdAsc(String status);
     }
 
+    interface MediaTaskRepo extends JpaRepository<MediaTask, Long> {
+        Optional<MediaTask> findByTaskKey(String taskKey);
+        List<MediaTask> findTop50ByOrderByIdDesc();
+        List<MediaTask> findByStatusOrderByIdAsc(String status);
+        long countByStatus(String status);
+    }
+
     interface JobOutputRepo extends JpaRepository<JobOutput, Long> {
         List<JobOutput> findByJobIdOrderByIdxAsc(Long jobId);
 

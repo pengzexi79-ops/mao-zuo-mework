@@ -1,15 +1,20 @@
 package com.douyin.mixcut.service;
 
 import com.douyin.mixcut.config.AppProps;
+import com.douyin.mixcut.domain.MediaTask;
 import com.douyin.mixcut.domain.Material;
 import com.douyin.mixcut.domain.MaterialRole;
 import com.douyin.mixcut.external.FfmpegTool;
 import com.douyin.mixcut.external.ProcRunner;
+import com.douyin.mixcut.repository.Repositories.MediaTaskRepo;
 import com.douyin.mixcut.repository.MaterialStore;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 
 import java.nio.file.Files;
@@ -20,9 +25,11 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.time.LocalDateTime;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
+import org.springframework.scheduling.annotation.Scheduled;
 
 /** Bounded local media operations exposed to the workbench. */
 @Slf4j
@@ -36,8 +43,10 @@ public class MediaToolsService {
     private final AudioEngineService audioEngine;
     private final FfmpegTool ffmpeg;
     private final MaterialDeleteService materialDeleteService;
+    private final MediaTaskRepo mediaTaskRepo;
     @Qualifier("mediaExecutor") private final Executor mediaExecutor;
     private final Map<String, Task> tasks = new ConcurrentHashMap<>();
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Data
     public static class Task {
@@ -129,16 +138,16 @@ public class MediaToolsService {
         Material source = materials.findById(request.getMaterialId()).orElseThrow(() -> new IllegalArgumentException("素材不存在"));
         if (source.getFileType() != Material.FileType.image) throw new IllegalArgumentException("图片工具只能处理图片素材");
         Path input = safeMaterialPath(source);
-        String id = newTask("image");
-        mediaExecutor.execute(() -> runImage(id, source, input, request));
+        String id = newTask("image", request);
+        dispatch(id, () -> runImage(id, source, input, request));
         return tasks.get(id);
     }
 
     public Task separate(Long materialId) {
         if (materialId == null) throw new IllegalArgumentException("请选择音视频素材");
         materials.findById(materialId).orElseThrow(() -> new IllegalArgumentException("素材不存在"));
-        String id = newTask("audio-separate");
-        mediaExecutor.execute(() -> runSeparation(id, materialId));
+        String id = newTask("audio-separate", Map.of("materialId", materialId));
+        dispatch(id, () -> runSeparation(id, materialId));
         return tasks.get(id);
     }
 
@@ -146,8 +155,8 @@ public class MediaToolsService {
         if (materialId == null) throw new IllegalArgumentException("请选择视频素材");
         if (clipSec < 1 || clipSec > 15) throw new IllegalArgumentException("每段时长请设置在 1 到 15 秒之间");
         materials.findById(materialId).orElseThrow(() -> new IllegalArgumentException("素材不存在"));
-        String id = newTask("video-split");
-        mediaExecutor.execute(() -> runSplit(id, materialId, clipSec));
+        String id = newTask("video-split", Map.of("materialId", materialId, "clipSec", clipSec));
+        dispatch(id, () -> runSplit(id, materialId, clipSec));
         return tasks.get(id);
     }
 
@@ -168,10 +177,10 @@ public class MediaToolsService {
         double end = request.getEnd() == null ? info.getDuration() : request.getEnd();
         if (source.getFileType() == Material.FileType.video && (!Double.isFinite(start) || !Double.isFinite(end) || start < 0 || end <= start || end > info.getDuration() + 0.01)) throw new IllegalArgumentException("视频遮盖时间范围无效");
         if (source.getFileType() == Material.FileType.image) { start = 0; end = 1; }
-        String id = newTask("subtitle-cover");
+        String id = newTask("subtitle-cover", request);
         final double rangeStart = start;
         final double rangeEnd = end;
-        mediaExecutor.execute(() -> runCover(id, source, input, request, rangeStart, rangeEnd));
+        dispatch(id, () -> runCover(id, source, input, request, rangeStart, rangeEnd));
         return tasks.get(id);
     }
 
@@ -192,8 +201,8 @@ public class MediaToolsService {
         if (!info.isHasVideo() || info.getDuration() < 0.1) throw new IllegalArgumentException("无法读取视频流，请重新探测素材后再试");
         if ("unmute".equals(audioMode) && !info.isHasAudio()) throw new IllegalArgumentException("原视频没有可恢复的音轨，无法解除静音");
         validateTimelineRequest(request, info.getDuration());
-        String id = newTask("video-timeline");
-        mediaExecutor.execute(() -> runTimeline(id, source, input, request, info));
+        String id = newTask("video-timeline", request);
+        dispatch(id, () -> runTimeline(id, source, input, request, info));
         return tasks.get(id);
     }
 
@@ -201,19 +210,38 @@ public class MediaToolsService {
     public Task trimSilence(Long materialId) {
         if (materialId == null) throw new IllegalArgumentException("请选择视频素材");
         materials.findById(materialId).orElseThrow(() -> new IllegalArgumentException("素材不存在"));
-        String id = newTask("auto-trim");
-        mediaExecutor.execute(() -> runAutoTrim(id, materialId));
+        String id = newTask("auto-trim", Map.of("materialId", materialId));
+        dispatch(id, () -> runAutoTrim(id, materialId));
         return tasks.get(id);
     }
 
     public Task get(String id) {
         Task task = tasks.get(id);
-        if (task == null) throw new IllegalArgumentException("媒体任务不存在");
-        return task;
+        if (task != null) return task;
+        MediaTask persisted = mediaTaskRepo.findByTaskKey(id).orElseThrow(() -> new IllegalArgumentException("媒体任务不存在"));
+        return fromPersisted(persisted);
     }
 
     public List<Task> recent() {
-        return tasks.values().stream().sorted((a, b) -> Long.compare(b.createdAt, a.createdAt)).limit(50).toList();
+        return mediaTaskRepo.findTop50ByOrderByIdDesc().stream().map(this::fromPersisted).toList();
+    }
+
+    private Task fromPersisted(MediaTask persisted) {
+        Task task = new Task();
+        task.setId(persisted.getTaskKey());
+        task.setKind(persisted.getKind());
+        task.setStatus(persisted.getStatus());
+        task.setProgress(persisted.getProgress() == null ? 0 : persisted.getProgress());
+        task.setEngine(persisted.getEngine());
+        task.setMessage(persisted.getMessage());
+        task.setOutputDirectory(persisted.getOutputDirectory());
+        task.setCreatedAt(persisted.getCreatedAt() == null ? System.currentTimeMillis() : persisted.getCreatedAt().atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli());
+        task.setUpdatedAt(persisted.getUpdatedAt() == null ? task.getCreatedAt() : persisted.getUpdatedAt().atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli());
+        try {
+            if (persisted.getResultPaths() != null) task.setResultPaths(objectMapper.readValue(persisted.getResultPaths(), List.class));
+            if (persisted.getResults() != null) task.setResults(objectMapper.readValue(persisted.getResults(), objectMapper.getTypeFactory().constructCollectionType(List.class, MaterialResult.class)));
+        } catch (Exception ignored) { }
+        return task;
     }
 
     /** Opens only the application-managed output root; no browser-supplied path is accepted. */
@@ -230,13 +258,128 @@ public class MediaToolsService {
         }
     }
 
-    private String newTask(String kind) {
+    private String newTask(String kind) { return newTask(kind, null); }
+
+    private String newTask(String kind, Object params) {
         Task task = new Task();
         task.setId(UUID.randomUUID().toString());
         task.setKind(kind);
         task.setOutputDirectory(props.mediaToolsOutput().toString());
         tasks.put(task.getId(), task);
+        MediaTask persisted = new MediaTask();
+        persisted.setTaskKey(task.getId());
+        persisted.setKind(kind);
+        persisted.setStatus("pending");
+        persisted.setProgress(0);
+        persisted.setOutputDirectory(task.getOutputDirectory());
+        try { persisted.setParams(params == null ? null : objectMapper.writeValueAsString(params)); }
+        catch (Exception error) { throw new IllegalArgumentException("媒体任务参数无法保存", error); }
+        persisted.setLastActivityAt(LocalDateTime.now());
+        try { mediaTaskRepo.save(persisted); } catch (Exception error) {
+            log.warn("无法持久化媒体任务 {}：{}", task.getId(), error.toString());
+        }
         return task.getId();
+    }
+
+    private void dispatch(String id, Runnable work) {
+        try {
+            mediaExecutor.execute(() -> {
+                update(tasks.get(id), "running", 1, "媒体任务已开始");
+                work.run();
+            });
+        } catch (RuntimeException error) {
+            Task task = tasks.get(id);
+            if (task != null) update(task, "pending", 0, "媒体任务等待执行器资源");
+            log.warn("媒体任务 {} 未进入执行队列：{}", id, error.toString());
+        }
+    }
+
+    private void restoreAndDispatch(MediaTask persisted) throws Exception {
+        var root = objectMapper.readTree(persisted.getParams());
+        String id = persisted.getTaskKey();
+        Task task = fromPersisted(persisted);
+        tasks.put(id, task);
+        String kind = persisted.getKind();
+        if ("image".equals(kind)) {
+            ImageRequest request = objectMapper.treeToValue(root, ImageRequest.class);
+            Material source = materials.findById(request.getMaterialId()).orElseThrow(() -> new IllegalArgumentException("素材不存在"));
+            dispatch(id, () -> runImage(id, source, safeMaterialPath(source), request));
+        } else if ("audio-separate".equals(kind)) {
+            Long materialId = root.path("materialId").asLong(0);
+            dispatch(id, () -> runSeparation(id, materialId));
+        } else if ("video-split".equals(kind)) {
+            dispatch(id, () -> runSplit(id, root.path("materialId").asLong(0), root.path("clipSec").asDouble(3)));
+        } else if ("subtitle-cover".equals(kind)) {
+            CoverRequest request = objectMapper.treeToValue(root, CoverRequest.class);
+            Material source = materials.findById(request.getMaterialId()).orElseThrow(() -> new IllegalArgumentException("素材不存在"));
+            FfmpegTool.MediaInfo info = ffmpeg.probe(safeMaterialPath(source).toString());
+            dispatch(id, () -> runCover(id, source, safeMaterialPath(source), request,
+                    source.getFileType() == Material.FileType.image ? 0 : request.getStart() == null ? 0 : request.getStart(),
+                    source.getFileType() == Material.FileType.image ? 1 : request.getEnd() == null ? info.getDuration() : request.getEnd()));
+        } else if ("video-timeline".equals(kind)) {
+            TimelineRequest request = objectMapper.treeToValue(root, TimelineRequest.class);
+            Material source = materials.findById(request.getMaterialId()).orElseThrow(() -> new IllegalArgumentException("素材不存在"));
+            Path input = safeMaterialPath(source);
+            FfmpegTool.MediaInfo info = ffmpeg.probe(input.toString());
+            dispatch(id, () -> runTimeline(id, source, input, request, info));
+        } else if ("auto-trim".equals(kind)) {
+            dispatch(id, () -> runAutoTrim(id, root.path("materialId").asLong(0)));
+        } else throw new IllegalArgumentException("不支持恢复的媒体任务类型");
+    }
+
+    private String safeMessage(Exception error) {
+        String value = error == null ? "未知原因" : error.getMessage();
+        if (value == null || value.isBlank()) return "未知原因";
+        return value.length() > 400 ? value.substring(0, 400) : value;
+    }
+
+    private void persist(String id) {
+        MediaTask task = mediaTaskRepo.findByTaskKey(id).orElse(null);
+        Task snapshot = tasks.get(id);
+        if (task == null || snapshot == null) return;
+        task.setStatus(snapshot.getStatus());
+        task.setProgress(snapshot.getProgress());
+        task.setMessage(snapshot.getMessage());
+        task.setEngine(snapshot.getEngine());
+        task.setOutputDirectory(snapshot.getOutputDirectory());
+        try {
+            task.setResultPaths(objectMapper.writeValueAsString(snapshot.getResultPaths()));
+            task.setResults(objectMapper.writeValueAsString(snapshot.getResults()));
+        } catch (Exception ignored) { }
+        task.setLastActivityAt(LocalDateTime.now());
+        try { mediaTaskRepo.save(task); } catch (Exception error) {
+            log.warn("无法更新媒体任务 {}：{}", id, error.toString());
+        }
+    }
+
+    @EventListener(ApplicationReadyEvent.class)
+    public void recoverMediaTasksAtStartup() { recoverMediaTasks(); }
+
+    @Scheduled(fixedDelayString = "${app.job-watchdog-delay-ms:30000}")
+    public void recoverMediaTasks() {
+        try {
+            LocalDateTime cutoff = LocalDateTime.now().minusSeconds(900);
+            for (MediaTask persisted : mediaTaskRepo.findByStatusOrderByIdAsc("running")) {
+                if (persisted.getLastActivityAt() != null && persisted.getLastActivityAt().isAfter(cutoff)) continue;
+                persisted.setStatus("pending");
+                persisted.setMessage("后端服务中断，媒体任务已重新排队");
+                persisted.setLastActivityAt(LocalDateTime.now());
+                mediaTaskRepo.save(persisted);
+            }
+            for (MediaTask persisted : mediaTaskRepo.findByStatusOrderByIdAsc("pending")) {
+                if (tasks.containsKey(persisted.getTaskKey())) continue;
+                try { restoreAndDispatch(persisted); }
+                catch (Exception error) {
+                    persisted.setStatus("failed");
+                    persisted.setMessage("媒体任务恢复失败：" + safeMessage(error));
+                    persisted.setError(safeMessage(error));
+                    persisted.setLastActivityAt(LocalDateTime.now());
+                    mediaTaskRepo.save(persisted);
+                }
+            }
+        } catch (Exception error) {
+            log.debug("媒体任务恢复暂不可用：{}", error.toString());
+        }
     }
 
     private void runImage(String id, Material source, Path input, ImageRequest request) {
@@ -567,11 +710,7 @@ public class MediaToolsService {
 
     private void update(Task task, String status, int progress, String message) {
         task.setStatus(status); task.setProgress(Math.max(0, Math.min(100, progress))); task.setMessage(message); task.setUpdatedAt(System.currentTimeMillis());
-    }
-
-    private String safeMessage(Exception error) {
-        String message = error == null ? null : error.getMessage();
-        return message == null || message.isBlank() ? "未知原因" : tail(message);
+        persist(task.getId());
     }
 
     private String tail(String value) {

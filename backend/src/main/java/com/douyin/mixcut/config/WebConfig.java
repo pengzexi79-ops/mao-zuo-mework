@@ -74,8 +74,8 @@ public class WebConfig implements WebMvcConfigurer {
         ex.setMaxPoolSize(2);
         ex.setQueueCapacity(120);
         ex.setThreadNamePrefix("media-");
-        // A folder drop must slow down under pressure, never mark accepted media permanently failed.
-        ex.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
+        // Media requests must return quickly when saturated; persisted pending tasks can be retried by recovery.
+        ex.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
         ex.initialize();
         return ex;
     }
