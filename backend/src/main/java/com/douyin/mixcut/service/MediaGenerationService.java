@@ -48,6 +48,7 @@ public class MediaGenerationService {
     private final MediaGenerationTaskRepo generationTaskRepo;
     @Qualifier("mediaExecutor") private final Executor executor;
     private final Map<String, Task> tasks = new ConcurrentHashMap<>();
+    private final java.util.Set<String> activePollingTasks = ConcurrentHashMap.newKeySet();
 
     @EventListener(ApplicationReadyEvent.class)
     public void recoverGenerationTasksAtStartup() { recoverGenerationTasks(); }
@@ -76,6 +77,7 @@ public class MediaGenerationService {
     }
 
     private void restoreVideoPolling(MediaGenerationTask persisted) {
+        if (!activePollingTasks.add(persisted.getTaskKey())) return;
         try {
             AiProvider provider = providers.findById(persisted.getProviderId())
                     .orElseThrow(() -> new IllegalStateException("供应商已不存在，无法恢复远端视频任务"));
@@ -86,8 +88,12 @@ public class MediaGenerationService {
             int seconds = snapshot.path("seconds").asInt(4);
             Task task = fromPersisted(persisted);
             tasks.put(task.getId(), task);
-            executor.execute(() -> pollVideoWorker(task, provider, model, persisted.getRemoteTaskId()));
+            executor.execute(() -> {
+                try { pollVideoWorker(task, provider, model, persisted.getRemoteTaskId()); }
+                finally { activePollingTasks.remove(persisted.getTaskKey()); }
+            });
         } catch (Exception error) {
+            activePollingTasks.remove(persisted.getTaskKey());
             persisted.setStatus("failed_terminal");
             persisted.setPhase("recovery_failed");
             persisted.setError(concise(error));
