@@ -7,12 +7,13 @@ import com.douyin.mixcut.domain.MaterialRole;
 import com.douyin.mixcut.external.FfmpegTool;
 import com.douyin.mixcut.external.ProcRunner;
 import com.douyin.mixcut.external.ProcessRegistry;
+import com.douyin.mixcut.external.TaskAwareProcRunner;
 import com.douyin.mixcut.repository.Repositories.MediaTaskRepo;
 import com.douyin.mixcut.repository.MaterialStore;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.Data;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
@@ -39,7 +40,6 @@ import org.springframework.scheduling.annotation.Scheduled;
 /** Bounded local media operations exposed to the workbench. */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class MediaToolsService {
     private final AppProps props;
     private final ProcRunner runner;
@@ -50,7 +50,35 @@ public class MediaToolsService {
     private final MaterialDeleteService materialDeleteService;
     private final MediaTaskRepo mediaTaskRepo;
     private final ProcessRegistry processRegistry;
+    private final TaskAwareProcRunner taskRunner;
     @Qualifier("mediaExecutor") private final Executor mediaExecutor;
+
+    public MediaToolsService(AppProps props, ProcRunner runner, MaterialStore materials,
+                             MaterialService materialService, AudioEngineService audioEngine, FfmpegTool ffmpeg,
+                             MaterialDeleteService materialDeleteService, MediaTaskRepo mediaTaskRepo,
+                             ProcessRegistry processRegistry, Executor mediaExecutor) {
+        this(props, runner, materials, materialService, audioEngine, ffmpeg, materialDeleteService,
+                mediaTaskRepo, processRegistry, null, mediaExecutor);
+    }
+
+    @Autowired
+    public MediaToolsService(AppProps props, ProcRunner runner, MaterialStore materials,
+                             MaterialService materialService, AudioEngineService audioEngine, FfmpegTool ffmpeg,
+                             MaterialDeleteService materialDeleteService, MediaTaskRepo mediaTaskRepo,
+                             ProcessRegistry processRegistry, TaskAwareProcRunner taskRunner,
+                             @Qualifier("mediaExecutor") Executor mediaExecutor) {
+        this.props = props;
+        this.runner = runner;
+        this.materials = materials;
+        this.materialService = materialService;
+        this.audioEngine = audioEngine;
+        this.ffmpeg = ffmpeg;
+        this.materialDeleteService = materialDeleteService;
+        this.mediaTaskRepo = mediaTaskRepo;
+        this.processRegistry = processRegistry;
+        this.taskRunner = taskRunner;
+        this.mediaExecutor = mediaExecutor;
+    }
     private final Map<String, Task> tasks = new ConcurrentHashMap<>();
     private final Map<String, Future<?>> futures = new ConcurrentHashMap<>();
     private final Set<String> startedTasks = ConcurrentHashMap.newKeySet();
@@ -528,7 +556,7 @@ public class MediaToolsService {
             registerOutput(id, output);
             update(task, "running", 35, "正在调用本地图片处理引擎：" + task.getEngine());
             cancellation.throwIfCancelled();
-            ProcRunner.Result result = runner.run(command, 180);
+            ProcRunner.Result result = runTask(command, 180, cancellation);
             cancellation.throwIfCancelled();
             if (!result.ok() || !Files.isRegularFile(output) || Files.size(output) < 128) throw new IllegalStateException("图片处理失败：" + tail(result.out()));
             update(task, "running", 80, "正在登记生成图片");
@@ -718,7 +746,7 @@ public class MediaToolsService {
                     "--no-open");
             update(task, "running", 40, "正在调用 Auto-Editor 智能剪辑");
             cancellation.throwIfCancelled();
-            ProcRunner.Result result = runner.run(cmd, 1800);
+            ProcRunner.Result result = runTask(cmd, 1800, cancellation);
             cancellation.throwIfCancelled();
             if (!result.ok() || !Files.isRegularFile(output) || Files.size(output) < 1024) {
                 // 降级策略：auto-editor 缺失/执行失败时回退 FFmpeg silenceremove 静音裁剪，
@@ -729,7 +757,7 @@ public class MediaToolsService {
                 List<String> ffCmd = List.of(props.getFfmpeg(), "-y", "-i", input.toString(),
                         "-af", "silenceremove=start_periods=1:start_threshold=-40dB:start_silence=0.5,areverse,silenceremove=start_periods=1:start_threshold=-40dB:start_silence=0.5,areverse",
                         "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", ffOutput.toString());
-                ProcRunner.Result ffResult = runner.run(ffCmd, 1800);
+                ProcRunner.Result ffResult = runTask(ffCmd, 1800, cancellation);
                 cancellation.throwIfCancelled();
                 if (ffResult.ok() && Files.isRegularFile(ffOutput) && Files.size(ffOutput) >= 1024) {
                     update(task, "running", 80, "Auto-Editor 不可用，已降级 FFmpeg 静音裁剪");
@@ -893,6 +921,11 @@ public class MediaToolsService {
         task.setMessage(message);
         task.setUpdatedAt(System.currentTimeMillis());
         persist(task.getId());
+    }
+
+    private ProcRunner.Result runTask(List<String> command, long timeoutSec,
+                                      ProcessRegistry.CancellationContext context) {
+        return taskRunner == null ? runner.run(command, timeoutSec) : taskRunner.run(command, timeoutSec, context);
     }
 
     private String tail(String value) {

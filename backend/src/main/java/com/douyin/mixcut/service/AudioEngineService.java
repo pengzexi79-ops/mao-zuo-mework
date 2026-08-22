@@ -6,10 +6,11 @@ import com.douyin.mixcut.domain.MaterialRole;
 import com.douyin.mixcut.external.FfmpegTool;
 import com.douyin.mixcut.external.ProcRunner;
 import com.douyin.mixcut.external.ProcessRegistry;
+import com.douyin.mixcut.external.TaskAwareProcRunner;
 import com.douyin.mixcut.repository.MaterialStore;
 import lombok.Data;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.nio.file.Files;
@@ -23,7 +24,6 @@ import java.util.stream.Stream;
 /** Unified product-facing audio engine backed by the existing local TTS, Demucs and FFmpeg capabilities. */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class AudioEngineService {
     private final AppProps props;
     private final ProcRunner runner;
@@ -31,6 +31,25 @@ public class AudioEngineService {
     private final MaterialStore materialRepo;
     private final MaterialService materialService;
     private final TtsService ttsService;
+    private final TaskAwareProcRunner taskRunner;
+
+    public AudioEngineService(AppProps props, ProcRunner runner, FfmpegTool ffmpeg,
+                              MaterialStore materialRepo, MaterialService materialService, TtsService ttsService) {
+        this(props, runner, ffmpeg, materialRepo, materialService, ttsService, null);
+    }
+
+    @Autowired
+    public AudioEngineService(AppProps props, ProcRunner runner, FfmpegTool ffmpeg,
+                              MaterialStore materialRepo, MaterialService materialService, TtsService ttsService,
+                              TaskAwareProcRunner taskRunner) {
+        this.props = props;
+        this.runner = runner;
+        this.ffmpeg = ffmpeg;
+        this.materialRepo = materialRepo;
+        this.materialService = materialService;
+        this.ttsService = ttsService;
+        this.taskRunner = taskRunner;
+    }
 
     @Data
     public static class EngineStatus {
@@ -95,16 +114,16 @@ public class AudioEngineService {
             Files.createDirectories(finalDir);
             Path input = work.resolve("input.wav");
             context.throwIfCancelled();
-            ProcRunner.Result extract = runner.run(List.of(props.getFfmpeg(), "-y", "-i", sourcePath.toString(),
-                    "-vn", "-ac", "2", "-ar", "44100", input.toString()), 600);
+            ProcRunner.Result extract = runTask(List.of(props.getFfmpeg(), "-y", "-i", sourcePath.toString(),
+                    "-vn", "-ac", "2", "-ar", "44100", input.toString()), 600, context);
             context.throwIfCancelled();
             if (!extract.ok() || !Files.isRegularFile(input) || Files.size(input) < 1024) {
                 throw new IllegalStateException("音频提取失败：" + concise(extract.out()));
             }
             Path demucsOut = work.resolve("demucs");
             context.throwIfCancelled();
-            ProcRunner.Result separated = runner.run(List.of(props.localPythonPath(), "-m", "demucs",
-                    "--two-stems", "vocals", "-o", demucsOut.toString(), input.toString()), 3600);
+            ProcRunner.Result separated = runTask(List.of(props.localPythonPath(), "-m", "demucs",
+                    "--two-stems", "vocals", "-o", demucsOut.toString(), input.toString()), 3600, context);
             context.throwIfCancelled();
             if (!separated.ok()) throw new IllegalStateException("Demucs 分离失败：" + concise(separated.out()));
 
@@ -161,6 +180,11 @@ public class AudioEngineService {
     private void deleteIfExists(Path path) {
         if (path == null) return;
         try { Files.deleteIfExists(path); } catch (Exception cleanup) { log.debug("audio output cleanup failed: {}", cleanup.toString()); }
+    }
+
+    private ProcRunner.Result runTask(List<String> command, long timeoutSec,
+                                      ProcessRegistry.CancellationContext context) {
+        return taskRunner == null ? runner.run(command, timeoutSec) : taskRunner.run(command, timeoutSec, context);
     }
 
     private boolean demucsAvailable() {
