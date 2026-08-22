@@ -33,6 +33,12 @@ public class WikimediaSourceAdapter implements RemoteSourceAdapter {
     public boolean supports(String type) { return "audio".equalsIgnoreCase(type) || "video".equalsIgnoreCase(type); }
 
     @Override
+    public List<CrawlerGateway.RemoteItem> search(String keyword, String type, int limit, JsonFetcher fetcher) {
+        JsonNode response = fetcher.get("https://commons.wikimedia.org/w/api.php?" + query(keyword, type, limit));
+        return map(response, type, limit);
+    }
+
+    @Override
     public List<CrawlerGateway.RemoteItem> map(JsonNode response, String type, int limit) {
         return mapResponse(response, type, limit);
     }
