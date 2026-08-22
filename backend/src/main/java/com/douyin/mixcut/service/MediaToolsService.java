@@ -15,6 +15,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
+import org.springframework.core.task.AsyncTaskExecutor;
 import org.springframework.stereotype.Service;
 
 import java.nio.file.Files;
@@ -29,6 +30,7 @@ import java.time.LocalDateTime;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
+import java.util.concurrent.Future;
 import org.springframework.scheduling.annotation.Scheduled;
 
 /** Bounded local media operations exposed to the workbench. */
@@ -46,6 +48,7 @@ public class MediaToolsService {
     private final MediaTaskRepo mediaTaskRepo;
     @Qualifier("mediaExecutor") private final Executor mediaExecutor;
     private final Map<String, Task> tasks = new ConcurrentHashMap<>();
+    private final Map<String, Future<?>> futures = new ConcurrentHashMap<>();
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Data
@@ -215,6 +218,21 @@ public class MediaToolsService {
         return tasks.get(id);
     }
 
+    public Task cancel(String id) {
+        MediaTask persisted = mediaTaskRepo.findByTaskKey(id).orElseThrow(() -> new IllegalArgumentException("媒体任务不存在"));
+        if ("cancelled".equals(persisted.getStatus())) return fromPersisted(persisted);
+        if ("done".equals(persisted.getStatus()) || "failed".equals(persisted.getStatus())) throw new IllegalArgumentException("任务已结束，不能取消");
+        persisted.setStatus("cancelled");
+        persisted.setMessage("已取消媒体任务");
+        persisted.setLastActivityAt(LocalDateTime.now());
+        mediaTaskRepo.save(persisted);
+        Future<?> future = futures.remove(id);
+        if (future != null) future.cancel(true);
+        Task task = tasks.get(id);
+        if (task != null) { task.setStatus("cancelled"); task.setMessage("已取消媒体任务"); }
+        return fromPersisted(persisted);
+    }
+
     public Task get(String id) {
         Task task = tasks.get(id);
         if (task != null) return task;
@@ -283,10 +301,15 @@ public class MediaToolsService {
 
     private void dispatch(String id, Runnable work) {
         try {
-            mediaExecutor.execute(() -> {
-                update(tasks.get(id), "running", 1, "媒体任务已开始");
-                work.run();
-            });
+            if (mediaExecutor instanceof AsyncTaskExecutor async) {
+                Future<?> future = async.submit(() -> {
+                    update(tasks.get(id), "running", 1, "媒体任务已开始");
+                    work.run();
+                });
+                futures.put(id, future);
+            } else {
+                mediaExecutor.execute(() -> { update(tasks.get(id), "running", 1, "媒体任务已开始"); work.run(); });
+            }
         } catch (RuntimeException error) {
             Task task = tasks.get(id);
             if (task != null) update(task, "pending", 0, "媒体任务等待执行器资源");
@@ -337,6 +360,7 @@ public class MediaToolsService {
         MediaTask task = mediaTaskRepo.findByTaskKey(id).orElse(null);
         Task snapshot = tasks.get(id);
         if (task == null || snapshot == null) return;
+        if ("cancelled".equals(task.getStatus()) && !"cancelled".equals(snapshot.getStatus())) return;
         task.setStatus(snapshot.getStatus());
         task.setProgress(snapshot.getProgress());
         task.setMessage(snapshot.getMessage());

@@ -35,7 +35,7 @@ public class TaskQueryService {
     }
 
     private UnifiedTask media(MediaTask item) {
-        return task(item.getTaskKey(), "media", item.getKind(), item.getStatus(), item.getProgress(), item.getKind(), first(item.getMessage(), item.getError()), item.getCreatedAt(), item.getUpdatedAt(), false, "failed".equals(item.getStatus()));
+        return task(item.getTaskKey(), "media", item.getKind(), item.getStatus(), item.getProgress(), item.getKind(), first(item.getMessage(), item.getError()), item.getCreatedAt(), item.getUpdatedAt(), List.of("pending", "running", "cancelling").contains(item.getStatus()), "failed".equals(item.getStatus()));
     }
     private UnifiedTask generation(MediaGenerationTask item) {
         return task(item.getTaskKey(), "ai-generation", item.getKind(), item.getStatus(), item.getProgress(), item.getModel(), first(item.getMessage(), item.getError()), item.getCreatedAt(), item.getUpdatedAt(), false, "failed".equals(item.getStatus()) || "manual_review".equals(item.getStatus()));
