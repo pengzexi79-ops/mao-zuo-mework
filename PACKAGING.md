@@ -41,6 +41,18 @@ build_installer.bat
 - 模型文件、第三方 API Key、账号授权和硬件驱动不属于可通用预置内容：faster-whisper / Demucs / Rembg / ChatTTS / whisper.cpp 模型可能在首次使用时下载；Pixabay/Freesound Key、NVENC 驱动必须由用户按官方条件完成。
 - ChatTTS 仅在随包运行时已经可用时显示“已安装可用”。当前不向浏览器提供 ChatTTS 的一键 pip 安装，避免不同 Python/PyTorch/Rust 组合造成不可复现安装。
 
+## 阶段 3B 离线 Smoke 验收
+
+`verify_offline_bundle.ps1` 是构建前的隔离媒体验收门禁。它只使用发行包内的 FFmpeg、FFprobe、venv Python 和 `media_diagnose.py`，在系统 TEMP 下生成短 `testsrc` 视频并检查 OpenCV 质量 JSON；不启动 Java/MySQL，不读取或修改 `.env`、data、数据库、用户素材，不执行 pip 或网络下载。
+
+```powershell
+.\verify_offline_bundle.ps1 -BundleRoot (Get-Location).Path
+```
+
+退出码：`0` 通过；`2` 隔离目录安全失败；`3` 随包入口缺失/为链接；`4` FFmpeg 无法生成测试媒体；`5` FFprobe/诊断 JSON 失败；`6` 临时目录清理失败；`1` 未预期异常。`-KeepWorkDir` 只用于保留本次 GUID 临时目录排障。
+
+该 smoke 不代表 Edge-TTS、网页抓取、Demucs 模型、ChatTTS、API Key、NVENC 或 ASR 模型下载条件已离线满足；这些仍按能力中心显示的网络/外部条件处理。
+
 ## 版本记录
 每次发布前：`cd backend && python tools/release_notes.py new --title "..."`，填 pending，check，apply（自动生成新版本号）。
 不要手工修改 `installer\Mework.iss` 的版本；`build_installer.bat` 会从 `release-notes.json` 读取当前版本，和 `AppProps.RELEASE_VERSION` 比较后生成 `installer\version.iss`。
