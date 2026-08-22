@@ -88,6 +88,7 @@ public interface Repositories {
         Optional<MediaGenerationTask> findByTaskKey(String taskKey);
         List<MediaGenerationTask> findTop50ByOrderByIdDesc();
         List<MediaGenerationTask> findByStatusOrderByIdAsc(String status);
+        List<MediaGenerationTask> findByPhaseAndRemoteTaskIdIsNotNullOrderByIdAsc(String phase);
         Optional<MediaGenerationTask> findByIdempotencyKey(String idempotencyKey);
     }
 

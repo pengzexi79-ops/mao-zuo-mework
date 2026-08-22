@@ -175,11 +175,25 @@ public class RenderPreparationService {
         PreparationTask task = taskRepo.findById(taskId).orElse(null);
         if (task == null || !PreparationTask.STATUS_RUNNING.equals(task.getStatus())) return;
         try {
+            if (isCancelled(task)) return;
             execute(task, request == null ? new PrepareRequest() : request);
         } catch (Exception e) {
             log.warn("preparation task {} failed: {}", taskId, e.toString());
             markFailed(taskId, e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage());
         }
+    }
+
+    /** Cancel a running preparation without cancelling shared crawl jobs. */
+    public PrepareResult cancel(Long taskId) {
+        ensureTable();
+        PreparationTask task = taskRepo.findById(taskId).orElseThrow(() -> new IllegalArgumentException("准备任务不存在"));
+        if (PreparationTask.STATUS_CANCELLED.equals(task.getStatus())) return snapshot(task);
+        if (!PreparationTask.STATUS_RUNNING.equals(task.getStatus())) throw new IllegalArgumentException("当前准备任务已结束，不能取消");
+        task.setStatus(PreparationTask.STATUS_CANCELLED);
+        task.setError("已由用户取消准备；已发起的公开素材任务不会被连带取消");
+        task.setLastActivityAt(LocalDateTime.now());
+        taskRepo.save(task);
+        return snapshot(task);
     }
 
     /** Polling view of one preparation task. */
@@ -320,6 +334,7 @@ public class RenderPreparationService {
         addStage(result, "重新预检", refreshed.isSufficient()
                 ? "素材池已更新，可继续执行出片干跑"
                 : "素材仍未完全满足目标，干跑会使用当前已成功入库的素材", refreshed.isSufficient() ? "done" : "warning");
+        if (isCancelled(task)) return snapshot(task);
         result.setStatus(result.isTimedOut() ? PreparationTask.STATUS_TIMEDOUT : PreparationTask.STATUS_DONE);
         persist(task, result);
         return result;
@@ -385,6 +400,7 @@ public class RenderPreparationService {
             // 记录不存在的任务视为已结束,避免 jobs.size()!=ids.size() 导致永远等满超时
             boolean complete = jobs.stream().allMatch(job -> job == null || isTerminal(job.getStatus()));
             int elapsed = (int) ((System.nanoTime() - started) / 1_000_000_000L);
+            if (isCancelled(task)) return new WaitResult(elapsed, true, "准备已取消", outcome.admittedItems(), outcome.failedItems(), outcome.reasons());
             if (complete) {
                 long done = jobs.stream().filter(java.util.Objects::nonNull)
                         .filter(job -> JobStatus.done.name().equals(job.getStatus())).count();
@@ -465,7 +481,12 @@ public class RenderPreparationService {
         }
     }
 
+    private boolean isCancelled(PreparationTask task) {
+        return task != null && PreparationTask.STATUS_CANCELLED.equals(task.getStatus());
+    }
+
     private void persist(PreparationTask task, PrepareResult result) {
+        if (isCancelled(task)) return;
         task.setStatus(result.getStatus());
         task.setKeyword(result.getKeyword());
         task.setAiUsed(result.isAiUsed());
@@ -516,6 +537,7 @@ public class RenderPreparationService {
     private String messageFor(PreparationTask task) {
         if (PreparationTask.STATUS_DONE.equals(task.getStatus())) return "出片准备完成";
         if (PreparationTask.STATUS_TIMEDOUT.equals(task.getStatus())) return "公开素材等待超时，本次使用已成功入库的素材继续预检";
+        if (PreparationTask.STATUS_CANCELLED.equals(task.getStatus())) return "准备已取消；已发起的公开素材任务不会被连带取消";
         if (PreparationTask.STATUS_FAILED.equals(task.getStatus())) {
             return task.getError() == null ? "出片准备失败" : "出片准备失败：" + task.getError();
         }
