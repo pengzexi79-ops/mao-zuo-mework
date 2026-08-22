@@ -2,7 +2,7 @@
 # Usage:
 #   powershell -ExecutionPolicy Bypass -File prepare_portable.ps1            # dev: junctions (fast, no copy)
 #   powershell -ExecutionPolicy Bypass -File prepare_portable.ps1 -Copy      # packaging: real copy into portable\
-param([switch]$Copy)
+param([switch]$Copy, [switch]$RepairDependencies)
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
 $tc = Join-Path (Split-Path $root -Parent) '.toolchain'
@@ -60,14 +60,19 @@ if (Test-Path $venvPy) {
     $manifest = Get-Content -Raw -LiteralPath $manifestPath -Encoding UTF8 | ConvertFrom-Json
     $pipTargets = @($manifest.approvedPip.PSObject.Properties | ForEach-Object { $_.Value.spec } | Where-Object { $_ })
     if ($pipTargets.Count -gt 0) {
-      Write-Host ("[media] 预置媒体增强工具到 venv（按 capabilities.json approvedPip 固定版本：" + ($pipTargets -join ' ') + "）...")
-      & $venvPy -m pip install --disable-pip-version-check --no-input @pipTargets 2>&1 | Out-Null
-      Write-Host '[media] 完成（缺失时环境中心会标红并给出一键处理）'
+      if ($RepairDependencies) {
+        Write-Host ("[media] 显式修复 venv 固定依赖：" + ($pipTargets -join ' ') + " ...")
+        & $venvPy -m pip install --disable-pip-version-check --no-input @pipTargets
+        if ($LASTEXITCODE -ne 0) { throw "媒体增强依赖修复失败，退出码 $LASTEXITCODE" }
+        Write-Host '[media] 显式修复完成'
+      } else {
+        Write-Host '[media] 离线准备模式：不执行 pip install；请先准备完整 venv，或显式传入 -RepairDependencies'
+      }
     } else {
       Write-Host '[media] WARN: capabilities.json approvedPip 为空，跳过预置'
     }
   } else {
-    Write-Host "[media] WARN: 缺少能力清单 $manifestPath，跳过预置（发行包将无法固定媒体工具版本）"
+    throw "缺少能力清单 $manifestPath，无法生成可复现发行包"
   }
 }
 

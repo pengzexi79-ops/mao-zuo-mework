@@ -20,6 +20,7 @@ frontend/dist/
 backend/tools/__pycache__/
 portable/
 installer/output/
+installer/version.iss
 installer/*.log
 installer/*.log.err
 sample-materials/

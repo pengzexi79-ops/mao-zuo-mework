@@ -1,7 +1,7 @@
 ﻿; Build with Inno Setup 6 after `mvn -f backend/pom.xml package`.
 ; Portable runtime directories are optional at build time but required for a no-prerequisite release.
 #define AppName "Mework"
-#define AppVersion "2.2.100"
+#include "version.iss"
 #define AppPublisher "Mework"
 #define AppExeName "start.bat"
 
@@ -33,6 +33,7 @@ Source: "..\backend\tools\bootstrap_media_runtime.bat"; DestDir: "{app}\backend\
 Source: "..\backend\tools\media_diagnose.py"; DestDir: "{app}\backend\tools"; Flags: ignoreversion
 Source: "..\backend\tools\natural_tts.py"; DestDir: "{app}\backend\tools"; Flags: ignoreversion
 Source: "..\backend\src\main\resources\release-notes.json"; DestDir: "{app}\backend\src\main\resources"; Flags: ignoreversion
+Source: "output\release-manifest.json"; DestDir: "{app}\installer"; Flags: ignoreversion
 ; Required runtime folders: a release build must fail rather than silently omit an offline prerequisite.
 Source: "..\portable\*"; DestDir: "{app}\portable"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\backend\.venv\*"; DestDir: "{app}\backend\.venv"; Flags: ignoreversion recursesubdirs createallsubdirs

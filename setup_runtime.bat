@@ -5,6 +5,12 @@ setlocal EnableExtensions EnableDelayedExpansion
 REM Prepare only bundled/local runtime pieces. Network failures are non-fatal.
 set "APP_DIR=%~dp0"
 set "BACKEND_DIR=%APP_DIR%backend"
+set "MODE=%~1"
+if not defined MODE set "MODE=verify"
+if /I not "%MODE%"=="verify" if /I not "%MODE%"=="repair" (
+  echo 用法：setup_runtime.bat [verify^|repair]
+  exit /b 2
+)
 if not defined APP_DATA_DIR set "APP_DATA_DIR=%APP_DIR%data"
 set "LOG_DIR=%APP_DATA_DIR%\logs"
 if not exist "%LOG_DIR%" mkdir "%LOG_DIR%"
@@ -37,7 +43,7 @@ if exist "%APP_DIR%portable\ffmpeg\bin\ffmpeg.exe" (
   ffmpeg -version >nul 2>&1 && echo [已就绪] 系统 FFmpeg || echo [需处理] FFmpeg: 将 ffmpeg.exe 和 ffprobe.exe 放入 portable\ffmpeg\bin
 )
 
-if not exist "%BACKEND_DIR%\.venv\Scripts\python.exe" (
+if not exist "%BACKEND_DIR%\.venv\Scripts\python.exe" if /I "%MODE%"=="repair" (
   if exist "%APP_DIR%portable\python\python.exe" (
     echo [准备中] 正在用内置 Python 创建 backend\.venv...
     "%APP_DIR%portable\python\python.exe" -m venv --copies "%BACKEND_DIR%\.venv" >>"%LOG_DIR%\dependency-bootstrap.log" 2>&1
@@ -64,13 +70,15 @@ if not exist "%BACKEND_DIR%\.venv\Scripts\python.exe" (
 )
 
 if exist "%BACKEND_DIR%\.venv\Scripts\python.exe" (
-  call "%BACKEND_DIR%\tools\bootstrap_media_runtime.bat"
+  call "%BACKEND_DIR%\tools\bootstrap_media_runtime.bat" %MODE%
   if errorlevel 1 (
-    echo [可选增强未就绪] ASR、OCR、AI 配音或响度统一暂不可用；基础界面仍可启动。
+    echo [媒体运行时未就绪] 默认 verify 未联网；需要修复时执行 setup_runtime.bat repair。
     echo [详情] %LOG_DIR%\dependency-bootstrap.log
   ) else (
-    echo [已就绪] Python 媒体依赖
+    echo [已就绪] Python 媒体依赖（%MODE%）
   )
+) else if /I not "%MODE%"=="repair" (
+  echo [离线检查失败] 未找到 backend\.venv，未创建、未联网。需要修复时执行 setup_runtime.bat repair。
 )
 
 REM Make sure MySQL is up before the app starts.
