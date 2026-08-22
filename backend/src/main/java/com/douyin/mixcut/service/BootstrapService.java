@@ -679,8 +679,15 @@ public class BootstrapService implements ApplicationRunner {
         cap.put("fallback", fallback);
         cap.put("activationRequired", false);
         cap.put("usedBy", entry.usedBy());
+        cap.put("executionPolicy", entry.executionPolicy());
+        cap.put("offlineCapable", entry.offlineCapable());
+        cap.put("offlineReady", runtimeReady && entry.offlineCapable());
+        cap.put("fallbackKeys", entry.fallbackKeys());
+        cap.put("configVariables", entry.configVariables());
+        cap.put("verifySteps", entry.verifySteps());
+        cap.put("restartRequired", entry.restartRequired());
         boolean repairable = entry.repairable();
-        cap.put("status", ready ? "ready" : "missing");
+        cap.put("status", runtimeReady ? "ready" : ready ? "detected_only" : "missing");
         cap.put("needsNetwork", entry.needsNetwork());
         cap.put("installMode", ready ? "bundled" : repairable ? "repairable" : "bundled");
         cap.put("action", ready ? "none" : repairable ? "install" : "official");
@@ -709,6 +716,13 @@ public class BootstrapService implements ApplicationRunner {
         cap.put("group", entry.group());
         cap.put("name", entry.name());
         cap.put("tool", entry.tool());
+        cap.put("executionPolicy", entry.executionPolicy());
+        cap.put("offlineCapable", entry.offlineCapable());
+        cap.put("offlineReady", false);
+        cap.put("fallbackKeys", entry.fallbackKeys());
+        cap.put("configVariables", entry.configVariables());
+        cap.put("verifySteps", entry.verifySteps());
+        cap.put("restartRequired", entry.restartRequired());
         cap.put("status", configured ? "ready" : "external");
         cap.put("installed", configured);
         cap.put("runtimeReady", configured);
@@ -755,6 +769,11 @@ public class BootstrapService implements ApplicationRunner {
         row.put("setup", setup);
         row.put("url", url);
         row.put("requirement", requirement);
+        row.put("installSteps", List.of(setup));
+        row.put("configureSteps", variable == null || variable.isBlank() ? List.of() : List.of("确认配置项：" + variable));
+        row.put("verifySteps", List.of("重新检测环境状态", "确认对应能力显示为可用"));
+        row.put("networkRequired", requirement.contains("网络") || requirement.contains("抓取"));
+        row.put("restartRequired", false);
         return row;
     }
 
@@ -1009,7 +1028,9 @@ public class BootstrapService implements ApplicationRunner {
         record Entry(String type, String key, String group, String name, String tool, String envKey,
                      boolean needsNetwork, boolean wired, String usedBy, String officialUrl,
                      boolean repairable, String pipRef, String installDisplay,
-                     String installMode, String guide) {
+                     String installMode, String guide, String executionPolicy,
+                     boolean offlineCapable, List<String> fallbackKeys, List<String> configVariables,
+                     List<String> verifySteps, boolean restartRequired) {
             boolean isExternal() {
                 return "external".equals(type);
             }
@@ -1103,11 +1124,86 @@ public class BootstrapService implements ApplicationRunner {
                     || installMode.isBlank() || officialUrl.isBlank() || guide.isBlank())) {
                 throw new IllegalStateException("外部能力 " + key + " 缺少必填字段");
             }
+            boolean needsNetwork = node.path("needsNetwork").asBoolean(false);
+            String executionPolicy = node.path("executionPolicy").asText("");
+            if (executionPolicy.isBlank()) executionPolicy = defaultExecutionPolicy(type, key);
+            boolean offlineCapable = node.has("offlineCapable")
+                    ? node.path("offlineCapable").asBoolean(false)
+                    : defaultOfflineCapable(type, key, needsNetwork);
+            List<String> fallbackKeys = stringList(node.path("fallbackKeys"));
+            if (fallbackKeys.isEmpty()) fallbackKeys = defaultFallbackKeys(key);
+            List<String> configVariables = stringList(node.path("configVariables"));
+            if (configVariables.isEmpty() && "env".equals(type)) configVariables = defaultConfigVariables(key, envKey);
+            List<String> verifySteps = stringList(node.path("verifySteps"));
+            if (verifySteps.isEmpty()) verifySteps = defaultVerifySteps(type, key);
+            boolean restartRequired = node.path("restartRequired").asBoolean(false);
             return new Entry(type, key, group, name, tool, envKey,
                     node.path("needsNetwork").asBoolean(false), node.path("wired").asBoolean(false),
                     node.path("usedBy").asText(""), officialUrl, node.path("repairable").asBoolean(false),
                     node.path("pipRef").asText(""), node.path("installDisplay").asText(""),
-                    installMode, guide);
+                    installMode, guide, executionPolicy, offlineCapable, fallbackKeys,
+                    configVariables, verifySteps, restartRequired);
+        }
+
+        private static String defaultExecutionPolicy(String type, String key) {
+            if ("external".equals(type)) return "externalActivation";
+            if (Set.of("video-download", "video-download-2", "image-gallery", "tts").contains(key)) return "networkFetch";
+            if (Set.of("database").contains(key)) return "readOnlyProbe";
+            if (Set.of("video-render", "asr", "asr-local", "ocr", "loudness", "vocals", "matting",
+                    "auto-editor", "opencv", "magick").contains(key)) return "mediaTransform";
+            return "readOnlyProbe";
+        }
+
+        private static boolean defaultOfflineCapable(String type, String key, boolean needsNetwork) {
+            if ("external".equals(type) || needsNetwork) return false;
+            return !Set.of("chattts", "whisper-model", "nvenc", "pixabay-video", "pexels-video", "freesound").contains(key);
+        }
+
+        private static List<String> defaultFallbackKeys(String key) {
+            return switch (key) {
+                case "asr-local" -> List.of("asr");
+                case "chattts" -> List.of("tts");
+                case "magick" -> List.of("video-render");
+                case "auto-editor" -> List.of("video-render");
+                default -> List.of();
+            };
+        }
+
+        private static List<String> defaultConfigVariables(String key, String envKey) {
+            List<String> specific = switch (key) {
+                case "video-render", "loudness" -> List.of("APP_FFMPEG", "APP_FFPROBE");
+                case "video-download" -> List.of("APP_YTDLP_PATH");
+                case "video-download-2" -> List.of("APP_YOU_GET_PATH");
+                case "asr", "asr-local", "ocr", "tts", "chattts", "vocals", "matting", "auto-editor", "opencv" -> List.of("APP_LOCAL_PYTHON");
+                case "magick" -> List.of("APP_IMAGEMAGICK_PATH");
+                default -> List.of();
+            };
+            if (!specific.isEmpty()) return specific;
+            return envKey == null || envKey.isBlank() ? List.of() : List.of(envKey);
+        }
+
+        private static List<String> defaultVerifySteps(String type, String key) {
+            if ("external".equals(type)) return List.of("完成官方配置后重新检测能力状态");
+            return switch (key) {
+                case "video-render" -> List.of("运行 ffmpeg -version", "运行 ffprobe -version");
+                case "database" -> List.of("检查 MySQL 连接", "读取系统环境状态");
+                case "video-download", "video-download-2" -> List.of("运行工具版本检查", "使用已授权公开 URL 做一次抓取预检");
+                case "asr", "asr-local" -> List.of("检查 Python/转写引擎", "用测试音频生成转写结果");
+                case "ocr" -> List.of("检查 OCR 模块", "用测试图片生成文字识别结果");
+                case "tts", "chattts" -> List.of("检查配音引擎", "生成一段测试语音并确认音频可播放");
+                case "vocals" -> List.of("检查人声分离模块和模型", "用测试音频生成分离结果");
+                default -> List.of("重新检测可执行文件、模块和运行状态");
+            };
+        }
+
+        private static List<String> stringList(JsonNode node) {
+            if (node == null || !node.isArray()) return List.of();
+            List<String> values = new ArrayList<>();
+            node.forEach(value -> {
+                String text = value.asText("").trim();
+                if (!text.isBlank()) values.add(text);
+            });
+            return List.copyOf(values);
         }
 
         int schemaVersion() {

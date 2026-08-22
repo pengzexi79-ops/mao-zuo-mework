@@ -1,6 +1,6 @@
 {
-  "schemaVersion": 1,
-  "manifestVersion": "1.0.0",
+  "schemaVersion": 2,
+  "manifestVersion": "1.1.0",
   "description": "Mework 能力中心唯一数据源：驱动 BootstrapService 的能力清单、修复安装边界与官方入口。",
   "requirementsFile": "requirements-windows.txt",
   "approvedPip": {
@@ -61,7 +61,9 @@
       "name": "公开网页视频下载",
       "tool": "yt-dlp",
       "envKey": "yt-dlp",
-      "needsNetwork": false,
+      "needsNetwork": true,
+      "executionPolicy": "networkFetch",
+      "offlineCapable": false,
       "wired": true,
       "usedBy": "公开素材抓取"
     },
@@ -72,7 +74,9 @@
       "name": "兜底视频下载（you-get）",
       "tool": "you-get",
       "envKey": "you-get",
-      "needsNetwork": false,
+      "needsNetwork": true,
+      "executionPolicy": "networkFetch",
+      "offlineCapable": false,
       "wired": true,
       "usedBy": "公开素材抓取"
     },
@@ -120,7 +124,9 @@
       "name": "AI 配音（口播）",
       "tool": "Edge-TTS",
       "envKey": "neuralTts",
-      "needsNetwork": false,
+      "needsNetwork": true,
+      "executionPolicy": "networkFetch",
+      "offlineCapable": false,
       "wired": true,
       "usedBy": "AI 自然人声"
     },
@@ -218,7 +224,9 @@
       "name": "图片/图集批量抓取",
       "tool": "gallery-dl",
       "envKey": "galleryDl",
-      "needsNetwork": false,
+      "needsNetwork": true,
+      "executionPolicy": "networkFetch",
+      "offlineCapable": false,
       "wired": true,
       "usedBy": "图集/图片页面批量抓取（/api/crawl/images）",
       "officialUrl": "https://github.com/mikf/gallery-dl",

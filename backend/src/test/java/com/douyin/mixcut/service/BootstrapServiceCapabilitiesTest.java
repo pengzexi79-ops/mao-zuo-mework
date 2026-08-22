@@ -126,6 +126,11 @@ class BootstrapServiceCapabilitiesTest {
         assertEquals("出片任务、字幕烧录、静音封装、媒体质检", render.get("usedBy"));
         assertEquals("ready", render.get("status"));
         assertEquals(false, render.get("needsNetwork"));
+        assertEquals("mediaTransform", render.get("executionPolicy"));
+        assertEquals(true, render.get("offlineCapable"));
+        assertEquals(true, render.get("offlineReady"));
+        assertEquals(List.of("APP_FFMPEG", "APP_FFPROBE"), render.get("configVariables"));
+        assertTrue(render.get("verifySteps") instanceof List);
         assertEquals("bundled", render.get("installMode"));
         assertEquals("none", render.get("action"));
         assertEquals("已安装可用", render.get("actionLabel"));
@@ -139,6 +144,9 @@ class BootstrapServiceCapabilitiesTest {
         Map<String, Object> vocals = caps.stream().filter(cap -> "vocals".equals(cap.get("key"))).findFirst().orElseThrow();
         assertEquals("ready", vocals.get("status"), "demucs 探测通过时应为 ready");
         assertEquals(true, vocals.get("needsNetwork"));
+        assertEquals("mediaTransform", vocals.get("executionPolicy"));
+        assertEquals(false, vocals.get("offlineCapable"));
+        assertEquals(List.of(), vocals.get("fallbackKeys"));
         assertEquals("素材库人声/伴奏分离", vocals.get("usedBy"));
 
         Map<String, Object> external = caps.stream().filter(cap -> "freesound".equals(cap.get("key"))).findFirst().orElseThrow();
