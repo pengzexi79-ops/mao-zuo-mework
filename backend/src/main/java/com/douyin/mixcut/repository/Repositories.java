@@ -84,6 +84,13 @@ public interface Repositories {
         long countByStatus(String status);
     }
 
+    interface MediaGenerationTaskRepo extends JpaRepository<MediaGenerationTask, Long> {
+        Optional<MediaGenerationTask> findByTaskKey(String taskKey);
+        List<MediaGenerationTask> findTop50ByOrderByIdDesc();
+        List<MediaGenerationTask> findByStatusOrderByIdAsc(String status);
+        Optional<MediaGenerationTask> findByIdempotencyKey(String idempotencyKey);
+    }
+
     interface JobOutputRepo extends JpaRepository<JobOutput, Long> {
         List<JobOutput> findByJobIdOrderByIdxAsc(Long jobId);
 

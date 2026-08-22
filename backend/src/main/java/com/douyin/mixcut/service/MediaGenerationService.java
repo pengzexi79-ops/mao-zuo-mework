@@ -2,10 +2,12 @@ package com.douyin.mixcut.service;
 
 import com.douyin.mixcut.config.AppProps;
 import com.douyin.mixcut.domain.AiProvider;
+import com.douyin.mixcut.domain.MediaGenerationTask;
 import com.douyin.mixcut.domain.Material;
 import com.douyin.mixcut.domain.MaterialRole;
 import com.douyin.mixcut.domain.ProviderKind;
 import com.douyin.mixcut.repository.Repositories.AiProviderRepo;
+import com.douyin.mixcut.repository.Repositories.MediaGenerationTaskRepo;
 import com.douyin.mixcut.security.CredentialCipher;
 import com.douyin.mixcut.security.UrlGuard;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -40,6 +42,7 @@ public class MediaGenerationService {
     private final MediaProviderCatalog mediaCatalog;
     private final AppProps props;
     private final ObjectMapper om;
+    private final MediaGenerationTaskRepo generationTaskRepo;
     @Qualifier("mediaExecutor") private final Executor executor;
     private final Map<String, Task> tasks = new ConcurrentHashMap<>();
 
@@ -97,7 +100,8 @@ public class MediaGenerationService {
         String model = requiredModel(provider, "image", request.getModel());
         String size = List.of("1024x1024", "1024x1536", "1536x1024").contains(request.getSize()) ? request.getSize() : "1024x1024";
         String quality = List.of("low", "medium", "high").contains(request.getQuality()) ? request.getQuality() : "medium";
-        Task task = new Task(); task.setId(UUID.randomUUID().toString()); task.setKind("ai-image"); task.setMessage("已确认官方计费，正在提交图片生成"); tasks.put(task.getId(), task);
+        Task task = newTask("ai-image", "已确认官方计费，正在提交图片生成", provider, model,
+                Map.of("prompt", prompt, "size", size, "quality", quality));
         executor.execute(() -> generateOpenAiImage(task, provider, prompt, model, size, quality));
         return task;
     }
@@ -110,7 +114,8 @@ public class MediaGenerationService {
         String model = requiredModel(provider, "video", request.getModel());
         String size = List.of("1280x720", "720x1280", "1024x1024").contains(request.getSize()) ? request.getSize() : "1280x720";
         int seconds = request.getSeconds() == null ? 4 : Math.max(2, Math.min(12, request.getSeconds()));
-        Task task = newTask("ai-video", "已确认官方计费，正在提交视频生成");
+        Task task = newTask("ai-video", "已确认官方计费，正在提交视频生成", provider, model,
+                Map.of("prompt", prompt, "size", size, "seconds", seconds));
         executor.execute(() -> generateVideo(task, provider, prompt, model, size, seconds));
         return task;
     }
@@ -122,7 +127,8 @@ public class MediaGenerationService {
         AiProvider provider = supportedProvider(request.getProviderId());
         String model = requiredModel(provider, "voice", request.getModel());
         String voice = List.of("alloy", "ash", "ballad", "coral", "echo", "fable", "onyx", "nova", "sage", "shimmer").contains(request.getVoice()) ? request.getVoice() : "coral";
-        Task task = newTask("ai-voice", "已确认官方计费，正在生成配音");
+        Task task = newTask("ai-voice", "已确认官方计费，正在生成配音", provider, model,
+                Map.of("input", input, "voice", voice, "instructions", request.getInstructions() == null ? "" : request.getInstructions().substring(0, Math.min(1000, request.getInstructions().length()))));
         executor.execute(() -> generateVoice(task, provider, input, model, voice, request.getInstructions()));
         return task;
     }
@@ -143,10 +149,43 @@ public class MediaGenerationService {
         return requested;
     }
 
-    private Task newTask(String kind, String message) { Task task = new Task(); task.setId(UUID.randomUUID().toString()); task.setKind(kind); task.setMessage(message); tasks.put(task.getId(), task); return task; }
+    private Task newTask(String kind, String message) { return newTask(kind, message, null, null, Map.of()); }
 
-    public List<Task> recent() { return tasks.values().stream().sorted((a, b) -> Long.compare(b.createdAt, a.createdAt)).limit(50).toList(); }
-    public Task get(String id) { Task task = tasks.get(id); if (task == null) throw new IllegalArgumentException("AI 生成任务不存在"); return task; }
+    private Task newTask(String kind, String message, AiProvider provider, String model, Map<String, Object> snapshot) {
+        Task task = new Task();
+        task.setId(UUID.randomUUID().toString());
+        task.setKind(kind);
+        task.setMessage(message);
+        tasks.put(task.getId(), task);
+        MediaGenerationTask persisted = new MediaGenerationTask();
+        persisted.setTaskKey(task.getId());
+        persisted.setKind(kind);
+        persisted.setStatus("accepted");
+        persisted.setPhase("accepted");
+        persisted.setProviderId(provider == null ? null : provider.getId());
+        persisted.setProvider(provider == null ? null : normalizedBase(provider));
+        persisted.setModel(model);
+        try { persisted.setInputSnapshot(om.writeValueAsString(snapshot)); } catch (Exception e) { throw new IllegalArgumentException("生成参数无法保存", e); }
+        generationTaskRepo.save(persisted);
+        return task;
+    }
+
+    public List<Task> recent() { return generationTaskRepo.findTop50ByOrderByIdDesc().stream().map(this::fromPersisted).toList(); }
+    public Task get(String id) {
+        Task task = tasks.get(id);
+        if (task != null) return task;
+        MediaGenerationTask persisted = generationTaskRepo.findByTaskKey(id).orElseThrow(() -> new IllegalArgumentException("AI 生成任务不存在"));
+        return fromPersisted(persisted);
+    }
+
+    private Task fromPersisted(MediaGenerationTask persisted) {
+        Task task = new Task();
+        task.setId(persisted.getTaskKey()); task.setKind(persisted.getKind()); task.setStatus(persisted.getStatus());
+        task.setProgress(persisted.getProgress() == null ? 0 : persisted.getProgress()); task.setMessage(persisted.getMessage()); task.setRemoteTaskId(persisted.getRemoteTaskId()); task.setMaterialId(persisted.getMaterialId());
+        if (persisted.getCreatedAt() != null) task.setCreatedAt(persisted.getCreatedAt().atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli());
+        if (persisted.getUpdatedAt() != null) task.setUpdatedAt(persisted.getUpdatedAt().atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli());
+        return task;
+    }
 
     private void generateVideo(Task task, AiProvider provider, String prompt, String model, String size, int seconds) {
         try {
@@ -239,5 +278,12 @@ public class MediaGenerationService {
         }
     }
 
-    private void update(Task task, String status, int progress, String message) { task.setStatus(status); task.setProgress(Math.max(0, Math.min(100, progress))); task.setMessage(message); task.setUpdatedAt(System.currentTimeMillis()); }
+    private void update(Task task, String status, int progress, String message) {
+        task.setStatus(status); task.setProgress(Math.max(0, Math.min(100, progress))); task.setMessage(message); task.setUpdatedAt(System.currentTimeMillis());
+        MediaGenerationTask persisted = generationTaskRepo.findByTaskKey(task.getId()).orElse(null);
+        if (persisted != null) {
+            persisted.setStatus(status); persisted.setPhase(status); persisted.setProgress(task.getProgress()); persisted.setMessage(message); persisted.setRemoteTaskId(task.getRemoteTaskId()); persisted.setMaterialId(task.getMaterialId()); persisted.setLastActivityAt(java.time.LocalDateTime.now());
+            generationTaskRepo.save(persisted);
+        }
+    }
 }

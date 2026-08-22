@@ -105,6 +105,7 @@ public class BootstrapService implements ApplicationRunner {
             migrateOutputEditSessions();
             migratePreparationTasks();
             migrateMediaTasks();
+            migrateMediaGenerationTasks();
             migrateCrawlTaskDiagnostics();
             migrateMaterialTranscripts();
             migrateMaterialAnalysis();
@@ -323,6 +324,19 @@ public class BootstrapService implements ApplicationRunner {
             log.info("已确认媒体工具任务表可用");
         } catch (Exception e) {
             log.warn("无法初始化媒体工具任务表；媒体任务将在数据库恢复后重试", e);
+        }
+    }
+
+    /** Creates the persistent paid-media generation task table. */
+    private void migrateMediaGenerationTasks() {
+        try (Connection connection = dataSource.getConnection()) {
+            ResourceDatabasePopulator populator = new ResourceDatabasePopulator(
+                    new ClassPathResource("db/media-generation-task-migration.sql"));
+            populator.setContinueOnError(false);
+            populator.populate(connection);
+            log.info("已确认 AI 媒体生成任务表可用");
+        } catch (Exception e) {
+            log.warn("无法初始化 AI 媒体生成任务表；生成任务将在数据库恢复后重试", e);
         }
     }
 
