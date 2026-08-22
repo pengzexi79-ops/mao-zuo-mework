@@ -205,6 +205,7 @@ export const api = {
   releaseNotes: (config) => get('/api/system/release-notes', config),
   capabilities: (config) => get('/api/system/capabilities', config),
   connectivity: (config = {}) => get('/api/system/connectivity', config),
+  tasks: (config = {}) => get('/api/tasks', config),
   resourceCatalog: (config) => get('/api/system/resources', config),
   installCapability: (key) => http.post('/api/system/capabilities/install', { key }),
   testMysqlConfig: (body) => http.post('/api/local-config/mysql/test', body),

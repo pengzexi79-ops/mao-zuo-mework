@@ -37,6 +37,7 @@
         <el-button v-if="envLoadError" type="danger" size="small" plain @click="openFix('backend')">后端不可达，查看启动配置</el-button>
         <el-button v-else-if="env.databaseConnected === false" type="danger" size="small" plain @click="openFix('mysql')">数据库未连接，配置认证</el-button>
         <el-button v-else-if="!env.ffmpeg" type="danger" size="small" plain @click="openFix('ffmpeg')">未检测到 ffmpeg，查看配置</el-button>
+        <el-button size="small" plain @click="openTaskCenter">任务 <el-badge :value="activeTaskCount" :hidden="!activeTaskCount" /></el-button>
         <el-button size="small" :icon="Refresh" :loading="envLoading" @click="loadEnv">
           {{ envLoadError ? '重试环境检测' : '刷新状态' }}
         </el-button>
@@ -49,6 +50,16 @@
   </div>
 
   <AiChat />
+
+  <el-drawer v-model="taskCenterVisible" title="全局任务" size="420px">
+    <el-empty v-if="!globalTasks.length" description="暂无任务" />
+    <div v-for="task in globalTasks" :key="`${task.source}-${task.id}`" class="global-task-row">
+      <div class="global-task-head"><b>{{ task.label || task.type }}</b><el-tag size="small" :type="taskStatusType(task.rawStatus)">{{ task.rawStatus }}</el-tag></div>
+      <el-progress :percentage="task.progress" :stroke-width="8" :show-text="false" />
+      <div class="global-task-message">{{ task.message || '等待调度' }}</div>
+      <div class="global-task-meta">{{ task.source }} · {{ task.progress }}%</div>
+    </div>
+  </el-drawer>
 
   <div v-if="globalDropVisible" class="global-drop-mask">
     <div class="global-drop-card">
@@ -242,6 +253,10 @@ const releaseDraft = reactive({ title: '', summary: '', changesText: '', fixesTe
 const aiReady = ref(false)
 const envLoading = ref(false)
 const envLoadError = ref(false)
+const taskCenterVisible = ref(false)
+const globalTasks = ref([])
+let taskTimer = null
+const activeTaskCount = computed(() => globalTasks.value.filter(task => ['pending', 'running', 'accepted', 'submitting', 'polling', 'downloading', 'importing'].includes(task.rawStatus)).length)
 const envDialogVisible = ref(false)
 const fixDialogVisible = ref(false)
 const fixAction = ref('general')
@@ -307,6 +322,16 @@ function openFix (action) {
 }
 function openEnvCenter () {
   router.push({ path: '/capabilities', query: { view: 'environment' } })
+}
+function openTaskCenter () { taskCenterVisible.value = true; loadGlobalTasks() }
+async function loadGlobalTasks () {
+  try { globalTasks.value = await api.tasks({ params: { limit: 50 }, silent: true }) || [] } catch { /* task center is observational */ }
+}
+function taskStatusType (status) {
+  if (['done'].includes(status)) return 'success'
+  if (['failed', 'failed_terminal', 'manual_review'].includes(status)) return 'danger'
+  if (['paused', 'awaiting_decision'].includes(status)) return 'warning'
+  return 'info'
 }
 async function testMysql () {
   mysqlTesting.value = true
@@ -660,14 +685,15 @@ async function uploadDroppedFiles () {
     globalDropPackageMode.value = false
   }
 }
-onMounted(() => { loadEnv(); window.addEventListener('dragenter', onDragEnter); window.addEventListener('dragover', onDragOver); window.addEventListener('dragleave', onDragLeave); window.addEventListener('drop', onDrop) })
-onBeforeUnmount(() => { window.removeEventListener('dragenter', onDragEnter); window.removeEventListener('dragover', onDragOver); window.removeEventListener('dragleave', onDragLeave); window.removeEventListener('drop', onDrop) })
+onMounted(() => { loadEnv(); loadGlobalTasks(); taskTimer = window.setInterval(loadGlobalTasks, 5000); window.addEventListener('dragenter', onDragEnter); window.addEventListener('dragover', onDragOver); window.addEventListener('dragleave', onDragLeave); window.addEventListener('drop', onDrop) })
+onBeforeUnmount(() => { if (taskTimer) window.clearInterval(taskTimer); window.removeEventListener('dragenter', onDragEnter); window.removeEventListener('dragover', onDragOver); window.removeEventListener('dragleave', onDragLeave); window.removeEventListener('drop', onDrop) })
 </script>
 
 <style scoped>
 .env-sections { margin-top: 14px; }
 .env-sections :deep(.el-collapse-item__header) { font-weight: 600; }
 .history-summary { margin-bottom: 14px; }
+.global-task-row { display:flex; flex-direction:column; gap:6px; padding:10px 0; border-bottom:1px solid var(--el-border-color-lighter); }.global-task-head { display:flex; align-items:center; justify-content:space-between; gap:8px; }.global-task-message { color:var(--el-text-color-regular); font-size:12px; line-height:1.5; }.global-task-meta { color:var(--el-text-color-secondary); font-size:11px; }
 .release-notes { margin-top: 14px; padding: 12px 14px; border: 1px solid #d9ecff; border-radius: 6px; background: #f5faff; font-size: 13px; line-height: 1.7; }
 .release-notes ul, .history-entry ul { margin: 5px 0 10px; padding-left: 20px; }
 .release-heading { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
