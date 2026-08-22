@@ -5,6 +5,7 @@ import com.douyin.mixcut.domain.Material;
 import com.douyin.mixcut.domain.MaterialRole;
 import com.douyin.mixcut.domain.MaterialTranscript;
 import com.douyin.mixcut.external.FfmpegTool;
+import com.douyin.mixcut.external.MediaCapabilityRouter;
 import com.douyin.mixcut.external.ProcRunner;
 import com.douyin.mixcut.repository.MaterialStore;
 import com.douyin.mixcut.repository.MaterialTranscriptStore;
@@ -12,8 +13,8 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.Data;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.nio.file.Files;
@@ -30,14 +31,30 @@ import java.util.regex.Pattern;
 /** Local, deterministic material inspection. It never uploads user media. */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class MaterialDiagnosisService {
     private final AppProps props;
     private final MaterialStore materials;
     private final MaterialTranscriptStore transcriptStore;
     private final FfmpegTool ffmpeg;
     private final ProcRunner runner;
+    private final MediaCapabilityRouter capabilityRouter;
     private final ObjectMapper om = new ObjectMapper();
+
+    public MaterialDiagnosisService(AppProps props, MaterialStore materials, MaterialTranscriptStore transcriptStore,
+                                    FfmpegTool ffmpeg, ProcRunner runner) {
+        this(props, materials, transcriptStore, ffmpeg, runner, new MediaCapabilityRouter(props, runner));
+    }
+
+    @Autowired
+    public MaterialDiagnosisService(AppProps props, MaterialStore materials, MaterialTranscriptStore transcriptStore,
+                                    FfmpegTool ffmpeg, ProcRunner runner, MediaCapabilityRouter capabilityRouter) {
+        this.props = props;
+        this.materials = materials;
+        this.transcriptStore = transcriptStore;
+        this.ffmpeg = ffmpeg;
+        this.runner = runner;
+        this.capabilityRouter = capabilityRouter;
+    }
 
     @Data
     public static class Diagnosis {
@@ -107,6 +124,7 @@ public class MaterialDiagnosisService {
         QualityGateResult gate = new QualityGateResult();
         if (material == null || material.getFilePath() == null) return gate;
         try {
+            capabilityRouter.materialInput(material);
             if (material.getFileType() == Material.FileType.image) {
                 return gate;
             }
@@ -124,13 +142,14 @@ public class MaterialDiagnosisService {
     }
 
     private void gateVideo(Material material, QualityGateResult gate, String hint) {
-        FfmpegTool.MediaInfo info = ffmpeg.probe(material.getFilePath());
+        Path input = materialPath(material);
+        FfmpegTool.MediaInfo info = ffmpeg.probe(input.toString());
         double duration = Math.max(1.0, info.getDuration());
         if (duration > GATE_MAX_VIDEO_SEC) {
             gate.getWarnings().add("视频时长超过 " + (long) GATE_MAX_VIDEO_SEC + "s，跳过深度质量闸门，请人工确认画面非占位素材");
             return;
         }
-        FfmpegTool.VideoQuality vq = ffmpeg.videoQuality(Path.of(material.getFilePath()));
+        FfmpegTool.VideoQuality vq = ffmpeg.videoQuality(input);
         if (!vq.isReadable()) {
             reject(gate, "画面无法解码，无法参与自动混剪；请重新导出为标准 MP4 后重新探测");
             return;
@@ -155,7 +174,7 @@ public class MaterialDiagnosisService {
             reject(gate, "画面冻结/几乎静止占比 " + pct(frozenRatio) + "，疑似静态图转视频或静态字幕页，不适合自动混剪；请使用有真实运动的画面");
             return;
         }
-        JsonNode cv = analyzeVideoOpenCv(Path.of(material.getFilePath()));
+        JsonNode cv = analyzeVideoOpenCv(input);
         if (cv != null && cv.path("readable").asBoolean(false)) {
             double blurryRatio = cv.path("blurryRatio").asDouble(0);
             double darkRatio = cv.path("darkRatio").asDouble(0);
@@ -181,7 +200,8 @@ public class MaterialDiagnosisService {
     }
 
     private void gateAudio(Material material, QualityGateResult gate, String hint) {
-        FfmpegTool.MediaInfo info = ffmpeg.probe(material.getFilePath());
+        Path input = materialPath(material);
+        FfmpegTool.MediaInfo info = ffmpeg.probe(input.toString());
         double duration = Math.max(1.0, info.getDuration());
         if (duration > GATE_MAX_AUDIO_SEC) {
             gate.getWarnings().add("音频时长超过 " + (long) GATE_MAX_AUDIO_SEC + "s，跳过深度质量闸门，请人工确认音轨非空音/噪声");
@@ -191,7 +211,7 @@ public class MaterialDiagnosisService {
             reject(gate, "音频流不可读取，无法参与自动混剪；请重新导出后重新探测");
             return;
         }
-        FfmpegTool.AudioQuality aq = ffmpeg.audioQuality(Path.of(material.getFilePath()));
+        FfmpegTool.AudioQuality aq = ffmpeg.audioQuality(input);
         if (!aq.isReadable()) {
             reject(gate, "音频无法解码，无法参与自动混剪；请重新导出为标准音频后重新探测");
             return;
@@ -217,10 +237,7 @@ public class MaterialDiagnosisService {
     /** OpenCV 画面质量分析：模糊/暗帧/过曝帧比例。能力不可用时返回 null（闸门 fail-open）。 */
     private JsonNode analyzeVideoOpenCv(Path video) {
         try {
-            Path script = props.mediaDiagnoseScriptPath();
-            if (!Files.isRegularFile(script)) return null;
-            ProcRunner.Result run = runner.run(List.of(props.localPythonPath(), script.toString(),
-                    "--video-quality", video.toString()), 300);
+            ProcRunner.Result run = runner.run(capabilityRouter.videoQualityCommand(video), 300);
             if (!run.ok()) return null;
             return om.readTree(run.out());
         } catch (Exception e) {
@@ -283,13 +300,14 @@ public class MaterialDiagnosisService {
     }
 
     private void inspectAudio(Material material, Diagnosis out, boolean forceRetranscribe) {
-        FfmpegTool.MediaInfo info = ffmpeg.probe(material.getFilePath());
+        Path input = materialPath(material);
+        FfmpegTool.MediaInfo info = ffmpeg.probe(input.toString());
         if (!info.isHasAudio() || info.getDuration() < 0.5) {
             out.setUsable(false);
             out.getIssues().add("没有可播放的音频");
             return;
         }
-        FfmpegTool.AudioQuality quality = ffmpeg.audioQuality(Path.of(material.getFilePath()));
+        FfmpegTool.AudioQuality quality = ffmpeg.audioQuality(input);
         if (!quality.isReadable() || quality.getMaxSilenceSec() > Math.max(3, info.getDuration() * 0.7)) {
             out.setUsable(false);
             out.getIssues().add("音频存在异常静音");
@@ -304,7 +322,8 @@ public class MaterialDiagnosisService {
     }
 
     private void inspectVisual(Material material, Diagnosis out, boolean forceRetranscribe) {
-        FfmpegTool.MediaInfo info = ffmpeg.probe(material.getFilePath());
+        Path input = materialPath(material);
+        FfmpegTool.MediaInfo info = ffmpeg.probe(input.toString());
         if (material.getFileType() == Material.FileType.video && !info.isHasVideo()) {
             out.setUsable(false);
             out.getIssues().add("视频流不可读取");
@@ -378,13 +397,11 @@ public class MaterialDiagnosisService {
         try {
             Path audio = Files.createTempFile(props.cache(), "asr-", ".wav");
             try {
-                ProcRunner.Result extract = runner.run(List.of(props.getFfmpeg(), "-y", "-i", mediaPath.toString(),
+                Path input = capabilityRouter.internalInput(mediaPath);
+                ProcRunner.Result extract = runner.run(List.of(capabilityRouter.ffmpeg(), "-y", "-i", input.toString(),
                         "-vn", "-ac", "1", "-ar", "16000", audio.toString()), 180);
                 if (!extract.ok()) return List.of();
-                Path script = props.mediaDiagnoseScriptPath();
-                if (!Files.isRegularFile(script)) return List.of();
-                ProcRunner.Result run = runner.run(List.of(props.localPythonPath(), script.toString(),
-                        "--audio", audio.toString(), "--asr-engine", "auto"), 900);
+                ProcRunner.Result run = runner.run(capabilityRouter.asrCommand(audio), 900);
                 if (!run.ok()) return List.of();
                 JsonNode root = om.readTree(run.out());
                 return parseTranscriptCues(root.path("segments"));
@@ -448,21 +465,21 @@ public class MaterialDiagnosisService {
         try {
             Path audio = Files.createTempFile(props.cache(), "asr-", ".wav");
             try {
-                ProcRunner.Result extract = runner.run(List.of(props.getFfmpeg(), "-y", "-i", material.getFilePath(),
+                Path input = capabilityRouter.materialInput(material);
+                ProcRunner.Result extract = runner.run(List.of(capabilityRouter.ffmpeg(), "-y", "-i", input.toString(),
                         "-vn", "-ac", "1", "-ar", "16000", audio.toString()), 180);
                 if (!extract.ok()) {
                     markTranscriptFailed(record, "Audio extraction failed");
                     return List.of();
                 }
 
-                Path script = props.mediaDiagnoseScriptPath();
-                if (!Files.isRegularFile(script)) {
-                    markTranscriptFailed(record, "media_diagnose.py not found at " + script);
+                ProcRunner.Result run;
+                try {
+                    run = runner.run(capabilityRouter.asrCommand(audio), 900);
+                } catch (IllegalArgumentException | IllegalStateException routeError) {
+                    markTranscriptFailed(record, routeError.getMessage());
                     return List.of();
                 }
-
-                ProcRunner.Result run = runner.run(List.of(props.localPythonPath(), script.toString(),
-                        "--audio", audio.toString(), "--asr-engine", "auto"), 900);
                 if (!run.ok()) {
                     markTranscriptFailed(record, "ASR process returned non-zero exit code");
                     return List.of();
@@ -532,27 +549,23 @@ public class MaterialDiagnosisService {
      */
     private List<String> ocrVideoFrames(Material material, int frames) {
         try {
-            FfmpegTool.MediaInfo info = ffmpeg.probe(material.getFilePath());
+            Path input = materialPath(material);
+            FfmpegTool.MediaInfo info = ffmpeg.probe(input.toString());
             if (info == null || !info.isHasVideo() || info.getDuration() <= 0) return List.of();
             double duration = info.getDuration();
             List<Path> temps = new ArrayList<>();
             try {
-                List<String> cmd = new ArrayList<>();
-                cmd.add(props.localPythonPath());
-                cmd.add(props.mediaDiagnoseScriptPath().toString());
                 for (int i = 0; i < frames; i++) {
                     double at = duration * (i + 0.5) / frames;
                     Path temp = Files.createTempFile(props.cache(), "ocr-", ".jpg");
-                    if (!ffmpeg.thumbnail(material.getFilePath(), temp, Math.min(1, Math.max(0, at)))) {
+                    if (!ffmpeg.thumbnail(input.toString(), temp, Math.min(1, Math.max(0, at)))) {
                         Files.deleteIfExists(temp);
                         continue;
                     }
                     temps.add(temp);
-                    cmd.add("--image");
-                    cmd.add(temp.toString());
                 }
                 if (temps.isEmpty()) return List.of();
-                ProcRunner.Result run = runner.run(cmd, 300);
+                ProcRunner.Result run = runner.run(capabilityRouter.ocrCommand(temps), 300);
                 if (!run.ok()) return List.of();
                 JsonNode node = om.readTree(run.out());
                 Set<String> unique = new LinkedHashSet<>();
@@ -571,11 +584,10 @@ public class MaterialDiagnosisService {
         try {
             Path temp = Files.createTempFile(props.cache(), "ocr-", ".jpg");
             try {
-                if (material.getFileType() == Material.FileType.video && !ffmpeg.thumbnail(material.getFilePath(), temp, at)) return List.of();
-                if (material.getFileType() == Material.FileType.image) temp = Path.of(material.getFilePath());
-                Path script = props.mediaDiagnoseScriptPath();
-                if (!Files.isRegularFile(script)) return List.of();
-                ProcRunner.Result run = runner.run(List.of(props.localPythonPath(), script.toString(), "--image", temp.toString()), 120);
+                Path input = materialPath(material);
+                if (material.getFileType() == Material.FileType.video && !ffmpeg.thumbnail(input.toString(), temp, at)) return List.of();
+                if (material.getFileType() == Material.FileType.image) temp = input;
+                ProcRunner.Result run = runner.run(capabilityRouter.ocrCommand(List.of(temp)), 120);
                 if (!run.ok()) return List.of();
                 JsonNode node = om.readTree(run.out());
                 Set<String> unique = new LinkedHashSet<>();
@@ -587,6 +599,10 @@ public class MaterialDiagnosisService {
         } catch (Exception ignore) {
             return List.of();
         }
+    }
+
+    private Path materialPath(Material material) {
+        return capabilityRouter.materialInput(material);
     }
 
     private void classify(Diagnosis out, Material material) {
