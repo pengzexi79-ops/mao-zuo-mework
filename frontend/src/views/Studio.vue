@@ -159,18 +159,32 @@
           </el-form-item>
           <el-form-item label="产片固定顺序">
             <el-switch v-model="p.strictFolderSequence" active-text="按当前顺序读" inactive-text="普通混" @change="onStrictFolderSequenceChange" />
-            <el-select v-if="p.strictFolderSequence" v-model="fixedOrderSkillKey" size="small" clearable filterable style="width:220px" placeholder="选择产片固定顺序技能" @change="applyFixedOrderPreset">
-              <el-option v-for="preset in FIXED_ORDER_PRESETS" :key="preset.key" :label="preset.name" :value="preset.key" />
-            </el-select>
-            <el-button v-if="p.strictFolderSequence" link type="primary" size="small" @click="router.push('/fixed-order-presets')">查看全部预置</el-button>
-            <span class="form-hint">这是可编辑的顺序建议，不是写死的八段流程。每一步只使用自己绑定的应用内文件夹</span>
+            <div class="fixed-order-entry">
+              <el-select v-model="fixedOrderSkillKey" size="small" clearable filterable style="width:100%" placeholder="从内置预设开始" @change="applyFixedOrderPreset">
+                <el-option v-for="preset in FIXED_ORDER_PRESETS" :key="preset.key" :label="preset.name" :value="preset.key">
+                  <div class="fixed-order-option"><b>{{ preset.name }}</b><el-tag size="small" effect="plain">{{ preset.stages.length }} 步</el-tag><span>{{ preset.description }}</span></div>
+                </el-option>
+              </el-select>
+              <div class="fixed-order-actions">
+                <el-button size="small" type="primary" plain @click="openFixedOrderDraft">新建顺序草稿</el-button>
+                <el-button link type="primary" size="small" @click="router.push('/fixed-order-presets')">查看全部预置</el-button>
+              </div>
+            </div>
+            <span class="form-hint">内置预设和新建草稿都会变成可编辑的当前顺序；任务提交后会锁定本次步骤和文件夹。</span>
           </el-form-item>
           <div v-if="p.strictFolderSequence" class="folder-stage-list">
+            <div class="fixed-order-overview">
+              <div><span>当前顺序</span><b>{{ fixedOrderSourceLabel }}</b></div>
+              <div><span>步骤</span><b>{{ fixedOrderEnabledStepCount }} / {{ p.folderReadSteps.length }}</b></div>
+              <div><span>已绑定</span><b>{{ fixedOrderBoundCount }} / {{ fixedOrderRequiredStepCount }}</b></div>
+              <div :class="{ warning: fixedOrderRequiredUnboundCount }"><span>必填待绑定</span><b>{{ fixedOrderRequiredUnboundCount }}</b></div>
+              <div><span>目标时长</span><b>{{ fixedOrderTargetSeconds }} 秒</b></div>
+            </div>
             <div class="folder-stage-toolbar">
-              <span class="muted">已载入 {{ p.folderReadSteps.length }} 步，已绑定 {{ p.folderReadSteps.filter(step => step.folderId).length }} 个文件夹</span>
+              <span class="muted">每一步只读取自己绑定的应用内文件夹；未绑定的必填步骤会在干跑和提交前阻断。</span>
               <div><el-button size="small" plain @click="fixedOrderOpen = !fixedOrderOpen">{{ fixedOrderOpen ? '收起步骤' : '编辑步骤' }}</el-button><el-button size="small" type="primary" plain @click="addFolderReadStep">＋ 添加步骤</el-button></div>
             </div>
-            <div v-if="!fixedOrderOpen" class="fixed-order-summary"><span v-for="step in p.folderReadSteps" :key="step.order"><b>{{ step.order }}</b>{{ step.name }}<i :class="{ ready: !!step.folderId }">{{ step.folderId ? '已绑定' : '待绑定' }}</i></span></div>
+            <div v-if="!fixedOrderOpen" class="fixed-order-summary"><span v-for="step in p.folderReadSteps" :key="step.order"><b>{{ step.order }}</b>{{ step.name }}<i :class="{ ready: !!step.folderId, warning: step.required !== false && !step.folderId }">{{ step.folderId ? '已绑定' : (step.required !== false ? '待绑定' : '可跳过') }}</i></span></div>
             <div v-show="fixedOrderOpen" v-for="(step, index) in visibleFolderReadSteps" :key="step.order" class="folder-stage-row">
               <el-tag size="small" type="primary">{{ step.order }}</el-tag>
               <el-input v-model="step.name" maxlength="80" style="width:132px" />
@@ -182,10 +196,11 @@
               <el-switch v-model="step.required" active-text="必填" inactive-text="可跳" />
               <el-select v-model="step.shortagePolicy" style="width:118px"><el-option label="不足即阻" value="block" /><el-option label="本步骤备" value="fallback" /></el-select>
               <el-select v-if="step.shortagePolicy === 'fallback'" v-model="step.fallbackFolderId" clearable filterable style="width:150px" placeholder="备用文件"><el-option v-for="folder in folders.filter((item) => item.enabled !== false && item.id !== step.folderId)" :key="folder.id" :label="folder.name" :value="folder.id" /></el-select>
+              <el-button link size="small" title="复制此读取步骤（不复制文件夹绑定）" @click="copyFolderReadStep(index)">复制</el-button>
               <el-button circle text type="danger" title="删除此读取步骤" @click="removeFolderReadStep(index)"></el-button>
             </div>
             <div v-if="p.folderReadSteps.length > 6" class="form-hint">已载入 {{ p.folderReadSteps.length }} 个步骤；每一步都按自己的主/备用文件夹读取，不会缩减或跨步骤补位。</div>
-            <div class="form-hint">启用且必填的步骤必须配置文件夹；停用或可跳过步骤不会阻断。任务创建时会锁定本次顺序、文件夹和参数</div>
+            <div class="form-hint">启用且必填的步骤必须配置文件夹；停用或可跳过步骤不会阻断。任务创建时会锁定本次顺序、文件夹和参数。</div>
           </div>
           <el-form-item label="指定素材" v-if="!p.strictFolderSequence">
             <el-tag type="primary">已指定 {{ p.materialIds?.length || 0 }} </el-tag>
@@ -787,6 +802,23 @@
       </div>
     </el-dialog>
 
+    <el-dialog v-model="fixedOrderDraftDialogOpen" title="新建顺序草稿" width="560px" :close-on-click-modal="false" append-to-body>
+      <div class="fixed-order-draft-intro">草稿只用于当前 Studio 出片配置：创建后仍可绑定文件夹、修改步骤并执行原有干跑；不会写入独立预设库。</div>
+      <el-form label-width="76px" @submit.prevent>
+        <el-form-item label="草稿名称">
+          <el-input v-model="fixedOrderDraftForm.name" maxlength="80" show-word-limit placeholder="例如：新品测评标准顺序" />
+        </el-form-item>
+        <el-form-item label="步骤名称">
+          <el-input v-model="fixedOrderDraftForm.stepsText" type="textarea" :rows="7" maxlength="640" show-word-limit placeholder="一行一个步骤，例如：&#10;开场钩子&#10;痛点场景&#10;产品展示" />
+          <div class="form-hint">支持 1–32 步。创建后主/备用文件夹都为空，避免把现有绑定误带入新的顺序。</div>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="fixedOrderDraftDialogOpen = false">取消</el-button>
+        <el-button type="primary" @click="createFixedOrderDraft">创建并编辑步骤</el-button>
+      </template>
+    </el-dialog>
+
     <el-dialog v-model="autonomyConsentDlg" :title="`AI 生产权限说明（${consentModeLabel}）`" width="680px"
       :close-on-click-modal="false" append-to-body>
       <div class="consent-body">
@@ -908,8 +940,7 @@
 .target-duration-item :deep(.el-input-number) { width: 150px; }
 .duration-range-item .form-hint { margin-top: 0; }
 .selected-materials { display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; width:100%; }
-.folder-stage-list { margin:-4px 0 12px 96px; display:flex; flex-direction:column; gap:8px; }
-.folder-stage-toolbar { display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; }.fixed-order-summary { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:6px; }.fixed-order-summary span { display:flex; align-items:center; gap:6px; min-width:0; padding:7px 8px; border:1px solid #e3e8ef; border-radius:5px; color:#606266; font-size:12px; }.fixed-order-summary b { color:#409eff; }.fixed-order-summary i { margin-left:auto; color:#e6a23c; font-style:normal; font-size:11px; }.fixed-order-summary i.ready { color:#67c23a; }.folder-stage-row { display:flex; align-items:center; gap:6px; flex-wrap:wrap; padding:8px; border:1px solid #dbeafe; border-radius:6px; background:#f8fbff; }
+.fixed-order-entry { display:flex; flex:1 1 230px; min-width:220px; flex-direction:column; gap:6px; }.fixed-order-actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }.fixed-order-option { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:2px 8px; align-items:center; padding:4px 0; line-height:1.35; }.fixed-order-option b { min-width:0; overflow:hidden; text-overflow:ellipsis; }.fixed-order-option span { grid-column:1 / -1; color:#909399; font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }.folder-stage-list { margin:-4px 0 12px 96px; display:flex; flex-direction:column; gap:8px; }.fixed-order-overview { display:grid; grid-template-columns:repeat(auto-fit,minmax(98px,1fr)); gap:6px; }.fixed-order-overview > div { display:flex; flex-direction:column; gap:2px; padding:8px 9px; border:1px solid #dbeafe; border-radius:6px; background:#f8fbff; }.fixed-order-overview span { color:#909399; font-size:11px; }.fixed-order-overview b { color:#303133; font-size:13px; }.fixed-order-overview .warning { border-color:#f3d19e; background:#fdf6ec; }.fixed-order-overview .warning b { color:#d46b08; }.folder-stage-toolbar { display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; }.fixed-order-summary { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:6px; }.fixed-order-summary span { display:flex; align-items:center; gap:6px; min-width:0; padding:7px 8px; border:1px solid #e3e8ef; border-radius:5px; color:#606266; font-size:12px; }.fixed-order-summary b { color:#409eff; }.fixed-order-summary i { margin-left:auto; color:#909399; font-style:normal; font-size:11px; }.fixed-order-summary i.ready { color:#67c23a; }.fixed-order-summary i.warning { color:#e6a23c; }.folder-stage-row { display:flex; align-items:center; gap:6px; flex-wrap:wrap; padding:8px; border:1px solid #dbeafe; border-radius:6px; background:#f8fbff; }.fixed-order-draft-intro { margin:0 0 14px; padding:9px 10px; border:1px solid #dbeafe; border-radius:6px; background:#f8fbff; color:#606266; font-size:13px; line-height:1.6; }
 .gap-card { border-left: 3px solid #e6a23c; }
 .gap-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:10px; margin-bottom:10px; }
 .gap-item { display:flex; flex-direction:column; gap:2px; padding:6px 10px; background:#f8fafc; border-radius:6px; }
@@ -1117,6 +1148,8 @@ const coverDrag = reactive({ active: false, startX: 0, startY: 0 })
 const advancedOpen = ref(false)
 const strategyOpen = ref(false)
 const fixedOrderOpen = ref(false)
+const fixedOrderDraftDialogOpen = ref(false)
+const fixedOrderDraftForm = reactive({ name: '', stepsText: '' })
 const batchOptionsOpen = ref(false)
 const jobHistoryOpen = ref(false)
 const jobDlg = ref(false)
@@ -1164,6 +1197,15 @@ const p = reactive({ ...DEFAULTS })
 // 恢复上次会话的自主模式时，让严格交付开关的显示与生效值一致（默认开启）。
 if (autonomyMode.value === 'autonomous' && p.strictDelivery == null) p.strictDelivery = true
 const visibleFolderReadSteps = computed(() => p.folderReadSteps)
+const fixedOrderPreset = computed(() => FIXED_ORDER_PRESETS.find((preset) => preset.key === fixedOrderSkillKey.value) || null)
+const fixedOrderSourceLabel = computed(() => fixedOrderPreset.value?.name || (p.strictFolderSequence ? (draftSource.value || '自定义顺序草稿') : '未启用'))
+const fixedOrderEnabledSteps = computed(() => (p.folderReadSteps || []).filter((step) => step?.enabled !== false))
+const fixedOrderEnabledStepCount = computed(() => fixedOrderEnabledSteps.value.length)
+const fixedOrderRequiredSteps = computed(() => fixedOrderEnabledSteps.value.filter((step) => step?.required !== false))
+const fixedOrderRequiredStepCount = computed(() => fixedOrderRequiredSteps.value.length)
+const fixedOrderBoundCount = computed(() => fixedOrderRequiredSteps.value.filter((step) => step?.folderId).length)
+const fixedOrderRequiredUnboundCount = computed(() => Math.max(0, fixedOrderRequiredStepCount.value - fixedOrderBoundCount.value))
+const fixedOrderTargetSeconds = computed(() => Math.round(fixedOrderEnabledSteps.value.reduce((total, step) => total + Math.max(0, Number(step?.targetSec) || 0), 0)))
 
 const durRange = computed({
   get: () => [p.minSec, p.maxSec],
@@ -1582,10 +1624,63 @@ function openFixedOrderSkill () {
   if (key) applyFixedOrderPreset(key)
 }
 
+function openFixedOrderDraft () {
+  fixedOrderDraftForm.name = p.strictFolderSequence && p.folderReadSteps.length
+    ? `${fixedOrderSourceLabel.value}草稿`
+    : '自定义顺序草稿'
+  fixedOrderDraftForm.stepsText = p.strictFolderSequence && p.folderReadSteps.length
+    ? p.folderReadSteps.map((step) => step.name).join('\n')
+    : '开场钩子\n痛点场景\n产品展示'
+  fixedOrderDraftDialogOpen.value = true
+}
+
+function createFixedOrderDraft () {
+  const names = String(fixedOrderDraftForm.stepsText || '')
+    .split(/\r?\n/)
+    .map((name) => name.trim())
+    .filter(Boolean)
+  if (!names.length) {
+    ElMessage.warning('请至少填写一个步骤名称')
+    return
+  }
+  if (names.length > 32) {
+    ElMessage.warning('顺序草稿最多支持 32 个步骤')
+    return
+  }
+  const title = String(fixedOrderDraftForm.name || '').trim().slice(0, 80) || '自定义顺序草稿'
+  const stages = names.map((name, index) => ({ name: name.slice(0, 80), targetSec: null, shortagePolicy: 'block', folderKeywords: [] }))
+  applyFixedOrderStages(title, stages, false)
+  fixedOrderSkillKey.value = ''
+  draftSource.value = title
+  fixedOrderOpen.value = true
+  fixedOrderDraftDialogOpen.value = false
+  ElMessage.success(`已创建「${title}」，请按需绑定文件夹后再执行干跑`)
+}
+
 function addFolderReadStep () {
   const next = p.folderReadSteps.length + 1
   p.folderReadSteps.push(makeFolderStep(`读取步骤 ${next}`, next))
-  showAllFolderSteps.value = true
+  fixedOrderOpen.value = true
+}
+
+function copyFolderReadStep (index) {
+  const source = p.folderReadSteps[index]
+  if (!source) return
+  if (p.folderReadSteps.length >= 32) {
+    ElMessage.warning('固定顺序最多支持 32 个步骤')
+    return
+  }
+  const copy = makeFolderStep(`${String(source.name || '读取步骤').slice(0, 74)}副本`, index + 2, source.targetSec)
+  copy.required = source.required !== false
+  copy.enabled = source.enabled !== false
+  copy.aiSelect = source.aiSelect !== false
+  copy.shortagePolicy = source.shortagePolicy === 'fallback' ? 'fallback' : 'block'
+  copy.folderId = null
+  copy.fallbackFolderId = null
+  p.folderReadSteps.splice(index + 1, 0, copy)
+  p.folderReadSteps.forEach((step, stepIndex) => { step.order = stepIndex + 1 })
+  fixedOrderOpen.value = true
+  ElMessage.success(`已复制第 ${source.order} 步；文件夹绑定未带入`)
 }
 
 function removeFolderReadStep (index) {
