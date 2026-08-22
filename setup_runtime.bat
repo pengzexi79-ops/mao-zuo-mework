@@ -69,21 +69,25 @@ if not exist "%BACKEND_DIR%\.venv\Scripts\python.exe" if /I "%MODE%"=="repair" (
   )
 )
 
+set "VERIFY_EXIT=0"
 if exist "%BACKEND_DIR%\.venv\Scripts\python.exe" (
   call "%BACKEND_DIR%\tools\bootstrap_media_runtime.bat" %MODE%
   if errorlevel 1 (
+    set "VERIFY_EXIT=1"
     echo [媒体运行时未就绪] 默认 verify 未联网；需要修复时执行 setup_runtime.bat repair。
     echo [详情] %LOG_DIR%\dependency-bootstrap.log
   ) else (
     echo [已就绪] Python 媒体依赖（%MODE%）
   )
 ) else if /I not "%MODE%"=="repair" (
+  set "VERIFY_EXIT=1"
   echo [离线检查失败] 未找到 backend\.venv，未创建、未联网。需要修复时执行 setup_runtime.bat repair。
 )
 
 REM Make sure MySQL is up before the app starts.
 call "%APP_DIR%start_mysql.bat"
+if errorlevel 1 set "VERIFY_EXIT=1"
 
 echo.
 echo 完成。运行 start.bat 启动仅监听本机的服务。
-exit /b 0
+exit /b %VERIFY_EXIT%

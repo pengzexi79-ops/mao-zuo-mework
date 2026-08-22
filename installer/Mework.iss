@@ -44,5 +44,5 @@ Name: "{group}\{#AppName}"; Filename: "{app}\start.bat"; WorkingDir: "{app}"
 Name: "{group}\检查运行环境"; Filename: "{app}\setup_runtime.bat"; WorkingDir: "{app}"
 
 [Run]
-Filename: "{app}\setup_runtime.bat"; Description: "检查并准备本机运行环境"; Flags: postinstall nowait skipifsilent
-Filename: "{app}\start.bat"; Description: "启动 Mework"; Flags: postinstall nowait skipifsilent
+; Only one post-install launcher is allowed to avoid concurrent .env/MySQL/venv setup.
+Filename: "{app}\start.bat"; Description: "启动 Mework（首次启动会执行本地环境检查）"; Flags: postinstall nowait skipifsilent

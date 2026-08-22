@@ -28,8 +28,9 @@ build_installer.bat
 ## 启动与修复边界
 - `ensure_env.bat`：仅在缺少本机 `.env` 时生成默认本地配置和密钥；这是本地配置写入，不是联网安装。
 - `start_mysql.bat`：3306 已有 MySQL 则直接复用；否则用便携 MySQL 自动拉起，配置和日志写入应用 `data` 目录。
-- `start.bat`：便携 JDK17 优先 → 校验 JAR → 拉起 MySQL → **离线 verify 媒体运行时** → 启动后端；缺依赖时只告警，不自动 pip 安装。
-- `setup_runtime.bat verify`：只检查现有 venv、模块和便携运行时，不创建 venv、不联网。
+- `start.bat`：便携 JDK17 优先 → 校验 JAR → 拉起 MySQL → **离线 verify 媒体运行时** → 启动后端；缺依赖时只告警，不自动 pip 安装。`PORT` 或 `APP_PORT` 可按每台电脑调整。
+- `setup_runtime.bat verify`：只检查现有 venv、模块和便携运行时，不创建 venv、不联网；如果 8760/3306 被占用，会给出可操作错误。
+- 安装器只启动一个 `start.bat`，不会并发运行 setup 和 start；已有 MySQL 端口必须通过真实 `mysqladmin ping` 才会被复用。
 - `setup_runtime.bat repair`：用户明确选择后，才创建 venv 并执行 requirements 固定版本安装；修复日志位于 `data\logs\dependency-bootstrap.log`。
 - 便携 FFmpeg 优先，缺则系统；缺失时能力中心会显示明确状态。
 - `prepare_portable.ps1 -Copy` 默认只复制已准备好的 venv；构建机需要联网修复时必须显式传 `-RepairDependencies`。

@@ -1,5 +1,5 @@
 server:
-  port: 8760
+  port: ${PORT:8760}
   address: ${APP_BIND_ADDRESS:127.0.0.1}
   tomcat:
     # Keep Tomcat from rejecting large multipart requests before Spring's 2GB limits apply.
