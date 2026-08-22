@@ -15,6 +15,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.net.HttpURLConnection;
@@ -45,6 +48,34 @@ public class MediaGenerationService {
     private final MediaGenerationTaskRepo generationTaskRepo;
     @Qualifier("mediaExecutor") private final Executor executor;
     private final Map<String, Task> tasks = new ConcurrentHashMap<>();
+
+    @EventListener(ApplicationReadyEvent.class)
+    public void recoverGenerationTasksAtStartup() { recoverGenerationTasks(); }
+
+    @Scheduled(fixedDelayString = "${app.job-watchdog-delay-ms:30000}")
+    public void recoverGenerationTasks() {
+        try {
+            for (MediaGenerationTask persisted : generationTaskRepo.findByStatusOrderByIdAsc("submitting")) {
+                if (persisted.getRemoteTaskId() == null || persisted.getRemoteTaskId().isBlank()) {
+                    persisted.setStatus("manual_review");
+                    persisted.setPhase("submit_unknown");
+                    persisted.setMessage("提交结果未知，禁止自动重试以避免重复计费");
+                    persisted.setLastActivityAt(java.time.LocalDateTime.now());
+                    generationTaskRepo.save(persisted);
+                }
+            }
+            for (MediaGenerationTask persisted : generationTaskRepo.findByStatusOrderByIdAsc("remote_submitted")) {
+                if (persisted.getRemoteTaskId() == null || persisted.getRemoteTaskId().isBlank()) continue;
+                persisted.setStatus("polling");
+                persisted.setPhase("polling");
+                persisted.setMessage("已恢复远端任务查询，不会重复提交生成请求");
+                persisted.setLastActivityAt(java.time.LocalDateTime.now());
+                generationTaskRepo.save(persisted);
+            }
+        } catch (Exception error) {
+            // Database may be unavailable during setup mode; the next scheduled pass retries.
+        }
+    }
 
     @Data public static class Task { private String id; private String kind; private String status = "pending"; private int progress; private String message; private Long materialId; private String remoteTaskId; private long createdAt = System.currentTimeMillis(); private long updatedAt = createdAt; }
     @Data public static class ImageRequest { private Long providerId; private String prompt; private String model = "gpt-image-1"; private String size = "1024x1024"; private String quality = "medium"; private Boolean confirm = false; }
