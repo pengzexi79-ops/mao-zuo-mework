@@ -300,6 +300,24 @@ class BootstrapServiceCapabilitiesTest {
     }
 
     @Test
+    void environmentGuideExposesStructuredConfigurationSteps() {
+        Map<String, Object> env = bootstrap.env(true);
+        Object rawGuide = env.get("environmentGuide");
+        assertTrue(rawGuide instanceof List, "环境指导必须返回列表");
+        Map<?, ?> ffmpegGuide = ((List<?>) rawGuide).stream()
+                .map(item -> (Map<?, ?>) item)
+                .filter(item -> "FFmpeg + FFprobe".equals(item.get("name")))
+                .findFirst()
+                .orElseThrow();
+        assertTrue(ffmpegGuide.get("installSteps") instanceof List);
+        assertTrue(ffmpegGuide.get("configureSteps") instanceof List);
+        assertTrue(ffmpegGuide.get("verifySteps") instanceof List);
+        assertEquals("APP_FFMPEG / APP_FFPROBE", ffmpegGuide.get("variable"));
+        assertEquals(true, ffmpegGuide.get("offlineCapable"));
+        assertEquals(true, ffmpegGuide.get("restartRequired"));
+    }
+
+    @Test
     void envMapKeepsKnownProbeKeysStable() {
         makeAllProbesReady();
         Map<String, Object> env = bootstrap.env(true);

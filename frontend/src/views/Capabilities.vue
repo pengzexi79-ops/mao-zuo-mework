@@ -17,9 +17,9 @@
         </div>
         <div class="environment-detail-grid">
           <div class="card"><div class="card-title">核心运行时</div><el-descriptions :column="1" border size="small"><el-descriptions-item label="后端"><el-tag :type="environment.databaseConnected ? 'success' : 'danger'">{{ environment.databaseConnected ? '已连接' : '数据库未连接' }}</el-tag></el-descriptions-item><el-descriptions-item label="FFmpeg / FFprobe"><el-tag :type="environment.ffmpeg && environment.ffprobe ? 'success' : 'danger'">{{ environment.ffmpeg && environment.ffprobe ? '已就绪' : '需要配置' }}</el-tag></el-descriptions-item><el-descriptions-item label="凭据保护"><el-tag :type="environment.credentialProtection === 'ready' ? 'success' : 'warning'">{{ environment.credentialProtection === 'ready' ? 'APP_MASTER_KEY 已配置' : '未配置，不能保存新密钥' }}</el-tag></el-descriptions-item></el-descriptions></div>
-          <div class="card"><div class="card-title">媒体与诊断能力</div><div class="environment-tool-list"><span v-for="tool in environmentTools" :key="tool.label"><b>{{ tool.label }}</b><el-tag size="small" :type="tool.ready ? 'success' : 'info'">{{ tool.ready ? '可用' : '可选/未就绪' }}</el-tag></span></div></div>
+          <div class="card"><div class="card-title">媒体与诊断能力 <span class="hint">状态来自实际探测；网络能力不会伪装成离线可用</span></div><div class="environment-tool-list"><div v-for="tool in environmentTools" :key="tool.label" class="environment-tool"><div class="environment-tool-head"><b>{{ tool.label }}</b><el-tag size="small" :type="tool.statusType">{{ tool.statusLabel }}</el-tag></div><div class="environment-tool-meta"><el-tag v-if="tool.offlineReady" size="small" type="success" effect="plain">离线可用</el-tag><el-tag v-else-if="tool.needsNetwork" size="small" type="warning" effect="plain">需要网络</el-tag><el-tag v-if="tool.fallback" size="small" type="info" effect="plain">有回退</el-tag></div></div></div></div>
         </div>
-        <div class="card environment-guide"><div class="card-title">配置指导</div><el-table :data="environment.environmentGuide || []" size="small"><el-table-column prop="name" label="环境" width="150" /><el-table-column prop="requirement" label="级别" width="90" /><el-table-column prop="purpose" label="用途" min-width="190" /><el-table-column prop="setup" label="处理方式" min-width="280" /><el-table-column label="官方" width="90"><template #default="{ row }"><el-link v-if="row.url" :href="row.url" target="_blank" rel="noopener noreferrer" type="primary">打开</el-link></template></el-table-column></el-table></div>
+        <div class="card environment-guide"><div class="card-title">配置指导 <span class="hint">展开每行查看安装、配置、验证和运行条件</span></div><el-table :data="environment.environmentGuide || []" size="small" row-key="name"><el-table-column type="expand"><template #default="{ row }"><div class="guide-detail"><div class="guide-detail-block"><b>安装方式</b><ol><li v-for="step in row.installSteps || [row.setup]" :key="step">{{ step }}</li></ol></div><div class="guide-detail-block"><b>配置方法</b><ol v-if="(row.configureSteps || []).length"><li v-for="step in row.configureSteps" :key="step">{{ step }}</li></ol><span v-else class="muted">无需额外配置</span></div><div class="guide-detail-block"><b>验证方法</b><ol><li v-for="step in row.verifySteps || []" :key="step">{{ step }}</li></ol></div><div class="guide-detail-meta"><el-tag size="small" :type="row.offlineCapable ? 'success' : 'warning'">{{ row.offlineCapable ? '本地/离线可用' : '需要网络或外部条件' }}</el-tag><el-tag v-if="row.restartRequired" size="small" type="info">需要重启后端</el-tag><span v-if="row.variable">配置项：{{ row.variable }}</span></div></div></template></el-table-column><el-table-column prop="name" label="环境" width="150" /><el-table-column prop="requirement" label="级别" width="90" /><el-table-column prop="purpose" label="用途" min-width="190" /><el-table-column prop="setup" label="处理方式" min-width="280" /><el-table-column label="官方" width="90"><template #default="{ row }"><el-link v-if="row.url" :href="row.url" target="_blank" rel="noopener noreferrer" type="primary">打开</el-link></template></el-table-column></el-table></div>
       </template>
       <el-empty v-else-if="!environmentLoading" description="未读取到环境状态" />
     </section>
@@ -58,6 +58,8 @@
             <p v-if="c.usedBy" class="cap-guide"><b>默认链路：</b>{{ c.usedBy }}</p>
             <div class="cap-state-row">
               <el-tag v-if="c.runtimeReady" size="small" type="success" effect="plain">运行就绪</el-tag>
+              <el-tag v-if="c.offlineCapable" size="small" type="success" effect="plain">可离线</el-tag>
+              <el-tag v-else-if="c.needsNetwork" size="small" type="warning" effect="plain">需网络</el-tag>
               <el-tag v-if="c.fallback" size="small" type="info" effect="plain">可自动回退</el-tag>
               <el-tag v-if="c.activationRequired" size="small" type="warning" effect="plain">需账号授权</el-tag>
             </div>
@@ -85,6 +87,8 @@
             <p v-if="c.usedBy" class="cap-guide"><b>默认链路：</b>{{ c.usedBy }}</p>
             <div class="cap-state-row">
               <el-tag v-if="c.runtimeReady" size="small" type="success" effect="plain">运行就绪</el-tag>
+              <el-tag v-if="c.offlineCapable" size="small" type="success" effect="plain">可离线</el-tag>
+              <el-tag v-else-if="c.needsNetwork" size="small" type="warning" effect="plain">需网络</el-tag>
               <el-tag v-if="c.fallback" size="small" type="info" effect="plain">可自动回退</el-tag>
               <el-tag v-if="c.activationRequired" size="small" type="warning" effect="plain">需账号授权</el-tag>
             </div>
@@ -232,11 +236,33 @@ const historyError = ref('')
 const environmentLoading = ref(false)
 const environmentError = ref('')
 const environmentTools = computed(() => [
-  ['yt-dlp', environment.value?.['yt-dlp']], ['you-get', environment.value?.['you-get']],
-  ['whisper.cpp', environment.value?.whisperCpp?.runtimeReady], ['Demucs', environment.value?.demucs?.runtimeReady],
-  ['RapidOCR', environment.value?.rapidOcr?.runtimeReady], ['ImageMagick', environment.value?.imageMagick?.runtimeReady],
-  ['Auto-Editor', environment.value?.autoEditor?.runtimeReady]
-].map(([label, ready]) => ({ label, ready: !!ready })))
+  ['FFmpeg', environment.value?.ffmpeg, 'ffmpeg'],
+  ['FFprobe', environment.value?.ffprobe, 'ffprobe'],
+  ['yt-dlp', environment.value?.['yt-dlp'], 'yt-dlp'],
+  ['you-get', environment.value?.['you-get'], 'you-get'],
+  ['faster-whisper', environment.value?.fasterWhisper, 'fasterWhisper'],
+  ['whisper.cpp', environment.value?.whisperCpp, 'whisperCpp'],
+  ['RapidOCR', environment.value?.rapidOcr, 'rapidOcr'],
+  ['OpenCV', environment.value?.openCv, 'openCv'],
+  ['Edge-TTS', environment.value?.neuralTts, 'neuralTts'],
+  ['Demucs', environment.value?.demucs, 'demucs'],
+  ['Rembg', environment.value?.rembg, 'rembg'],
+  ['Auto-Editor', environment.value?.autoEditor, 'autoEditor'],
+  ['ImageMagick', environment.value?.imageMagick, 'imageMagick'],
+  ['gallery-dl', environment.value?.galleryDl, 'galleryDl']
+].map(([label, raw, key]) => {
+  const state = typeof raw === 'object' && raw !== null ? raw : { installed: !!raw, integrated: !!raw, status: raw ? 'ready' : 'missing' }
+  return {
+    label,
+    key,
+    ready: state.status === 'ready',
+    offlineReady: state.status === 'ready' && !['yt-dlp', 'you-get', 'galleryDl', 'neuralTts', 'demucs'].includes(key),
+    needsNetwork: ['yt-dlp', 'you-get', 'galleryDl', 'neuralTts', 'demucs'].includes(key),
+    fallback: ['whisperCpp', 'imageMagick', 'autoEditor'].includes(key),
+    statusLabel: state.status === 'ready' ? '运行就绪' : state.status === 'detected_only' ? '已检测，待接入' : '未就绪',
+    statusType: state.status === 'ready' ? 'success' : state.status === 'detected_only' ? 'warning' : 'info'
+  }
+}))
 const items = ref([])
 const plugins = ref([])
 const installVisible = ref(false)
@@ -283,7 +309,8 @@ function statusType (capability) {
   return capability.action === 'install' ? 'warning' : 'danger'
 }
 function statusLabel (capability) {
-  if (capability.status === 'ready') return capability.runtimeReady === false ? '已安装，等待运行时' : '已安装可用'
+  if (capability.status === 'ready') return capability.offlineReady === false && capability.needsNetwork ? '已安装，需网络' : capability.runtimeReady === false ? '已安装，等待运行时' : '已安装可用'
+  if (capability.status === 'detected_only') return '已检测，待接入'
   if (capability.status === 'external') return ({ authorization: '需账号授权', hardware: '需硬件/驱动', manual: '需官方安装' })[capability.installMode] || '需外部处理'
   return capability.action === 'install' ? '可修复安装' : '预置缺失'
 }
@@ -541,7 +568,9 @@ onMounted(async () => {
 .environment-detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
 .environment-tool-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
 .environment-tool-list span { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--el-border-color-lighter); }
-.environment-guide { overflow: hidden; }
+.environment-tool { padding: 8px 0; border-bottom: 1px solid var(--el-border-color-lighter); }.environment-tool-head { display:flex; align-items:center; justify-content:space-between; gap:8px; }.environment-tool-meta { display:flex; gap:5px; flex-wrap:wrap; margin-top:5px; }.guide-detail { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; padding:8px 16px; background:var(--el-fill-color-lighter); }.guide-detail-block { min-width:0; color:var(--el-text-color-regular); font-size:12px; line-height:1.6; }.guide-detail-block b { color:var(--el-text-color-primary); }.guide-detail-block ol { margin:5px 0 0; padding-left:18px; }.guide-detail-meta { grid-column:1 / -1; display:flex; align-items:center; gap:7px; flex-wrap:wrap; color:var(--el-text-color-secondary); font-size:12px; }.environment-guide { overflow: hidden; }
+@media (max-width:900px) { .guide-detail { grid-template-columns:1fr 1fr; } }
+@media (max-width:600px) { .guide-detail { grid-template-columns:1fr; } .guide-detail-meta { grid-column:auto; } }
 .history-view { display:flex; flex-direction:column; gap:14px; }.history-actions { display:flex; gap:8px; flex-wrap:wrap; }.history-summary-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }.history-summary-grid small { color:var(--el-text-color-secondary); }.history-current,.history-entry { padding:14px; border:1px solid var(--el-border-color-lighter); border-radius:6px; background:var(--el-bg-color-overlay); }.history-current h3,.history-entry h3 { margin:0 0 7px; font-size:15px; }.history-current p,.history-entry p { margin:5px 0; color:var(--el-text-color-regular); font-size:13px; line-height:1.6; }.history-timeline { padding:8px 12px; }
 @media (max-width:600px) { .history-summary-grid { grid-template-columns:1fr; } }
 @media (max-width: 900px) { .environment-summary, .environment-detail-grid { grid-template-columns: 1fr 1fr; } }
