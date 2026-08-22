@@ -33,6 +33,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 
 /**
@@ -99,6 +100,7 @@ public class RenderPreparationService {
     private final DataSource dataSource;
     private final ObjectMapper om;
     @Qualifier("prepareExecutor") private final Executor prepareExecutor;
+    private final Set<Long> cancelRequested = ConcurrentHashMap.newKeySet();
 
     private volatile boolean tableReady = false;
 
@@ -193,6 +195,7 @@ public class RenderPreparationService {
         task.setError("已由用户取消准备；已发起的公开素材任务不会被连带取消");
         task.setLastActivityAt(LocalDateTime.now());
         taskRepo.save(task);
+        cancelRequested.add(taskId);
         return snapshot(task);
     }
 
@@ -482,7 +485,9 @@ public class RenderPreparationService {
     }
 
     private boolean isCancelled(PreparationTask task) {
-        return task != null && PreparationTask.STATUS_CANCELLED.equals(task.getStatus());
+        if (task == null || task.getId() == null) return false;
+        if (cancelRequested.contains(task.getId())) return true;
+        return taskRepo.findById(task.getId()).map(current -> PreparationTask.STATUS_CANCELLED.equals(current.getStatus())).orElse(true);
     }
 
     private void persist(PreparationTask task, PrepareResult result) {
@@ -500,6 +505,9 @@ public class RenderPreparationService {
         task.setAutoFill(writeJson(result.getAutoFill()));
         task.setLastActivityAt(LocalDateTime.now());
         taskRepo.save(task);
+        if (PreparationTask.STATUS_DONE.equals(task.getStatus()) || PreparationTask.STATUS_FAILED.equals(task.getStatus()) || PreparationTask.STATUS_TIMEDOUT.equals(task.getStatus())) {
+            cancelRequested.remove(task.getId());
+        }
     }
 
     private void markFailed(Long taskId, String error) {
