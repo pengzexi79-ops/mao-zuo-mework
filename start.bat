@@ -14,8 +14,16 @@ if exist "%APP_DIR%.env" (
     if not "%%A"=="" if not "%%A:~0,1"=="#" set "%%A=%%B"
   )
 )
+if defined APP_PORT set "PORT=%APP_PORT%"
 
 if not defined APP_DATA_DIR set "APP_DATA_DIR=%APP_DIR%data"
+if defined APP_DATA_DIR if not exist "%APP_DATA_DIR%" set "APP_DATA_DIR=%APP_DIR%data"
+if defined APP_MATERIALS_DIR if not exist "%APP_MATERIALS_DIR%" set "APP_MATERIALS_DIR=%APP_DATA_DIR%materials"
+if defined APP_OUTPUT_DIR if not exist "%APP_OUTPUT_DIR%" set "APP_OUTPUT_DIR=%APP_DATA_DIR%output"
+if defined APP_CACHE_DIR if not exist "%APP_CACHE_DIR%" set "APP_CACHE_DIR=%APP_DATA_DIR%cache"
+if defined APP_LOCAL_PYTHON if not exist "%APP_LOCAL_PYTHON%" set "APP_LOCAL_PYTHON=%BACKEND_DIR%\.venv\Scripts\python.exe"
+if defined APP_FFMPEG if not exist "%APP_FFMPEG%" if exist "%APP_DIR%portable\ffmpeg\bin\ffmpeg.exe" set "APP_FFMPEG=%APP_DIR%portable\ffmpeg\bin\ffmpeg.exe"
+if defined APP_FFPROBE if not exist "%APP_FFPROBE%" if exist "%APP_DIR%portable\ffmpeg\bin\ffprobe.exe" set "APP_FFPROBE=%APP_DIR%portable\ffmpeg\bin\ffprobe.exe"
 if not defined APP_BIND_ADDRESS set "APP_BIND_ADDRESS=127.0.0.1"
 REM The browser cannot open 0.0.0.0 / :: / *; always show a real reachable address.
 set "BROWSER_ADDR=%APP_BIND_ADDRESS%"

@@ -13,6 +13,15 @@ if exist "%APP_DIR%.env" (
   )
 )
 if not defined MYSQL_PORT set "MYSQL_PORT=3306"
+if defined DB_URL set "DB_URL_WAS_SET=1"
+if not defined DB_URL set "DB_URL=jdbc:mysql://127.0.0.1:%MYSQL_PORT%/ai_mix_video?useUnicode=true&characterEncoding=UTF-8&connectionCollation=utf8mb4_general_ci&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false&rewriteBatchedStatements=true"
+if defined DB_URL_WAS_SET (
+  powershell -NoProfile -Command "$u=$env:DB_URL -replace '^jdbc:mysql://','http://'; $parsed=[uri]$u; if($parsed.Port -ne [int]$env:MYSQL_PORT){exit 1}" >nul 2>&1
+  if errorlevel 1 (
+    echo [需处理] MYSQL_PORT=%MYSQL_PORT% 与 DB_URL 中的数据库端口不一致；请同步修改后重试。
+    exit /b 1
+  )
+)
 
 set "MYSQLD=%APP_DIR%portable\mysql\bin\mysqld.exe"
 set "DATA_DIR=%APP_DIR%portable\mysqldata"
@@ -20,7 +29,14 @@ set "MYSQL_UP="
 
 for /f "tokens=5" %%P in ('netstat -ano -p TCP ^| findstr /R /C:":%MYSQL_PORT% .*LISTENING"') do set "MYSQL_UP=1"
 if defined MYSQL_UP (
-  echo [已就绪] MySQL 已在 127.0.0.1:%MYSQL_PORT% 运行
+  set "MYSQLADMIN=%APP_DIR%portable\mysql\bin\mysqladmin.exe"
+  if not exist "%MYSQLADMIN%" set "MYSQLADMIN=mysqladmin"
+  "%MYSQLADMIN%" --protocol=TCP -h 127.0.0.1 -P %MYSQL_PORT% ping >nul 2>&1
+  if errorlevel 1 (
+    echo [需处理] 127.0.0.1:%MYSQL_PORT% 已被占用，但未通过 MySQL ping；请修改 MYSQL_PORT/DB_URL 或停止占用程序。
+    exit /b 1
+  )
+  echo [已就绪] MySQL 已在 127.0.0.1:%MYSQL_PORT% 运行并通过 ping
   exit /b 0
 )
 
@@ -60,5 +76,12 @@ echo [需处理] 便携 MySQL %MYSQL_PORT% 60 秒内未就绪，详见 data\logs
 exit /b 1
 
 :mysql_ready
-echo [已就绪] 便携 MySQL 已在 127.0.0.1:%MYSQL_PORT% 运行
+set "MYSQLADMIN=%APP_DIR%portable\mysql\bin\mysqladmin.exe"
+if not exist "%MYSQLADMIN%" set "MYSQLADMIN=mysqladmin"
+"%MYSQLADMIN%" --protocol=TCP -h 127.0.0.1 -P %MYSQL_PORT% ping >nul 2>&1
+if errorlevel 1 (
+  echo [需处理] 端口已监听但 MySQL 协议 ping 未通过，详见 data\logs\mysql.log
+  exit /b 1
+)
+echo [已就绪] 便携 MySQL 已在 127.0.0.1:%MYSQL_PORT% 运行并通过 ping
 exit /b 0
