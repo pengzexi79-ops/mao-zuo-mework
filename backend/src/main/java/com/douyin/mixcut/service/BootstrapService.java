@@ -753,8 +753,12 @@ public class BootstrapService implements ApplicationRunner {
         rows.add(envGuide("MySQL 8+", "项目数据、任务和成片记录", "DB_URL / DB_USERNAME / DB_PASSWORD", "启动 MySQL 后在项目 .env 配置三项连接信息", "https://dev.mysql.com/downloads/installer/", "必须"));
         rows.add(envGuide("FFmpeg + FFprobe", "视频渲染、媒体探测和预览", "APP_FFMPEG / APP_FFPROBE", "安装后加入 PATH，或在 .env 填写两个可执行文件的绝对路径", "https://ffmpeg.org/download.html", "必须"));
         rows.add(envGuide("yt-dlp", "公开网页视频解析与下载", "APP_YTDLP_PATH", "Windows 可用 winget install yt-dlp.yt-dlp；完成后执行 yt-dlp --version", "https://github.com/yt-dlp/yt-dlp/releases", "抓取视频时需要"));
-        rows.add(envGuide("本机媒体运行时", "默认 ASR、OCR、神经配音和响度统一", "APP_LOCAL_PYTHON", "启动时使用 backend/.venv 并修复固定的默认媒体依赖；离线或修复失败时查看 data/logs/dependency-bootstrap.log", "", "基础能力"));
-                rows.add(envGuide("媒体增强工具", "人声分离/抠图/智能剪辑/图像处理（发行包预置，缺失时环境中心红色提示+一键处理）", "demucs / rembg / auto-editor / magick / cv2", "安装器已内置便携版本；手动环境请 pip install demucs rembg auto-editor 并安装 ImageMagick/OpenCV", "", "必需"));
+        rows.add(envGuide("本机媒体运行时", "应用专用 Python、缓存、临时文件和默认媒体依赖", "APP_LOCAL_PYTHON", "启动时使用 backend/.venv；缺失或损坏时查看 data/logs/dependency-bootstrap.log，并在能力中心明确执行受控修复", "", "基础能力"));
+        rows.add(envGuide("faster-whisper / whisper.cpp", "本地语音转写和自动字幕；whisper.cpp 就绪时优先，失败回退 faster-whisper", "APP_LOCAL_PYTHON / HF_HOME", "发行包预置 Python 依赖和模型缓存；额外语言模型按官方说明下载到应用模型目录", "https://github.com/SYSTRAN/faster-whisper", "基础能力"));
+        rows.add(envGuide("RapidOCR / OpenCV", "画面文字识别、模糊/暗帧/过曝和质量诊断", "APP_LOCAL_PYTHON", "发行包预置模块；手动环境按 requirements-windows.txt 固定版本安装，不要从浏览器传入脚本或路径", "https://github.com/RapidAI/RapidOCR", "基础能力"));
+        rows.add(envGuide("Edge-TTS", "神经配音；实际生成依赖网络语音服务", "APP_LOCAL_PYTHON", "模块可随包预置；使用 AI 配音前确认网络可用，网络不可用时改用本地音频或明确回退", "https://github.com/rany2/edge-tts", "需要网络"));
+        rows.add(envGuide("媒体增强工具", "Demucs 人声分离、Rembg 抠图、Auto-Editor 智能剪辑、ImageMagick 图片处理", "APP_LOCAL_PYTHON / APP_IMAGEMAGICK_PATH", "安装器优先提供固定版本；缺失时只在能力中心使用受控修复或按官方说明安装", "", "按需"));
+        rows.add(envGuide("gallery-dl", "图片和图集批量抓取", "APP_LOCAL_PYTHON", "工具可随包预置；实际抓取需要网络、合法公开来源和来源许可", "https://github.com/mikf/gallery-dl", "抓取时需要网络"));
         rows.add(envGuide("C++ 编译工具", "仅用于从源码编译 whisper.cpp / OpenCV 等工具，发行包无需", "PATH", "Windows 可安装 Visual Studio Build Tools，勾选 Desktop development with C++", "https://visualstudio.microsoft.com/visual-cpp-build-tools/", "可选"));
         rows.add(envGuide("APP_MASTER_KEY", "加密保存 AI Provider 密钥", "APP_MASTER_KEY", "在项目 .env 设置随机长字符串后重启后端；不要写入前端或提交仓库", "", "安全必配"));
         rows.add(envGuide("API Key / 登录授权", "Freesound 等来源的官方接口权限", "APP_FREESOUND_API_KEY / APP_ALLOW_LOGIN_CRAWL", "仅从官方页面申请；登录来源需自行确认授权，应用不读取 Cookie、密码或绕过登录", "https://freesound.org/apiv2/apply/", "按需"));
@@ -770,11 +774,43 @@ public class BootstrapService implements ApplicationRunner {
         row.put("url", url);
         row.put("requirement", requirement);
         row.put("installSteps", List.of(setup));
-        row.put("configureSteps", variable == null || variable.isBlank() ? List.of() : List.of("确认配置项：" + variable));
-        row.put("verifySteps", List.of("重新检测环境状态", "确认对应能力显示为可用"));
-        row.put("networkRequired", requirement.contains("网络") || requirement.contains("抓取"));
-        row.put("restartRequired", false);
+        row.put("configureSteps", guideConfigureSteps(name, variable));
+        row.put("verifySteps", guideVerifySteps(name));
+        row.put("networkRequired", guideNeedsNetwork(name));
+        row.put("offlineCapable", !guideNeedsNetwork(name));
+        row.put("restartRequired", Set.of("MySQL 8+", "FFmpeg + FFprobe", "本机媒体运行时", "APP_MASTER_KEY", "API Key / 登录授权").contains(name));
         return row;
+    }
+
+    private List<String> guideConfigureSteps(String name, String variable) {
+        if (variable == null || variable.isBlank()) return List.of();
+        return switch (name) {
+            case "MySQL 8+" -> List.of("在项目 .env 填写 DB_URL、DB_USERNAME、DB_PASSWORD", "确认数据库用户只拥有项目所需权限");
+            case "FFmpeg + FFprobe" -> List.of("优先使用安装包 portable 中的工具", "手动环境仅在 .env 填 APP_FFMPEG 和 APP_FFPROBE 的绝对路径");
+            case "yt-dlp" -> List.of("使用 APP_YTDLP_PATH 指向受信任的工具", "只抓取已授权、免登录的公开 URL");
+            case "本机媒体运行时" -> List.of("保持 APP_LOCAL_PYTHON 指向应用专用 venv", "缺失组件时在能力中心明确选择受控修复，不接受任意 pip 包名");
+            case "APP_MASTER_KEY" -> List.of("在项目 .env 设置随机长字符串", "重启后端后再保存或更新 Provider 密钥");
+            case "API Key / 登录授权" -> List.of("仅在官方页面申请自己的 API Key", "密钥只保存在本机服务端 .env，不读取 Cookie、密码或验证码");
+            default -> List.of("确认配置项：" + variable);
+        };
+    }
+
+    private List<String> guideVerifySteps(String name) {
+        return switch (name) {
+            case "Java 17+" -> List.of("运行 java -version", "重新检测环境中心并确认后端可启动");
+            case "MySQL 8+" -> List.of("启动 MySQL", "重新检测环境中心并确认“后端与数据库”为已连接");
+            case "FFmpeg + FFprobe" -> List.of("运行 ffmpeg -version 和 ffprobe -version", "重新检测环境中心并确认渲染运行时已就绪");
+            case "yt-dlp" -> List.of("运行 yt-dlp --version", "仅用已授权公开素材执行一次抓取预检");
+            case "本机媒体运行时" -> List.of("重新检测 ASR、OCR、配音和响度能力", "查看 data/logs/dependency-bootstrap.log 中的失败原因");
+            case "媒体增强工具" -> List.of("重新检测 Demucs、rembg、Auto-Editor、ImageMagick 和 OpenCV", "在媒体工具页用测试素材执行单项操作");
+            case "APP_MASTER_KEY" -> List.of("重启后端", "环境中心显示 APP_MASTER_KEY 已配置");
+            case "API Key / 登录授权" -> List.of("保存后重启后端", "在能力中心测试当前官方来源配置");
+            default -> List.of("重新检测环境状态", "确认对应能力显示为可用");
+        };
+    }
+
+    private boolean guideNeedsNetwork(String name) {
+        return Set.of("yt-dlp", "本机媒体运行时", "Edge-TTS", "媒体增强工具", "API Key / 登录授权").contains(name);
     }
 
     private Map<String, Object> toolState(boolean installed, boolean integrated) {
