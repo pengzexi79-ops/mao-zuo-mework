@@ -1,0 +1,115 @@
+﻿{
+    "schemaVersion":  1,
+    "generatedBy":  "generate_acceptance_fixtures.ps1",
+    "generatedAt":  "2026-08-22T14:35:29.5755387Z",
+    "fixtures":  [
+                     {
+                         "id":  "video_motion",
+                         "relativePath":  "fixtures/video_motion.mp4",
+                         "kind":  "positive_motion",
+                         "mediaType":  "video",
+                         "durationSec":  2,
+                         "width":  320,
+                         "height":  568,
+                         "fps":  24,
+                         "hasAudio":  false,
+                         "sha256":  "46cb44c0a03bac7a296a606d0286d126a195ab4592171da1b1e992957db55b2f",
+                         "sizeBytes":  13200,
+                         "expected":  {
+                                          "minSegments":  2,
+                                          "qualityGate":  "admit",
+                                          "readable":  true
+                                      }
+                     },
+                     {
+                         "id":  "video_av",
+                         "relativePath":  "fixtures/video_av.mp4",
+                         "kind":  "positive_audio_video",
+                         "mediaType":  "video",
+                         "durationSec":  2,
+                         "width":  320,
+                         "height":  568,
+                         "fps":  24,
+                         "hasAudio":  true,
+                         "sha256":  "d5ef2a3203c8730734a18d66ca4d44fc10bef75c258a4140cdb795f45f406315",
+                         "sizeBytes":  190667,
+                         "expected":  {
+                                          "minSegments":  2,
+                                          "qualityGate":  "admit",
+                                          "readable":  true
+                                      }
+                     },
+                     {
+                         "id":  "video_black",
+                         "relativePath":  "fixtures/video_black.mp4",
+                         "kind":  "negative_black",
+                         "mediaType":  "video",
+                         "durationSec":  2,
+                         "width":  320,
+                         "height":  568,
+                         "fps":  24,
+                         "hasAudio":  false,
+                         "sha256":  "1f86ef9befa194524e7a62326c56c75b360be58289494ad58583fea96f79b5c8",
+                         "sizeBytes":  3137,
+                         "expected":  {
+                                          "minSegments":  1,
+                                          "qualityGate":  "reject",
+                                          "readable":  true
+                                      }
+                     },
+                     {
+                         "id":  "video_solid",
+                         "relativePath":  "fixtures/video_solid.mp4",
+                         "kind":  "negative_solid",
+                         "mediaType":  "video",
+                         "durationSec":  2,
+                         "width":  320,
+                         "height":  568,
+                         "fps":  24,
+                         "hasAudio":  false,
+                         "sha256":  "019428cd8b92ab3a6a2dd48c7ef859f08609e9d7a8bed82f9794a8e754e77b9d",
+                         "sizeBytes":  3144,
+                         "expected":  {
+                                          "minSegments":  1,
+                                          "qualityGate":  "reject",
+                                          "readable":  true
+                                      }
+                     },
+                     {
+                         "id":  "audio_voice",
+                         "relativePath":  "fixtures/audio_voice.wav",
+                         "kind":  "positive_audio",
+                         "mediaType":  "audio",
+                         "durationSec":  2,
+                         "width":  0,
+                         "height":  0,
+                         "fps":  0,
+                         "hasAudio":  true,
+                         "sha256":  "8f26bb3a9ef0324f97da2b6e96a465897d872171a0bd8b8035383e282cb6c7eb",
+                         "sizeBytes":  176478,
+                         "expected":  {
+                                          "minSegments":  0,
+                                          "qualityGate":  "admit",
+                                          "readable":  true
+                                      }
+                     },
+                     {
+                         "id":  "cover",
+                         "relativePath":  "fixtures/cover.png",
+                         "kind":  "positive_image",
+                         "mediaType":  "image",
+                         "durationSec":  0,
+                         "width":  320,
+                         "height":  320,
+                         "fps":  25,
+                         "hasAudio":  false,
+                         "sha256":  "1d0150f633e26171cd74f439e681ad7d590684e88951c16d3c0f2a6335f2172a",
+                         "sizeBytes":  1030,
+                         "expected":  {
+                                          "minSegments":  0,
+                                          "qualityGate":  "manual",
+                                          "readable":  true
+                                      }
+                     }
+                 ]
+}
