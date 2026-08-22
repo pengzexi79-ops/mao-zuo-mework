@@ -35,6 +35,8 @@ public class CrawlJobService {
     @Qualifier("crawlExecutor") private final Executor crawlExecutor;
     private final Set<Long> dispatched = ConcurrentHashMap.newKeySet();
     private final Set<Long> cancelled = ConcurrentHashMap.newKeySet();
+    /** Signed remote download URLs live only for the current process and are never persisted. */
+    private final Map<Long, List<CrawlerGateway.RemoteItem>> transientRemoteItems = new ConcurrentHashMap<>();
 
     @Transactional
     public CrawlJob submitVideos(List<String> urls, String role) { return submitVideos(urls, role, null); }
@@ -46,7 +48,7 @@ public class CrawlJobService {
         CrawlJob job = base("视频批量抓取", "video", role, clean.size());
         job.setParams(writeJson(Map.of("urls", clean, "folderId", folderId == null ? 0L : folderId)));
         CrawlJob saved = jobRepo.save(job);
-        saveTasks(saved, clean, null);
+        saveUrlTasks(saved, clean);
         dispatchAfterCommit(saved.getId());
         return saved;
     }
@@ -81,9 +83,10 @@ public class CrawlJobService {
             throw new IllegalArgumentException("公开音频只能导入为背景音乐或人声口播");
         }
         CrawlJob job = base("公开" + ("audio".equals(type) ? "音频" : "视频") + "素材导入", "remote-" + type, role, clean.size());
-        job.setParams(writeJson(Map.of("items", clean, "folderId", folderId == null ? 0L : folderId)));
+        job.setParams(writeJson(Map.of("items", clean.stream().map(this::persistableRemoteItem).toList(), "folderId", folderId == null ? 0L : folderId)));
         CrawlJob saved = jobRepo.save(job);
-        saveTasks(saved, clean.stream().map(CrawlerGateway.RemoteItem::getDownloadUrl).toList(), clean.stream().map(CrawlerGateway.RemoteItem::getTitle).toList());
+        transientRemoteItems.put(saved.getId(), List.copyOf(clean));
+        saveTasks(saved, clean, null);
         dispatchAfterCommit(saved.getId());
         return saved;
     }
@@ -97,7 +100,47 @@ public class CrawlJobService {
     private CrawlJob base(String name, String mode, String role, int total) {
         CrawlJob job = new CrawlJob(); job.setName(name); job.setMode(mode); job.setRole(role == null || role.isBlank() ? "body" : role); job.setTotal(total); job.setProgress(0); job.setCurrentItem(0); job.setStatus(JobStatus.pending.name()); job.setTimeoutSec(props.getJobTimeoutSec()); job.setStaleAfterSec(props.getJobStaleAfterSec()); return job;
     }
-    private void saveTasks(CrawlJob job, List<String> urls, List<String> titles) { for (int i=0;i<urls.size();i++) { CrawlTask t=new CrawlTask(); t.setJobId(job.getId()); t.setIdx(i); t.setUrl(urls.get(i)); if(titles!=null)t.setTitle(titles.get(i)); taskRepo.save(t); } }
+    private void saveUrlTasks(CrawlJob job, List<String> urls) {
+        for (int i = 0; i < urls.size(); i++) {
+            CrawlTask task = new CrawlTask();
+            task.setJobId(job.getId());
+            task.setIdx(i);
+            task.setUrl(safeUrl(urls.get(i)));
+            taskRepo.save(task);
+        }
+    }
+
+    private void saveTasks(CrawlJob job, List<CrawlerGateway.RemoteItem> items, List<String> titles) {
+        for (int i = 0; i < items.size(); i++) {
+            CrawlerGateway.RemoteItem item = items.get(i);
+            CrawlTask task = new CrawlTask();
+            task.setJobId(job.getId());
+            task.setIdx(i);
+            task.setUrl(safeUrl(item.getPageUrl()));
+            task.setTitle(titles == null ? item.getTitle() : titles.get(i));
+            taskRepo.save(task);
+        }
+    }
+
+    private CrawlerGateway.RemoteItem persistableRemoteItem(CrawlerGateway.RemoteItem item) {
+        CrawlerGateway.RemoteItem copy = new CrawlerGateway.RemoteItem();
+        copy.setSource(item.getSource());
+        copy.setTitle(item.getTitle());
+        copy.setPageUrl(safeUrl(item.getPageUrl()));
+        copy.setDuration(item.getDuration());
+        copy.setLicense(item.getLicense());
+        copy.setLicenseUrl(safeUrl(item.getLicenseUrl()));
+        copy.setType(item.getType());
+        copy.setTags(item.getTags());
+        copy.setNotice(item.isNotice());
+        copy.setAuthUrl(safeUrl(item.getAuthUrl()));
+        copy.setConfigKey(item.getConfigKey());
+        copy.setProjectId(item.getProjectId());
+        copy.setRelevanceScore(item.getRelevanceScore());
+        copy.setHitKeywords(item.getHitKeywords());
+        return copy;
+    }
+
     private String writeJson(Object value) { try { return om.writeValueAsString(value); } catch(Exception e) { throw new IllegalArgumentException("任务参数无法保存"); } }
 
     private void dispatch(Long id) { if (id == null || !dispatched.add(id)) return; try { crawlExecutor.execute(() -> { try { run(id); } finally { dispatched.remove(id); cancelled.remove(id); } }); } catch (RuntimeException e) { dispatched.remove(id); log.warn("crawl dispatch failed", e); } }
@@ -144,7 +187,22 @@ public class CrawlJobService {
         job.setSummary(summary(tasks)); job.setProgress(100); job.setCurrentItem(tasks.size()); touch(job); jobRepo.save(job);
     }
 
-    private CrawlerGateway.RemoteItem findRemoteItem(CrawlJob job, int idx) { try { var root=om.readTree(job.getParams()); return om.treeToValue(root.path("items").get(idx), CrawlerGateway.RemoteItem.class); } catch(Exception e) { throw new IllegalArgumentException("公开素材任务参数损坏"); } }
+    private CrawlerGateway.RemoteItem findRemoteItem(CrawlJob job, int idx) {
+        List<CrawlerGateway.RemoteItem> transientItems = transientRemoteItems.get(job.getId());
+        if (transientItems != null && idx >= 0 && idx < transientItems.size()) return transientItems.get(idx);
+        try {
+            var root = om.readTree(job.getParams());
+            CrawlerGateway.RemoteItem item = om.treeToValue(root.path("items").get(idx), CrawlerGateway.RemoteItem.class);
+            if (item == null || item.getDownloadUrl() == null || item.getDownloadUrl().isBlank()) {
+                throw new IllegalArgumentException("远程下载链接已过期，需重新检索并导入");
+            }
+            return item;
+        } catch (IllegalArgumentException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new IllegalArgumentException("公开素材任务参数损坏");
+        }
+    }
     private Long folderId(CrawlJob job) { try { long id = om.readTree(job.getParams()).path("folderId").asLong(0); return id > 0 ? id : null; } catch (Exception ignored) { return null; } }
     private boolean crawlTimedOut(CrawlJob job) {
         int timeout = Math.max(60, job.getTimeoutSec() == null ? props.getJobTimeoutSec() : job.getTimeoutSec());

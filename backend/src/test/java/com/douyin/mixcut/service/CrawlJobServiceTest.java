@@ -11,6 +11,7 @@ import com.douyin.mixcut.repository.Repositories.CrawlTaskRepo;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.ArgumentCaptor;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
@@ -22,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
 class CrawlJobServiceTest {
@@ -103,6 +105,30 @@ class CrawlJobServiceTest {
         assertEquals("archive", task.getSource());
         assertEquals(404, task.getHttpStatus());
         assertTrue(task.getMessage().contains("HTTP 404"));
+    }
+
+    @Test
+    void remoteTaskStoresCanonicalPageUrlInsteadOfSignedDownloadUrl() {
+        CrawlerGateway.RemoteItem item = new CrawlerGateway.RemoteItem();
+        item.setSource("wikimedia");
+        item.setType("video");
+        item.setTitle("flower.mp4");
+        item.setPageUrl("https://commons.wikimedia.org/wiki/File:flower.mp4?tracking=1");
+        item.setDownloadUrl("https://upload.wikimedia.org/flower.mp4?token=SECRET&sig=SIGNED");
+        item.setLicense("CC BY 4.0");
+        CrawlJob saved = new CrawlJob();
+        saved.setId(7L);
+        when(jobRepo.save(any(CrawlJob.class))).thenReturn(saved);
+        when(taskRepo.save(any(CrawlTask.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        CrawlJobService service = new CrawlJobService(jobRepo, taskRepo, crawler, materialService, new AppProps(), Runnable::run);
+        when(crawler.validateRemoteItem(any(CrawlerGateway.RemoteItem.class), anyString())).thenReturn(item);
+        service.submitVideoItems(List.of(item), "body");
+        ArgumentCaptor<CrawlJob> jobs = ArgumentCaptor.forClass(CrawlJob.class);
+        verify(jobRepo, org.mockito.Mockito.atLeastOnce()).save(jobs.capture());
+        String params = jobs.getAllValues().get(0).getParams();
+        assertTrue(params.contains("commons.wikimedia.org/wiki/File:flower.mp4"));
+        assertFalseContains(params, "token=SECRET");
+        assertFalseContains(params, "upload.wikimedia.org/flower.mp4");
     }
 
     private void assertFalseContains(String text, String fragment) {

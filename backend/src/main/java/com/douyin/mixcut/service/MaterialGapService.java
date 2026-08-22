@@ -390,6 +390,7 @@ public class MaterialGapService {
             result.getSourceResults().add(Map.of(
                     "source", "local-library",
                     "status", "local_required",
+                    "outcome", "manual_required",
                     "roles", String.join(",", localRequired),
                     "message", "产品和片尾素材必须来自本地素材库或已授权导入，公开 B-roll 不会替代这些角色。"));
         }
@@ -416,6 +417,7 @@ public class MaterialGapService {
             result.getSourceResults().add(Map.of(
                     "source", s,
                     "status", "skipped_breaker",
+                    "outcome", "blocked",
                     "message", "该来源近期连续失败，已临时熔断跳过，请在冷却结束后重试",
                     "retryAfterSeconds", breaker.retryAfterSeconds()));
             return;
@@ -452,6 +454,7 @@ public class MaterialGapService {
                         sourceResult.put("items", entry.getValue().size());
                         sourceResult.put("jobId", job.getId());
                         sourceResult.put("status", "queued");
+                        sourceResult.put("outcome", "online_success");
                         if (fallbackUsed) {
                             sourceResult.put("fallbackKeyword", fallbackKeyword);
                             sourceResult.put("message", "项目词未命中英文公开索引，已用合规类目/场景词回退检索：" + fallbackKeyword);
@@ -469,21 +472,23 @@ public class MaterialGapService {
                     result.getSourceResults().add(Map.of(
                             "source", s,
                             "status", "failed",
+                            "outcome", "blocked",
                             "message", noticeMsg + "。" + hintFor(s),
                             "retryAfterSeconds", breaker.retryAfterSeconds()));
                 } else {
                     result.getSourceResults().add(Map.of("source", s,
-                            "items", 0, "status", "no_results"));
+                            "items", 0, "status", "no_results", "outcome", "manual_required",
+                            "message", "在线来源暂无合规结果，请继续使用本地素材或稍后重试"));
                 }
             } else if ("mixkit".equals(s)) {
                 // Mixkit 无公开 API 且服务条款不支持无人值守抓取：只允许手动导入
                 result.getSourceResults().add(Map.of("source", "mixkit",
-                        "status", "manual_only",
+                        "status", "manual_only", "outcome", "manual_required",
                         "message", "Mixkit 无公开 API 且其服务条款不支持无人值守抓取，仅支持手动导入：请在素材抓取页检索后人工确认导入。"));
                 return; // 不是一次自动尝试，不触碰熔断器
             } else {
                 result.getSourceResults().add(Map.of("source", s,
-                        "status", "unsupported",
+                        "status", "unsupported", "outcome", "blocked",
                         "message", "该来源不在自动填充范围内。自动填充支持：wikimedia, archive，以及已配置官方 Key 的 pexels；Mixkit 仅支持手动导入。"));
                 return; // 不是一次自动尝试，不触碰熔断器
             }
@@ -494,7 +499,8 @@ public class MaterialGapService {
             Map<String, Object> failure = new HashMap<>();
             failure.put("source", s);
             failure.put("status", "failed");
-            failure.put("message", "检索失败：" + CrawlerGateway.safeError(e) + "。" + hintFor(s));
+            failure.put("outcome", "manual_required");
+            failure.put("message", "检索失败：" + CrawlerGateway.safeError(e) + "。请继续使用已入库本地素材或稍后重试。" + hintFor(s));
             failure.put("retryAfterSeconds", breaker.retryAfterSeconds());
             failure.put("elapsedMs", (System.nanoTime() - started) / 1_000_000);
             result.getSourceResults().add(failure);
