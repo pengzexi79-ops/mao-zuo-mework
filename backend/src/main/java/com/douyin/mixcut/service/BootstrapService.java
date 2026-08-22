@@ -104,6 +104,7 @@ public class BootstrapService implements ApplicationRunner {
             migrateOutputRepairLifecycle();
             migrateOutputEditSessions();
             migratePreparationTasks();
+            migrateMediaTasks();
             migrateCrawlTaskDiagnostics();
             migrateMaterialTranscripts();
             migrateMaterialAnalysis();
@@ -309,6 +310,19 @@ public class BootstrapService implements ApplicationRunner {
             log.info("已确认出片准备任务表可用");
         } catch (Exception e) {
             log.warn("无法初始化出片准备任务表；自动补齐将等待数据库恢复后再试", e);
+        }
+    }
+
+    /** Creates the persistent media-tool task table before local tool requests are accepted. */
+    private void migrateMediaTasks() {
+        try (Connection connection = dataSource.getConnection()) {
+            ResourceDatabasePopulator populator = new ResourceDatabasePopulator(
+                    new ClassPathResource("db/media-task-migration.sql"));
+            populator.setContinueOnError(false);
+            populator.populate(connection);
+            log.info("已确认媒体工具任务表可用");
+        } catch (Exception e) {
+            log.warn("无法初始化媒体工具任务表；媒体任务将在数据库恢复后重试", e);
         }
     }
 
