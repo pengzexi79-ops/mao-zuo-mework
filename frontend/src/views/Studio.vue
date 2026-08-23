@@ -618,7 +618,25 @@
 
       <div class="card batch-card">
         <div class="card-title">4. 批量出片</div>
-        <el-alert v-if="preflightMessage" :type="preflightReady ? 'success' : 'warning'" :closable="false" show-icon style="margin-bottom:12px" :title="preflightMessage" />
+        <el-alert v-if="preflightMessage" :type="preflightAlertType" :closable="false" show-icon style="margin-bottom:12px" :title="preflightMessage" />
+        <div v-if="preflight" class="preflight-summary" :class="`preflight-${preflight.status || 'blocked'}`">
+          <div class="preflight-summary-head">
+            <strong>出片预检</strong>
+            <el-tag size="small" :type="preflightTagType">{{ preflightStatusLabel }}</el-tag>
+            <span class="muted">计划 {{ Number(preflight.plannedSec || 0).toFixed(1) }} 秒 · 区间 {{ Number(preflight.minSec || 0).toFixed(0) }}–{{ Number(preflight.maxSec || 0).toFixed(0) }} 秒</span>
+          </div>
+          <div class="preflight-summary-metrics">
+            <span>可用画面 {{ Number(preflight.usableVisualSec || 0).toFixed(1) }} 秒</span>
+            <span>片段 {{ preflight.visualCount || 0 }} 条</span>
+            <span>音频 {{ audioCoverageLabel(preflight.audioCoverageStatus) }}</span>
+          </div>
+          <div v-if="preflight.blockers?.length" class="preflight-issues">
+            <div v-for="issue in preflight.blockers" :key="issue.code" class="preflight-issue blocker"><el-tag size="small" type="danger">阻断</el-tag><span>{{ issue.message }}</span></div>
+          </div>
+          <div v-if="preflight.warnings?.length" class="preflight-issues">
+            <div v-for="issue in preflight.warnings" :key="issue.code" class="preflight-issue warning"><el-tag size="small" type="warning">提示</el-tag><span>{{ issue.message }}</span></div>
+          </div>
+        </div>
         <div v-if="preparationPanelActive || dry || submitting || activeRenderJob" class="batch-live-panel"
           :class="activeRenderJob ? `batch-live-${activeRenderJob.status}` : 'batch-live-working'">
           <div class="batch-live-header">
@@ -693,7 +711,7 @@
         </div>
         <div class="batch-row batch-action-row">
           <template v-if="!activeContinuousJob">
-            <el-button type="primary" size="large" :loading="preparing || preparationBackground || submitting || dry" :disabled="preparing || preparationBackground || submitting || dry" @click="submit">{{ preparing || preparationBackground ? '识别并补齐素材中' : (dry ? '干跑预检' : (continuous ? '开始持续生成' : `开始出 ${count} 条`)) }}</el-button>
+            <el-button type="primary" size="large" :loading="preparing || preparationBackground || submitting || dry" :disabled="preparing || preparationBackground || submitting || dry || preflightBlocked" @click="submit">{{ preparing || preparationBackground ? '识别并补齐素材中' : (dry ? '干跑预检' : (continuous ? '开始持续生成' : `开始出 ${count} 条`)) }}</el-button>
             <el-button v-if="preparing || preparationBackground" size="large" plain type="warning" @click="cancelPrepare">取消准备并继续</el-button>
           </template>
           <template v-else>
@@ -971,6 +989,17 @@
 .batch-live-tip { margin-top:10px; padding-top:9px; border-top:1px solid rgba(103,194,58,.22); color:#536171; font-size:12px; line-height:1.6; }
 .batch-live-pending .batch-live-tip { border-top-color:rgba(64,158,255,.22); }
 .batch-live-paused .batch-live-tip { border-top-color:rgba(230,162,60,.25); }
+.preflight-summary { margin:0 0 12px; padding:12px 14px; border:1px solid #dcdfe6; border-radius:6px; background:#fff; }
+.preflight-summary.preflight-ready { border-color:#b3e19d; background:#f0f9eb; }
+.preflight-summary.preflight-warning { border-color:#f3d19e; background:#fffaf0; }
+.preflight-summary.preflight-blocked, .preflight-summary.preflight-needs_user_action { border-color:#f5b7b1; background:#fff5f4; }
+.preflight-summary-head, .preflight-summary-metrics, .preflight-issue { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.preflight-summary-head { margin-bottom:8px; }
+.preflight-summary-metrics { color:#606266; font-size:12px; gap:16px; }
+.preflight-issues { margin-top:8px; display:grid; gap:5px; }
+.preflight-issue { font-size:12px; line-height:1.5; }
+.preflight-issue.blocker { color:#b42318; }
+.preflight-issue.warning { color:#8a5a00; }
 .batch-preflight-state { display:flex; align-items:center; gap:12px; margin-top:14px; padding:16px; border:1px dashed #e6a23c; border-radius:6px; color:#6b4b13; background:#fffdf5; }
 .batch-preflight-state b { display:block; color:#8a5a00; margin-bottom:4px; }
 .batch-preflight-state div:last-child { color:#8b7a5a; font-size:12px; line-height:1.6; }
@@ -1063,6 +1092,7 @@ const jobName = ref('')
 const jobTimeoutMin = ref(0)
 const jobStaleMin = ref(0)
 const plan = ref(null)
+const preflight = ref(null)
 const dry = ref(false)
 const preparing = ref(false)
 const prepareCancelled = ref(false)
@@ -1234,6 +1264,21 @@ const canvasKey = computed({
 
 const inRange = computed(() =>
   plan.value && plan.value.plannedSec >= p.minSec && plan.value.plannedSec <= p.maxSec)
+const preflightBlocked = computed(() => preflight.value?.status === 'blocked' || preflight.value?.status === 'needs_user_action')
+const preflightReady = computed(() => {
+  if (!preflight.value) return false
+  return preflight.value.status === 'ready' || preflight.value.status === 'warning'
+})
+const preflightAlertType = computed(() => {
+  if (dry.value) return 'info'
+  if (preflightReady.value) return preflight.value?.status === 'warning' ? 'warning' : 'success'
+  return 'warning'
+})
+const preflightTagType = computed(() => preflightReady.value ? (preflight.value?.status === 'warning' ? 'warning' : 'success') : 'danger')
+const preflightStatusLabel = computed(() => ({ ready: '通过', warning: '通过但有提示', blocked: '已阻断', needs_user_action: '需要处理' }[preflight.value?.status] || '未预检'))
+function audioCoverageLabel(status) {
+  return ({ not_required: '无需外部音频', ready: '已覆盖', missing_source: '缺少音频', insufficient_voice: '口播不足', invalid_mode: '模式无效' }[status] || '待检查')
+}
 const durationWarning = computed(() => {
   const value = Number(p.targetDurationSec)
   if (!value) return ''
@@ -1259,7 +1304,7 @@ const selectedVisuals = computed(() => {
   const selectedFolders = new Set((p.folderIds || []).map(Number))
   const hasSelection = !usePreparedPoolForRun.value && (selectedIds.size > 0 || selectedFolders.size > 0)
   const selected = visualList.value.filter((material) => {
-    const readable = material.status !== 'failed' && (material.fileType === 'image' || Number(material.durationSec) >= 0.6)
+    const readable = material.status !== 'failed' && (material.fileType === 'image' || Number(material.durationSec) >= 1.0)
     if (!readable) return false
     return !hasSelection || selectedIds.has(Number(material.id)) || selectedFolders.has(Number(material.folderId))
   })
@@ -1340,35 +1385,18 @@ const hasExternalAudio = computed(() => Boolean(plan.value?.voicePath || plan.va
 const needsExternalAudio = computed(() => Boolean(plan.value?.requiresExternalAudio))
 const hasAudioCoverage = computed(() => !needsExternalAudio.value || Boolean(plan.value?.bgmPath)
   || Number(plan.value?.voiceDurationSec || 0) + 0.5 >= Number(plan.value?.plannedSec || 0))
-const preflightReady = computed(() => {
-  if (!runtime.ffmpeg || !runtime.ffprobe) return false
-  if (!selectedVisuals.value.length) return false
-  if (needsExternalAudio.value && (!hasExternalAudio.value || !hasAudioCoverage.value)) return false
-  // Do not let a rough material-capacity estimate bypass the actual dry-run.
-  return Boolean(plan.value?.usable) && inRange.value
-})
 const preflightMessage = computed(() => {
-  if (!runtime.ffmpeg || !runtime.ffprobe) return '未检测到 FFmpeg/FFprobe，无法安全开始出片。请在环境中心完成配置。'
-  if (!selectedVisuals.value.length) return '当前筛选范围没有可读取的画面素材：检查指定素材、授权文件夹，或回到素材库重新探测失败文件。'
-  if (dry.value) return '正在按当前参数执行干跑预检，确认时长和素材质量后会自动开始。'
-  if (!plan.value) return `点击“开始”会先自动完成干跑；当前素材池 ${usableVisualSeconds.value.toFixed(1)} 秒，也可手动点击“预览第 N 条”查看时间线。`
-  if (needsExternalAudio.value && !hasExternalAudio.value) {
-    return '干跑未通过：当前“素材音轨”模式没有可覆盖全片的 BGM 或口播。请至少导入一条音频，或明确选择“保留原片声音”或“AI 人声”'
+  if (dry.value) return '正在按当前参数执行干跑预检，确认时长、素材质量和音频覆盖。'
+  if (!preflight.value) {
+    if (!runtime.ffmpeg || !runtime.ffprobe) return '未检测到媒体处理引擎或媒体探测工具，无法安全开始出片。请在环境中心完成配置。'
+    if (!selectedVisuals.value.length) return '当前筛选范围没有可读取的画面素材：检查指定素材、授权文件夹，或回到素材库重新探测失败文件。'
+    return `点击“开始”会先自动完成干跑；当前素材池约 ${usableVisualSeconds.value.toFixed(1)} 秒。`
   }
-  if (needsExternalAudio.value && !hasAudioCoverage.value) {
-    const voiceSec = Number(plan.value.voiceDurationSec || 0).toFixed(1)
-    const plannedSec = Number(plan.value.plannedSec || 0).toFixed(1)
-    return `干跑未通过：口播仅 ${voiceSec} 秒，计划 ${plannedSec} 秒，未选择 BGM 会产生长静音。将任意可读音频选为背景音乐即可覆盖整条。`
-  }
-  if (!plan.value.usable || !inRange.value) {
-    const actual = Number(plan.value.plannedSec || 0).toFixed(1)
-    return `干跑未通过：计划实际 ${actual} 秒，要求 ${p.minSec}–${p.maxSec} 秒。请补充可读素材、降低交付下限或减少结构段后重新预览。`
-  }
-  const recommended = Number(plan.value.targetSec || 0)
-  const targetNote = recommended > Number(plan.value.plannedSec)
-    ? `；低于推荐目标 ${recommended.toFixed(1)} 秒，但不影响提交`
-    : ''
-  return `预检通过：计划 ${Number(plan.value.plannedSec).toFixed(1)} 秒，已满足 ${p.minSec}–${p.maxSec} 秒，${targetNote}；当前筛选范围 ${selectedVisuals.value.length} 条画面、约 ${usableVisualSeconds.value.toFixed(1)} 秒。可以先固定 1–2 条确认质量。`
+  const firstBlocker = preflight.value.blockers?.[0]
+  if (firstBlocker?.message) return `预检已阻断：${firstBlocker.message}`
+  const firstWarning = preflight.value.warnings?.[0]
+  if (firstWarning?.message) return `预检通过但有提示：${firstWarning.message}`
+  return `预检通过：计划 ${Number(preflight.value.plannedSec || 0).toFixed(1)} 秒，满足 ${Number(preflight.value.minSec || p.minSec).toFixed(0)}–${Number(preflight.value.maxSec || p.maxSec).toFixed(0)} 秒交付区间。`
 })
 
 function countSlot(k) {
@@ -1959,19 +1987,21 @@ async function doDryRun() {
       ElMessage.warning('出片参数已变化，当前预检结果已失效；请检查参数后重新开始。')
       return false
     }
-    plan.value = result
-    if (!result.segments.length) {
-      ElMessage.warning('没排出片段，先去素材库导入并打好角色')
+    const dryRunPlan = result?.plan || result
+    const dryRunPreflight = result?.preflight || null
+    plan.value = dryRunPlan
+    preflight.value = dryRunPreflight
+    if (!dryRunPlan?.segments?.length) {
+      ElMessage.warning(dryRunPreflight?.blockers?.[0]?.message || '没排出片段，先去素材库导入并打好角色')
       doGapAnalysis({ silent: true })
       return false
     }
-    const ready = Boolean(result.usable)
-      && result.plannedSec >= p.minSec
-      && result.plannedSec <= p.maxSec
-      && !(result.requiresExternalAudio && !result.voicePath && !result.bgmPath)
-      && !(result.requiresExternalAudio && !result.bgmPath
-        && Number(result.voiceDurationSec || 0) + 0.5 < Number(result.plannedSec || 0))
-    if (!ready && (!result.usable || result.plannedSec < p.minSec)) doGapAnalysis({ silent: true })
+    const ready = dryRunPreflight
+      ? (dryRunPreflight.status === 'ready' || dryRunPreflight.status === 'warning')
+      : Boolean(dryRunPlan.usable) && dryRunPlan.plannedSec >= p.minSec && dryRunPlan.plannedSec <= p.maxSec
+    if (!ready && (!dryRunPreflight || dryRunPreflight.blockers?.some((issue) => ['capacity', 'role', 'folder'].includes(issue.category)))) {
+      doGapAnalysis({ silent: true })
+    }
     return ready
   } catch (error) {
     if (revision === dryRunRevision) ElMessage.error(`干跑预检失败：${error.message || '请检查后端和素材状'}`)
@@ -2431,6 +2461,7 @@ function invalidateDryRun () {
     }
     dry.value = false
     plan.value = null
+    preflight.value = null
     materialGap.value = null
     autoFillResult.value = null
     usePreparedPoolForRun.value = false

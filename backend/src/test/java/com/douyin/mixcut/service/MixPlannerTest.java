@@ -36,6 +36,19 @@ class MixPlannerTest {
     }
 
     @Test
+    void plannerPoolUsesOneSecondMinimumForVideoSlices() {
+        MixPlanner planner = new MixPlanner();
+        MixParams params = new MixParams();
+        Material shortVideo = visual(1L, "short.mp4", 0.8, MaterialRole.body);
+        Material usableVideo = visual(2L, "usable.mp4", 1.0, MaterialRole.body);
+
+        MixPlanner.Pool pool = planner.buildPool(List.of(shortVideo, usableVideo), params);
+
+        assertFalse(pool.getBody().contains(shortVideo));
+        assertTrue(pool.getBody().contains(usableVideo));
+    }
+
+    @Test
     void planHonorsDurationAndSourceBoundariesDeterministically() {
         MixPlanner planner = new MixPlanner();
         MixParams params = new MixParams();

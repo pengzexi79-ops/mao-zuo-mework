@@ -9,7 +9,9 @@ import com.douyin.mixcut.dto.MixParams;
 import com.douyin.mixcut.repository.Repositories.ProjectRepo;
 import com.douyin.mixcut.repository.Repositories.SkillDefRepo;
 import com.douyin.mixcut.repository.Repositories.WorkflowRepo;
+import com.douyin.mixcut.service.BootstrapService;
 import com.douyin.mixcut.service.MixPlanner;
+import com.douyin.mixcut.service.PreflightService;
 import com.douyin.mixcut.service.SkillEngine;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
@@ -35,6 +37,8 @@ public class WorkflowController {
     private final SkillDefRepo skillRepo;
     private final ProjectRepo projectRepo;
     private final SkillEngine engine;
+    private final PreflightService preflightService;
+    private final BootstrapService bootstrapService;
     private final com.douyin.mixcut.service.AiService aiService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -493,8 +497,19 @@ public class WorkflowController {
     @Data
     public static class DryRunReq { private Long workflowId; private Long projectId; private MixParams params; private Integer variant = 0; }
 
+    @Data
+    public static class DryRunResult {
+        private MixPlanner.Plan plan;
+        private com.douyin.mixcut.dto.PreflightResult preflight;
+
+        public DryRunResult(MixPlanner.Plan plan, com.douyin.mixcut.dto.PreflightResult preflight) {
+            this.plan = plan;
+            this.preflight = preflight;
+        }
+    }
+
     @PostMapping("/workflows/dry-run")
-    public R<MixPlanner.Plan> dryRun(@RequestBody DryRunReq req) {
+    public R<DryRunResult> dryRun(@RequestBody DryRunReq req) {
         String def = null;
         if (req.getWorkflowId() != null) {
             Workflow workflow = workflowRepo.findById(req.getWorkflowId()).orElse(null);
@@ -503,6 +518,11 @@ public class WorkflowController {
         if (def == null) def = engine.defaultWorkflowDef();
         Project project = req.getProjectId() == null ? null : projectRepo.findById(req.getProjectId()).orElse(null);
         MixParams params = req.getParams() == null ? new MixParams() : req.getParams();
-        return R.ok(engine.run(def, project, params.normalized(), req.getVariant() == null ? 0 : req.getVariant(), null, null));
+        MixParams normalized = params.normalized();
+        MixPlanner.Plan plan = engine.run(def, project, normalized, req.getVariant() == null ? 0 : req.getVariant(), null, null);
+        Map<String, Object> environment = bootstrapService.env();
+        boolean ffmpegReady = Boolean.TRUE.equals(environment.get("ffmpeg"));
+        boolean ffprobeReady = Boolean.TRUE.equals(environment.get("ffprobe"));
+        return R.ok(new DryRunResult(plan, preflightService.evaluate(plan, normalized, ffmpegReady, ffprobeReady)));
     }
 }

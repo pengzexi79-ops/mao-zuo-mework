@@ -263,7 +263,7 @@ public class MixPlanner {
             if (m.getStatus() == Material.Status.failed) continue;
             boolean audio = m.getFileType() == Material.FileType.audio;
             boolean image = m.getFileType() == Material.FileType.image;
-            if (!audio && !image && (m.getDurationSec() == null || m.getDurationSec() < 0.6)) continue;
+            if (!audio && !image && (m.getDurationSec() == null || m.getDurationSec() < 1.0)) continue;
 
             MaterialRole r = m.getRole() == null ? MaterialRole.none : m.getRole();
             if (audio) {
