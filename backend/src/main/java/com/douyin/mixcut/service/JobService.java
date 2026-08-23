@@ -73,6 +73,9 @@ public class JobService {
     private final Set<Long> cancelled = ConcurrentHashMap.newKeySet();
     /** 当前 JVM 已派发或正在执行的任务，避免 afterCommit / 恢复 / watchdog 重复派发。 */
     private final Set<Long> dispatched = ConcurrentHashMap.newKeySet();
+    private final ThreadLocal<ExecutionLease> workerLease = new ThreadLocal<>();
+
+    private record ExecutionLease(Long epoch, String token, LocalDateTime expiresAt) {}
 
     // ---------------- 提交与派发 ----------------
 
@@ -135,6 +138,8 @@ public class JobService {
             try {
                 int total = totalFor(job);
                 int completed = successfulIndexes(job.getId(), total).size();
+                jobRepo.invalidateLease(job.getId(), List.of(JobStatus.running.name()));
+                job = jobRepo.findById(job.getId()).orElse(job);
                 job.setStatus(JobStatus.pending.name());
                 job.setCurrent(completed);
                 job.setProgress(progress(completed, total));
@@ -189,12 +194,16 @@ public class JobService {
                 long totalSec = Duration.between(job.getCreatedAt() == null ? activity : job.getCreatedAt(), now).getSeconds();
                 int staleLimit = configuredStaleAfter(job);
                 int timeoutLimit = configuredTimeout(job);
-                if (inactiveSec >= staleLimit && !dispatched.contains(job.getId())) {
-                    markFailed(job, "任务无活动超过 " + staleLimit + " 秒，已由 watchdog 标记为失败；请确认素材与 FFmpeg 环境后重新提交。");
-                    liveStep.remove(job.getId());
-                } else if (totalSec >= timeoutLimit && !dispatched.contains(job.getId())) {
-                    markFailed(job, "任务执行超过 " + timeoutLimit + " 秒，已由 watchdog 标记为失败；为避免破坏正在写入的成片，未强行中断外部渲染进程。");
-                    liveStep.remove(job.getId());
+                if (inactiveSec >= staleLimit) {
+                    int changed = jobRepo.failStaleRunningJob(job.getId(), "任务心跳超时",
+                            "heartbeat_timeout：任务无活动超过 " + staleLimit + " 秒；外部渲染不会被强行中断，迟到结果将被丢弃。", now,
+                            now.minusSeconds(staleLimit));
+                    if (changed > 0) liveStep.remove(job.getId());
+                } else if (totalSec >= timeoutLimit) {
+                    int changed = jobRepo.failTimedOutRunningJob(job.getId(), "任务总时限超时",
+                            "job_timeout：任务执行超过 " + timeoutLimit + " 秒；外部渲染不会被强行中断，迟到结果将被丢弃。", now,
+                            now.minusSeconds(timeoutLimit));
+                    if (changed > 0) liveStep.remove(job.getId());
                 }
             }
         } catch (org.springframework.dao.DataAccessException ignored) {
@@ -212,10 +221,13 @@ public class JobService {
         if (jobId == null || !dispatched.add(jobId)) return;
         try {
             renderExecutor.execute(() -> {
+                ExecutionLease lease = null;
                 try {
-                    safeRun(jobId);
+                    lease = claimLease(jobId);
+                    if (lease != null) safeRun(jobId, lease);
                 } finally {
                     dispatched.remove(jobId);
+                    if (lease != null) requeueIfStillPending(jobId);
                 }
             });
         } catch (RuntimeException e) {
@@ -241,14 +253,53 @@ public class JobService {
 
     // ---------------- 执行 ----------------
 
+    private ExecutionLease claimLease(Long jobId) {
+        LocalDateTime now = LocalDateTime.now();
+        String token = UUID.randomUUID().toString().replace("-", "");
+        Job pending = reloadOrNull(jobId);
+        if (pending == null || !JobStatus.pending.name().equals(pending.getStatus())) return null;
+        LocalDateTime expiresAt = now.plusSeconds(configuredStaleAfter(pending));
+        try {
+            if (jobRepo.claimPendingJob(jobId, token, now, expiresAt) != 1) return null;
+            Job claimed = jobRepo.findById(jobId).orElse(null);
+            if (claimed == null || claimed.getLeaseToken() == null) return null;
+            return new ExecutionLease(claimed.getExecutionEpoch(), token, expiresAt);
+        } catch (Exception e) {
+            log.warn("job {} claim failed: {}", jobId, e.toString());
+            return null;
+        }
+    }
+
+    private void requeueIfStillPending(Long jobId) {
+        try {
+            if (jobRepo.findById(jobId).map(job -> JobStatus.pending.name().equals(job.getStatus())).orElse(false)) {
+                dispatch(jobId);
+            }
+        } catch (Exception e) {
+            log.debug("job {} pending requeue check failed: {}", jobId, e.toString());
+        }
+    }
+
     /** 兜底：未捕获异常必须落库，不能让任务永久停在 running。 */
     void safeRun(Long jobId) {
+        Job job = reloadOrNull(jobId);
+        ExecutionLease lease = job == null ? null : new ExecutionLease(job.getExecutionEpoch(), job.getLeaseToken(), job.getLeaseExpiresAt());
+        safeRun(jobId, lease);
+    }
+
+    private void safeRun(Long jobId, ExecutionLease lease) {
+        if (lease == null) return;
+        workerLease.set(lease);
         try {
             runJob(jobId);
         } catch (Throwable t) {
             log.error("job {} crashed", jobId, t);
             try {
-                jobRepo.findById(jobId).ifPresent(job -> markFailed(job, "任务异常终止: " + concise(t)));
+                jobRepo.findById(jobId).ifPresent(job -> {
+                    // A superseded worker must not turn a user pause/cancel or a takeover into failure.
+                    if (ownsLease(job)) markFailed(job, "任务异常终止: " + concise(t));
+                    else log.info("job {} worker lost lease; late failure discarded", jobId);
+                });
             } catch (Exception ignore) {
                 // 状态落库也失败时只能靠日志。
             }
@@ -256,39 +307,31 @@ public class JobService {
             liveStep.remove(jobId);
             livePhaseProgress.remove(jobId);
             cancelled.remove(jobId);
+            workerLease.remove();
         }
     }
 
     public void cancel(Long jobId) {
-        jobRepo.findById(jobId).ifPresent(job -> {
-            if (!isTerminal(job.getStatus())) {
-                cancelled.add(jobId);
-                boolean wasPending = JobStatus.pending.name().equals(job.getStatus());
-                int completed = successfulIndexes(jobId, totalFor(job)).size();
-                job.setStatus(JobStatus.cancelled.name());
-                job.setCurrent(completed);
-                job.setProgress(progress(completed, totalFor(job)));
-                job.setSummary(wasPending
-                        ? "已取消，尚未开始渲染" : "已取消；当前外部渲染步骤结束后不会继续下一条");
-                job.setError(null);
-                job.setLastActivityAt(LocalDateTime.now());
-                jobRepo.save(job);
-                liveStep.remove(jobId);
-            }
+        jobRepo.findById(jobId).ifPresent(current -> {
+            if (isTerminal(current.getStatus())) return;
+            cancelled.add(jobId);
+            boolean wasPending = JobStatus.pending.name().equals(current.getStatus());
+            int completed = successfulIndexes(jobId, totalFor(current)).size();
+            int changed = jobRepo.transitionCancelled(jobId,
+                    List.of(JobStatus.pending.name(), JobStatus.running.name(), JobStatus.paused.name(), JobStatus.awaiting_decision.name()),
+                    completed, progress(completed, totalFor(current)),
+                    wasPending ? "已取消，尚未开始渲染" : "已取消；当前外部渲染步骤结束后不会继续下一条", LocalDateTime.now());
+            if (changed > 0) liveStep.remove(jobId);
         });
     }
 
     public void pause(Long jobId) {
-        jobRepo.findById(jobId).ifPresent(job -> {
-            if (isTerminal(job.getStatus())) throw new IllegalArgumentException("已结束的任务不能暂停");
+        jobRepo.findById(jobId).ifPresent(current -> {
+            if (isTerminal(current.getStatus())) throw new IllegalArgumentException("已结束的任务不能暂停");
             int completed = successfulIndexes(jobId, Integer.MAX_VALUE).size();
-            job.setStatus(JobStatus.paused.name());
-            job.setCurrent(completed);
-            job.setProgress(progress(completed, totalFor(job)));
-            job.setSummary("正在暂停：当前条完成后会保留成片；已完成 " + completed + " 条");
-            job.setError(null);
-            heartbeat(job, "暂停请求已收到");
-            jobRepo.save(job);
+            jobRepo.transitionPaused(jobId, List.of(JobStatus.pending.name(), JobStatus.running.name()),
+                    completed, progress(completed, totalFor(current)),
+                    "正在暂停：当前条完成后会保留成片；已完成 " + completed + " 条", LocalDateTime.now());
         });
     }
 
@@ -385,7 +428,7 @@ public class JobService {
 
     void runJob(Long jobId) {
         Job job = reloadOrNull(jobId);
-        if (job == null || isTerminal(job.getStatus()) || JobStatus.paused.name().equals(job.getStatus())) return;
+        if (job == null || !ownsLease(job) || isTerminal(job.getStatus()) || JobStatus.paused.name().equals(job.getStatus())) return;
 
         int total = totalFor(job);
         boolean continuous = isContinuous(job);
@@ -403,7 +446,6 @@ public class JobService {
         int fail = 0;
         List<String> warnings = new ArrayList<>();
 
-        job.setStatus(JobStatus.running.name());
         job.setCurrent(ok);
         job.setProgress(progress(ok, total));
         job.setSummary(ok == 0 ? "开始渲染" : "恢复渲染：跳过已成功的 " + ok + " 条");
@@ -441,7 +483,7 @@ public class JobService {
         for (int idx = 1; idx <= total; idx++) {
             if (successful.contains(idx)) continue;
             Job latest = reloadOrNull(jobId);
-            if (latest == null || isTerminal(latest.getStatus()) || JobStatus.paused.name().equals(latest.getStatus()) || cancelled.contains(jobId)) {
+            if (latest == null || !ownsLease(latest) || isTerminal(latest.getStatus()) || JobStatus.paused.name().equals(latest.getStatus()) || cancelled.contains(jobId)) {
                 if (latest != null && (cancelled.contains(jobId) || JobStatus.cancelled.name().equals(latest.getStatus()))) {
                     cancelPersisted(latest, ok);
                 }
@@ -484,6 +526,12 @@ public class JobService {
                         usedSegments, batchReuseUsage, projectFuzzyKeys, jobId, displayIdx, total, ctx, warnings, latest);
                 MixPlanner.Plan plan = attempt.plan;
                 RenderService.RenderResult result = attempt.result;
+                Job ownedAfterRender = reloadOrNull(jobId);
+                if (ownedAfterRender == null || !ownsLease(ownedAfterRender)) {
+                    discardRenderResult(result);
+                    liveStep.remove(jobId);
+                    return;
+                }
                 if (attempt.awaitingDecision) {
                     saveQcBlockedOutput(jobId, idx, result, plan == null ? Set.of() : plan.segmentKeys(), attempt.retries,
                             plan == null ? null : plan.getHookStrategy(), buildDowngradeInfo(plan, result, attempt.retries),
@@ -510,8 +558,12 @@ public class JobService {
                     return;
                 }
                 Job afterRender = reloadOrNull(jobId);
-                if (afterRender != null && (JobStatus.cancelled.name().equals(afterRender.getStatus())
-                        || cancelled.contains(jobId))) {
+                if (afterRender == null || !ownsLease(afterRender)) {
+                    discardRenderResult(result);
+                    liveStep.remove(jobId);
+                    return;
+                }
+                if (JobStatus.cancelled.name().equals(afterRender.getStatus()) || cancelled.contains(jobId)) {
                     cancelPersisted(afterRender, successful.size());
                     discardRenderResult(result);
                     return;
@@ -580,6 +632,8 @@ public class JobService {
         int missing = total - successful.size();
         finished.setStatus(missing == 0 ? JobStatus.done.name()
                 : (successful.isEmpty() ? JobStatus.failed.name() : JobStatus.done.name()));
+        finished.setLeaseToken(null);
+        finished.setLeaseExpiresAt(null);
         finished.setProgress(100);
         finished.setCurrent(successful.size());
         finished.setSummary("成功 " + successful.size() + " 条，失败 " + Math.max(fail, missing) + " 条");
@@ -1225,7 +1279,7 @@ public class JobService {
                 ? loadProjectUsedFuzzyKeys(projectId, jobId) : new HashSet<>();
         while (true) {
             Job latest = reloadOrNull(jobId);
-            if (latest == null || JobStatus.paused.name().equals(latest.getStatus())) {
+            if (latest == null || !ownsLease(latest) || JobStatus.paused.name().equals(latest.getStatus())) {
                 liveStep.remove(jobId);
                 return;
             }
@@ -1260,6 +1314,12 @@ public class JobService {
                         new ArrayList<>(), latest);
                 MixPlanner.Plan plan = attempt.plan;
                 RenderService.RenderResult result = attempt.result;
+                Job ownedAfterRender = reloadOrNull(jobId);
+                if (ownedAfterRender == null || !ownsLease(ownedAfterRender)) {
+                    discardRenderResult(result);
+                    liveStep.remove(jobId);
+                    return;
+                }
                 if (attempt.awaitingDecision) {
                     saveQcBlockedOutput(jobId, idx, result, plan == null ? Set.of() : plan.segmentKeys(), attempt.retries,
                             plan == null ? null : plan.getHookStrategy(), buildDowngradeInfo(plan, result, attempt.retries),
@@ -1283,7 +1343,11 @@ public class JobService {
                     return;
                 }
                 Job afterRender = reloadOrNull(jobId);
-                if (afterRender == null || JobStatus.cancelled.name().equals(afterRender.getStatus()) || cancelled.contains(jobId)) {
+                if (afterRender == null || !ownsLease(afterRender)) {
+                    discardRenderResult(result);
+                    return;
+                }
+                if (JobStatus.cancelled.name().equals(afterRender.getStatus()) || cancelled.contains(jobId)) {
                     discardRenderResult(result);
                     if (afterRender != null) cancelPersisted(afterRender, successful.size());
                     return;
@@ -1646,16 +1710,14 @@ public class JobService {
         String message = "第 " + idx + "/" + total + " 条：" + step;
         liveStep.put(jobId, message);
         livePhaseProgress.put(jobId, phaseProgress(step));
-        // 避免每个 ffmpeg 子步骤高频 update；activity 只需为 watchdog 提供心跳。
+        // A late renderer callback may not refresh a lease it no longer owns.
         try {
-            jobRepo.findById(jobId).ifPresent(job -> {
-                if (JobStatus.running.name().equals(job.getStatus())) {
-                    heartbeat(job, message);
-                    job.setCurrentStep(message);
-                    job.setPhaseProgress(phaseProgress(step));
-                    jobRepo.save(job);
-                }
-            });
+            ExecutionLease lease = workerLease.get();
+            Job current = reloadOrNull(jobId);
+            if (lease == null || current == null || !ownsLease(current)) return;
+            LocalDateTime now = LocalDateTime.now();
+            jobRepo.heartbeatOwnedJob(jobId, lease.epoch(), lease.token(), message, phaseProgress(step), now,
+                    now.plusSeconds(configuredStaleAfter(current)));
         } catch (Exception e) {
             log.debug("job {} heartbeat update failed: {}", jobId, e.toString());
         }
@@ -1667,13 +1729,18 @@ public class JobService {
         job.setProgress(progress(ok, totalFor(job)));
         job.setSummary("已取消，已完成 " + ok + " 条");
         job.setError(null);
+        job.setLeaseToken(null);
+        job.setLeaseExpiresAt(null);
         heartbeat(job, "已取消");
         jobRepo.save(job);
     }
 
     private void markAwaitingDecision(Job job, int idx, String reason) {
-        if (job == null || JobStatus.cancelled.name().equals(job.getStatus()) || cancelled.contains(job.getId())) return;
+        if (job == null || (workerLease.get() != null && !ownsLease(job))
+                || JobStatus.cancelled.name().equals(job.getStatus()) || cancelled.contains(job.getId())) return;
         job.setStatus(JobStatus.awaiting_decision.name());
+        job.setLeaseToken(null);
+        job.setLeaseExpiresAt(null);
         job.setSummary("第 " + idx + " 条等待人工决策，已保留候选版本与质检证据");
         job.setError(truncate(reason));
         heartbeat(job, "等待人工决策");
@@ -1681,12 +1748,15 @@ public class JobService {
     }
 
     private void markFailed(Job job, String message) {
+        if (job == null || (workerLease.get() != null && !ownsLease(job))) return;
         if (JobStatus.cancelled.name().equals(job.getStatus()) || cancelled.contains(job.getId())) {
             cancelPersisted(job, successfulIndexes(job.getId(), totalFor(job)).size());
             return;
         }
         if (isTerminal(job.getStatus())) return;
         job.setStatus(JobStatus.failed.name());
+        job.setLeaseToken(null);
+        job.setLeaseExpiresAt(null);
         int completed = Math.max(0, job.getCurrent() == null ? 0 : job.getCurrent());
         job.setProgress(progress(completed, totalFor(job)));
         job.setSummary("任务失败：已完成 " + completed + " 条");
@@ -1714,6 +1784,28 @@ public class JobService {
         return 10;
     }
 
+    private boolean ownsLease(Job job) {
+        ExecutionLease lease = workerLease.get();
+        return lease != null && job != null && JobStatus.running.name().equals(job.getStatus())
+                && Objects.equals(lease.epoch(), job.getExecutionEpoch())
+                && Objects.equals(lease.token(), job.getLeaseToken());
+    }
+
+    private boolean saveOwned(Job job, String step) {
+        ExecutionLease lease = workerLease.get();
+        if (lease == null || job == null || job.getId() == null) return false;
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime expiresAt = now.plusSeconds(configuredStaleAfter(job));
+        int changed = jobRepo.heartbeatOwnedJob(job.getId(), lease.epoch(), lease.token(), step,
+                phaseProgress(step), now, expiresAt);
+        if (changed != 1) return false;
+        job.setLastActivityAt(now);
+        job.setLeaseExpiresAt(expiresAt);
+        job.setCurrentStep(step);
+        job.setPhaseProgress(phaseProgress(step));
+        return true;
+    }
+
     private void heartbeat(Job job, String ignoredStep) {
         job.setLastActivityAt(LocalDateTime.now());
     }
@@ -1733,6 +1825,7 @@ public class JobService {
     }
 
     private boolean isStale(Job job, LocalDateTime now) {
+        if (job.getLeaseExpiresAt() != null && !job.getLeaseExpiresAt().isAfter(now)) return true;
         return Duration.between(activityAt(job, now), now).getSeconds() >= configuredStaleAfter(job);
     }
 
