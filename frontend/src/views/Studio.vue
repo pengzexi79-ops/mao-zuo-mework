@@ -638,10 +638,10 @@
           </div>
         </div>
         <div v-if="preparationPanelActive || dry || submitting || activeRenderJob" class="batch-live-panel"
-          :class="activeRenderJob ? `batch-live-${activeRenderJob.status}` : 'batch-live-working'">
+          :class="activeRenderJob ? [`batch-live-${activeRenderJob.status}`, { 'batch-live-stuck': heartbeatState === 'stale' || heartbeatState === 'delayed' }] : 'batch-live-working'">
           <div class="batch-live-header">
             <div class="batch-live-title">
-              <span class="live-dot" :class="{ paused: activeRenderJob?.status === 'paused' }"></span>
+              <span class="live-dot" :class="{ paused: activeRenderJob?.status === 'paused', delayed: heartbeatState === 'delayed', stale: heartbeatState === 'stale' }"></span>
               <strong>{{ livePanelTitle }}</strong>
               <el-tag size="small" :type="livePanelTagType">{{ livePanelTag }}</el-tag>
             </div>
@@ -661,7 +661,7 @@
                   <span>总进度 {{ liveOverallProgress }}%</span>
                   <span>当前条目 {{ liveItemProgress }}%</span>
                   <span v-if="liveEtaText">预计还需 {{ liveEtaText }}</span>
-                  <span>已运行 {{ liveElapsedText }}</span>
+                  <span>{{ liveElapsedText }}</span>
                 </div>
                 <el-progress v-if="activeRenderJob.status === 'running' && liveItemProgress > 0" :percentage="liveItemProgress" :stroke-width="7" :show-text="false" status="success" />
               </div>
@@ -678,8 +678,8 @@
                   <span v-if="preparingStageMessage" class="muted">{{ preparingStageMessage }}</span>
                 </div>
                 <div class="prepare-live-meta">
-                  <span>已运行 {{ formatDuration(preparingElapsedSec) }}</span>
-                  <span v-if="preparingWaitedSec > 0">等待公开素材 {{ preparingWaitedSec }} </span>
+                  <span>{{ preparingElapsedText }}</span>
+                  <span v-if="preparingWaitedSec > 0">等待公开素材 {{ preparingWaitedSec }} 秒</span>
                   <span v-if="preparingSourceIssues.length" style="color:#d46b08">公开来源问题 {{ preparingSourceIssues.length }} </span>
                 </div>
                 <div v-if="preparingSourceIssues.length" class="prepare-source-issues">
@@ -1006,6 +1006,9 @@
 .batch-preflight-spinner { width:22px; height:22px; flex:0 0 22px; border:3px solid #f3d19e; border-top-color:#e6a23c; border-radius:50%; animation: batch-spin .8s linear infinite; }
 .batch-live-stuck { border-color:#f56c6c; background:#fff5f5; }
 .batch-live-stuck .batch-live-tip { border-top-color:rgba(245,108,108,.28); color:#a94442; }
+.batch-live-panel .live-dot.delayed { background:#e6a23c; animation:batch-pulse 1.4s ease-in-out infinite; }
+.batch-live-panel .live-dot.stale { background:#f56c6c; animation:none; }
+.batch-live-panel .live-dot.paused { background:#e6a23c; animation:none; }
 .prepare-stage-list { display:flex; flex-direction:column; gap:6px; margin-top:8px; }
 .prepare-stage-row { display:flex; align-items:flex-start; gap:8px; line-height:1.55; }
 .prepare-live-stage { display:flex; align-items:center; gap:8px; margin-top:8px; flex-wrap:wrap; }
@@ -1057,6 +1060,8 @@ const visualList = ref([])
 const jobs = ref([])
 const selectedJobIds = ref([])
 const jobLive = reactive({})
+const nowTick = ref(Date.now())
+let observationTimer = null
 const initialLoading = ref(false)
 const initialError = ref(false)
 const runtimeUnavailable = ref(false)
@@ -1098,6 +1103,7 @@ const preparing = ref(false)
 const prepareCancelled = ref(false)
 const preparationBackground = ref(false)
 const submitting = ref(false)
+let preparationPollingStopped = false
 let dryRunRevision = 0
 
 const materialGap = ref(null)
@@ -1325,13 +1331,28 @@ const introHint = computed(() => {
     ? `片头候选仅 ${available} 条，少于本批次 ${introRequiredCount.value} 条；已按你的选择允许轮换后重复。`
     : `片头候选仅 ${available} 条，少于本批次 ${introRequiredCount.value} 条；提交会阻断，请补充候选或明确允许重复。`
 })
-const activeContinuousJob = computed(() => jobs.value.find((job) => job.continuous && ['running', 'pending', 'paused', 'awaiting_decision'].includes(job.status)) || null)
+const ACTIVE_JOB_STATUSES = ['running', 'pending', 'paused', 'awaiting_decision']
+const activeContinuousJob = computed(() => jobs.value.find((job) => job.continuous && ACTIVE_JOB_STATUSES.includes(job.status)) || null)
 const activeRenderJob = computed(() => {
-  const active = jobs.value.find((job) => ['running', 'pending', 'paused', 'awaiting_decision'].includes(job.status))
+  const active = jobs.value.find((job) => ACTIVE_JOB_STATUSES.includes(job.status))
   if (!active) return null
   return { ...active, ...(jobLive[active.id] || {}) }
 })
 const activeRenderLive = computed(() => activeRenderJob.value || {})
+const activeTaskPhase = computed(() => {
+  const value = String(activeRenderLive.value.phaseLabel || activeRenderLive.value.step || activeRenderLive.value.summary || activeRenderLive.value.status || '').toLowerCase()
+  if (activeRenderLive.value.status === 'awaiting_decision' || value.includes('决策')) return 'decision'
+  if (activeRenderLive.value.status === 'paused' || value.includes('暂停')) return 'paused'
+  if (activeRenderLive.value.status === 'pending' || value.includes('排队') || value.includes('等待资源')) return 'queued'
+  if (value.includes('准备') || value.includes('素材')) return 'preparing'
+  if (value.includes('切片')) return 'slicing'
+  if (value.includes('拼接') || value.includes('合成') || value.includes('编码')) return 'encoding'
+  if (value.includes('混音') || value.includes('音频')) return 'audio'
+  if (value.includes('字幕') || value.includes('质检') || value.includes('qc')) return 'quality'
+  if (value.includes('完成')) return 'done'
+  if (value.includes('失败')) return 'failed'
+  return activeRenderLive.value.status === 'running' ? 'running' : 'unknown'
+})
 const liveCompletedCount = computed(() => Number(activeRenderLive.value.completedItems ?? activeRenderLive.value.current ?? 0))
 const liveTotalCount = computed(() => Number(activeRenderLive.value.totalItems ?? activeRenderLive.value.total ?? activeRenderLive.value.count ?? 1))
 const liveOverallProgress = computed(() => activeRenderLive.value.isContinuous
@@ -1339,23 +1360,45 @@ const liveOverallProgress = computed(() => activeRenderLive.value.isContinuous
   : Math.max(0, Math.min(100, Number(activeRenderLive.value.overallProgress ?? activeRenderLive.value.progress ?? 0))))
 const liveItemProgress = computed(() => Math.max(0, Math.min(100, Number(activeRenderLive.value.currentItemProgress ?? activeRenderLive.value.phaseProgress ?? 0))))
 const activeRenderJobStatus = computed(() => ({ running: '正在处理', pending: '等待资源', paused: '已暂停', awaiting_decision: '等待决策' }[activeRenderJob.value?.status] || '未知状态'))
+const heartbeatAgeSec = computed(() => {
+  const value = activeRenderLive.value.lastHeartbeatAt
+  if (!value) return null
+  const timestamp = new Date(value).getTime()
+  if (!Number.isFinite(timestamp)) return null
+  return Math.max(0, Math.round((nowTick.value - timestamp) / 1000))
+})
+const heartbeatLimitSec = computed(() => Math.max(30, Number(activeRenderLive.value.staleAfterSec ?? activeRenderLive.value.job?.staleAfterSec ?? 600)))
+const heartbeatState = computed(() => {
+  if (!activeRenderJob.value || !['running', 'pending'].includes(activeRenderLive.value.status)) return 'unavailable'
+  if (heartbeatAgeSec.value == null) return 'unavailable'
+  if (heartbeatAgeSec.value >= heartbeatLimitSec.value) return 'stale'
+  if (heartbeatAgeSec.value > 8) return 'delayed'
+  return 'fresh'
+})
 const livePanelTitle = computed(() => {
   if (preparing.value) return '正在准备本次出片素材'
+  if (preparationBackground.value) return '准备任务仍在后台运行'
   if (dry.value) return '正在做出片预检'
   if (submitting.value) return '正在提交出片任务'
-  if (activeRenderJob.value?.status === 'awaiting_decision') return '任务等待处理选择'
-  if (activeRenderJob.value?.status === 'paused') return '任务已暂停。'
-  if (activeRenderJob.value?.status === 'pending') return '任务正在排队'
+  if (heartbeatState.value === 'stale') return '任务进度已超过保护时间'
+  if (heartbeatState.value === 'delayed') return '任务进度暂未更新'
+  if (activeTaskPhase.value === 'decision') return '任务等待处理选择'
+  if (activeTaskPhase.value === 'paused') return '任务已暂停'
+  if (activeTaskPhase.value === 'queued') return '任务正在排队'
   return '后台正在出片'
 })
 const livePanelTag = computed(() => {
-  if (preparing.value) return '素材准备中。'
-  if (dry.value) return '预检中。'
-  if (submitting.value) return '提交中。'
+  if (preparing.value) return '素材准备中'
+  if (preparationBackground.value) return '后台准备中'
+  if (dry.value) return '预检中'
+  if (submitting.value) return '提交中'
+  if (heartbeatState.value === 'stale') return '超过保护时间'
+  if (heartbeatState.value === 'delayed') return '进度暂未更新'
   return activeRenderJobStatus.value
 })
 const livePanelTagType = computed(() => {
-  if (preparing.value || dry.value || submitting.value) return 'warning'
+  if (heartbeatState.value === 'stale') return 'danger'
+  if (preparing.value || preparationBackground.value || dry.value || submitting.value || heartbeatState.value === 'delayed') return 'warning'
   return activeRenderJob.value?.status === 'running' ? 'success' : 'warning'
 })
 const liveCurrentItemText = computed(() => {
@@ -1363,23 +1406,26 @@ const liveCurrentItemText = computed(() => {
   return activeRenderLive.value.isContinuous ? `连续生成 · 已产出 ${current} 条` : `已产出 ${current} / ${liveTotalCount.value} 条`
 })
 const livePhaseText = computed(() => translateTechnicalText(activeRenderLive.value.phaseLabel || activeRenderLive.value.step || activeRenderLive.value.summary || '等待调度'))
-const liveElapsedText = computed(() => formatDuration(activeRenderLive.value.elapsedSec))
-const liveEtaText = computed(() => activeRenderLive.value.isContinuous ? '' : formatDuration(activeRenderLive.value.etaSec))
+const liveElapsedText = computed(() => activeRenderLive.value.elapsedSec == null ? '运行时间待同步' : `已运行 ${formatDuration(activeRenderLive.value.elapsedSec)}`)
+const liveEtaText = computed(() => {
+  const eta = Number(activeRenderLive.value.etaSec)
+  return !activeRenderLive.value.isContinuous && Number.isFinite(eta) && eta > 0 ? formatDuration(eta) : ''
+})
 const liveHeartbeatText = computed(() => {
-  const value = activeRenderLive.value.lastHeartbeatAt
-  if (!value) return '等待首次心跳'
-  const age = Math.max(0, Math.round((Date.now() - new Date(value).getTime()) / 1000))
-  return age <= 8 ? '刚刚收到进度' : `${age} 秒前有进度`
+  if (heartbeatState.value === 'stale') return `已 ${heartbeatAgeSec.value} 秒没有进度，超过无活动保护时间`
+  if (heartbeatState.value === 'delayed') return `进度暂未更新 ${heartbeatAgeSec.value} 秒`
+  if (heartbeatAgeSec.value == null) return '等待首次进度心跳'
+  return heartbeatAgeSec.value <= 8 ? '刚刚收到进度' : `${heartbeatAgeSec.value} 秒前有进度`
 })
 const liveActionText = computed(() => {
-  if (preparing.value) return '正在先匹配本地素材；仅在仍有缺口时使用固定公开来源补齐，并在限定时间内等待成功入库的素材。'
-  if (activeRenderLive.value.status === 'awaiting_decision') return '自动修复已停止并保留诊断证据。请在下方任务表使用“按现有策略继续”或“重试失败项”，也可放弃未完成任务。'
-  if (activeRenderLive.value.status === 'paused') return '任务已暂停，已完成成片会保留；点击“继续生成”后从下一条继续。'
-  if (activeRenderLive.value.status === 'pending') return '任务已提交，正在等待渲染资源；页面会持续刷新，不需要重复点击开始。'
-  const age = activeRenderLive.value.lastHeartbeatAt
-    ? Math.max(0, Math.round((Date.now() - new Date(activeRenderLive.value.lastHeartbeatAt).getTime()) / 1000)) : 0
-  if (age > 20) return `已 ${age} 秒没有新的进度心跳，可能停在媒体处理阶段；请先观察。超过任务保护时间仍无变化时，可取消任务后检查素材和媒体工具再重新提交。`
-  return '任务正在后台处理；当前阶段完成后会自动进入下一条，失败会在任务说明中给出处理方法'
+  if (preparing.value) return '正在匹配本地素材并补齐公开素材；准备阶段会持续更新，不需要重复提交。'
+  if (preparationBackground.value) return '准备任务仍在后台运行；当前出片继续使用已成功入库的素材，不要重复提交。'
+  if (activeTaskPhase.value === 'decision') return '自动修复已停止并保留诊断证据。请使用“按现有策略继续”“重试失败项”或放弃任务。'
+  if (activeTaskPhase.value === 'paused') return '任务已暂停，已完成成片会保留；点击“继续生成”后从下一条继续。'
+  if (activeTaskPhase.value === 'queued') return '任务已提交，正在等待渲染资源；页面会持续刷新，不需要重复点击开始。'
+  if (heartbeatState.value === 'stale') return '任务已超过无活动保护时间。请打开任务详情确认阶段，必要时取消后检查素材和媒体工具再重试。'
+  if (heartbeatState.value === 'delayed') return `当前阶段“${livePhaseText.value}”的进度暂未更新，请先观察，不要立即判定为卡死。`
+  return '任务正在后台处理；当前阶段完成后会自动进入下一条，失败会在任务说明中给出处理方法。'
 })
 const hasExternalAudio = computed(() => Boolean(plan.value?.voicePath || plan.value?.bgmPath))
 const needsExternalAudio = computed(() => Boolean(plan.value?.requiresExternalAudio))
@@ -2096,11 +2142,11 @@ async function resumeRunningPreparation () {
   if (preparing.value || preparationBackground.value || preparationResult.value) return
   try {
     const tasks = await api.recentPreparationTasks({ silent: true })
-    const running = (Array.isArray(tasks) ? tasks : []).find((task) => task?.status === 'running' && task.id != null)
-    if (!running) return
-    preparingSnapshot.value = running
+    const resumable = (Array.isArray(tasks) ? tasks : []).find((task) => ['pending', 'queued', 'waiting', 'running'].includes(task?.status) && task.id != null)
+    if (!resumable) return
+    preparingSnapshot.value = resumable
     ElMessage.info('已恢复上一项素材准备任务的状态检查')
-    void continuePreparationPolling(running.id)
+    void continuePreparationPolling(resumable.id)
   } catch {
     // Discovery is optional. A backend that is still initializing must not block ordinary dry-runs.
   }
@@ -2113,13 +2159,13 @@ async function continuePreparationPolling (taskId) {
   let consecutiveFailures = 0
   let terminal = false
   try {
-    while (!prepareCancelled.value && preparationBackground.value && Date.now() < deadline) {
+    while (!preparationPollingStopped && !prepareCancelled.value && preparationBackground.value && Date.now() < deadline) {
       await sleep(PREPARE_POLL_MS)
       try {
         const latest = await api.prepareRenderStatus(taskId, { silent: true })
         consecutiveFailures = 0
         preparingSnapshot.value = latest
-        if (latest.status === 'running') continue
+        if (['pending', 'queued', 'waiting', 'running'].includes(latest.status)) continue
         terminal = true
         preparationResult.value = latest
         materialGap.value = latest.finalGap || latest.initialGap || materialGap.value
@@ -2174,7 +2220,11 @@ const preparingStage = computed(() => {
 })
 const preparingStageName = computed(() => preparingStage.value?.name || '准备素材')
 const preparingStageMessage = computed(() => preparingStage.value?.message || '')
-const preparingElapsedSec = computed(() => Number(preparingSnapshot.value?.elapsedSec || 0))
+const preparingElapsedSec = computed(() => {
+  const value = Number(preparingSnapshot.value?.elapsedSec)
+  return Number.isFinite(value) && value >= 0 ? value : null
+})
+const preparingElapsedText = computed(() => preparingElapsedSec.value == null ? '运行时间待同步' : `已运行 ${formatDuration(preparingElapsedSec.value)}`)
 const preparingWaitedSec = computed(() => Number(preparingSnapshot.value?.waitedSeconds || 0))
 function prepareStageType (status) {
   if (status === 'done') return 'success'
@@ -2201,10 +2251,10 @@ async function prepareMaterials () {
     })
     preparingSnapshot.value = snapshot
     let final = snapshot
-    if (snapshot.status === 'running' && snapshot.id != null) {
+    if (['pending', 'queued', 'waiting', 'running'].includes(snapshot.status) && snapshot.id != null) {
       const deadline = Date.now() + PREPARE_POLL_MAX_MS
       let consecutiveFailures = 0
-      while (final && final.status === 'running' && !prepareCancelled.value && Date.now() < deadline) {
+      while (final && ['pending', 'queued', 'waiting', 'running'].includes(final.status) && !preparationPollingStopped && !prepareCancelled.value && Date.now() < deadline) {
         await sleep(PREPARE_POLL_MS)
         try {
           final = await api.prepareRenderStatus(snapshot.id, { silent: true })
@@ -2217,7 +2267,7 @@ async function prepareMaterials () {
           if (consecutiveFailures >= 5) break
         }
       }
-      if (final && final.status === 'running') final = null
+      if (final && ['pending', 'queued', 'waiting', 'running'].includes(final.status)) final = null
     }
     if (prepareCancelled.value) {
       ElMessage.info('已取消素材准备，本次继续使用当前本地素材出片')
@@ -2328,9 +2378,9 @@ async function loadJobs({ silent = false, refresh = false } = {}) {
       const nextIds = new Set(nextRows.map((row) => String(row.id)))
       jobs.value = jobs.value.filter((row) => nextIds.has(String(row.id)))
       nextRows.forEach((row) => { if (!jobs.value.some((item) => String(item.id) === String(row.id))) jobs.value.push(byId.get(String(row.id))) })
-      const active = nextRows.filter((job) => job.status === 'running' || job.status === 'pending').slice(0, 8)
-      const activeIds = new Set(active.map((job) => String(job.id)))
-      Object.keys(jobLive).forEach((id) => { if (!activeIds.has(String(id))) delete jobLive[id] })
+      const active = nextRows.filter((job) => ACTIVE_JOB_STATUSES.includes(job.status)).slice(0, 8)
+      // Keep the last detail snapshot for terminal rows so a paused/decision task does not lose its heartbeat context.
+      Object.keys(jobLive).forEach((id) => { if (!nextIds.has(String(id))) delete jobLive[id] })
       await Promise.all(active.map(async (job) => {
         try { jobLive[job.id] = await api.job(job.id, { silent: true }) } catch { /* A single job detail can fail without making the backend unavailable. */ }
       }))
@@ -2482,7 +2532,7 @@ function scheduleRefresh (delay = 12000) {
     }
     refreshInFlight = true
     try {
-      const hasActiveJobs = jobs.value.some((job) => ['running', 'pending'].includes(job.status))
+      const hasActiveJobs = jobs.value.some((job) => ACTIVE_JOB_STATUSES.includes(job.status))
       const currentQueue = queue.value
       const hasQueueWork = Number(currentQueue?.active || 0) > 0 || Number(currentQueue?.pendingJobs || 0) > 0 || Number(currentQueue?.queueSize || 0) > 0
       if (initialError.value || runtimeUnavailable.value) {
@@ -2500,7 +2550,7 @@ function scheduleRefresh (delay = 12000) {
   }, delay)
 }
 function hasActiveJobsOrQueueWork () {
-  const hasActiveJobs = jobs.value.some((job) => ['running', 'pending'].includes(job.status))
+  const hasActiveJobs = jobs.value.some((job) => ACTIVE_JOB_STATUSES.includes(job.status))
   return hasActiveJobs || Number(queue.value?.active || 0) > 0 || Number(queue.value?.pendingJobs || 0) > 0 || Number(queue.value?.queueSize || 0) > 0
 }
 function startTimer() {
@@ -2510,6 +2560,14 @@ function startTimer() {
 function stopTimer() {
   if (timer) clearTimeout(timer)
   timer = null
+}
+function startObservationClock() {
+  if (observationTimer) clearInterval(observationTimer)
+  observationTimer = setInterval(() => { nowTick.value = Date.now() }, 1000)
+}
+function stopObservationClock() {
+  if (observationTimer) clearInterval(observationTimer)
+  observationTimer = null
 }
 
 let initialRequest = null
@@ -2571,6 +2629,8 @@ async function loadInitial () {
 }
 
 onMounted(async () => {
+  preparationPollingStopped = false
+  startObservationClock()
   await loadInitial()
   void resumeRunningPreparation()
   loadJobs({ silent: true })
@@ -2578,5 +2638,10 @@ onMounted(async () => {
   startTimer()
 })
 
-onUnmounted(stopTimer)
+onUnmounted(() => {
+  preparationPollingStopped = true
+  prepareCancelled.value = true
+  stopTimer()
+  stopObservationClock()
+})
 </script>
