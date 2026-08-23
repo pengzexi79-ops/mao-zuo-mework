@@ -33,8 +33,13 @@ $env:MYSQL_PWD = $Password
 try {
   $result = & $Mysql --protocol=TCP --host=$hostName --port=$port --user=$Username --batch --skip-column-names --execute='SELECT DATABASE(); SHOW TABLES;' $databaseName 2>&1
   if ($LASTEXITCODE -ne 0) { Fail 4 'read-only acceptance database check failed' }
-  if (($result -join "`n") -notmatch 'ai_mix_video_acceptance') { Fail 4 'database identity check failed' }
-  Write-Host '[acceptance-db:0] isolated database identity and read-only table query passed'
+  $text = ($result -join "`n")
+  if ($text -notmatch 'ai_mix_video_acceptance') { Fail 4 'database identity check failed' }
+  $required = @('job','job_output','output_version','output_repair')
+  foreach ($table in $required) {
+    if ($text -notmatch "(^|`n)$table(`n|$)") { Fail 4 "required acceptance table missing: $table" }
+  }
+  Write-Host '[acceptance-db:0] isolated database identity and required tables passed'
 } finally {
   Remove-Item Env:MYSQL_PWD -ErrorAction SilentlyContinue
 }

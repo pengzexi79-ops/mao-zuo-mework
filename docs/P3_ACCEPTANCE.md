@@ -30,6 +30,26 @@ mvn -q -Dtest=AcceptanceDatabaseContractTest,LocalMockHttpServerTest,OutboundPol
 
 本地 HTTP mock 只绑定 `127.0.0.1` 随机端口，覆盖成功、429、500、超时、有限重试和幂等 POST。它只证明 `SafeHttpClient` 的边界行为，不代表真实公网来源、AI Provider 或 Edge-TTS 已验收。
 
+## P3-4 隔离 MySQL 与恢复契约
+
+业务库 `ai_mix_video` 永远不用于验收。显式初始化必须确认目标为本机 `ai_mix_video_acceptance`：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File backend/tools/initialize_acceptance_database.ps1 -ConfirmAcceptanceDatabase
+powershell -NoProfile -ExecutionPolicy Bypass -File backend/tools/verify_acceptance_database.ps1
+```
+
+初始化脚本只接受 `ACCEPTANCE_DB_URL`、`ACCEPTANCE_DB_USERNAME`、`ACCEPTANCE_DB_PASSWORD`，并拒绝非本机、非 acceptance 数据库；验证脚本只读检查身份和必需表。没有配置时两者不会连接数据库。
+
+真实数据库测试还需显式设置 `ACCEPTANCE_DB_RUN=true`，普通 `mvn test` 不会连接 MySQL：
+
+```powershell
+cd backend
+mvn -q -Dtest=JobServiceRecoveryDatabaseAcceptanceTest test
+```
+
+该测试验证 `job_output(job_id,idx)` 检查点唯一性、QC fail/空路径不计为成功、stale job 恢复状态和按测试 ID 清理。P3-4 的数据库测试不启动完整应用、不运行 FFmpeg、不访问公网。
+
 ## P3-3 离线媒体链路
 
 P3-3 从固定 fixture 复制到 JUnit `@TempDir` 后，执行真实本地 `FFmpeg`/`FFprobe`、素材登记、质量准入、结构化分析、渲染、Delivery QC 和候选隔离。测试不会启动 Spring Boot、MySQL 或前端，不读取 `.env`，不会访问网络、AI Provider、ASR 下载、Edge-TTS 或 Demucs。

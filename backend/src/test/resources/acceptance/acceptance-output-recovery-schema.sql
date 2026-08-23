@@ -1,0 +1,72 @@
+-- P3-4 output checkpoint/version/repair tables for ai_mix_video_acceptance only.
+
+CREATE TABLE IF NOT EXISTS job_output (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    job_id BIGINT,
+    idx INT NOT NULL DEFAULT 0,
+    file_path VARCHAR(1024),
+    duration_sec DOUBLE,
+    thumbnail VARCHAR(1024),
+    qc_status VARCHAR(32),
+    qc_report TEXT,
+    qc_json TEXT,
+    retry_count INT NOT NULL DEFAULT 0,
+    hook_strategy VARCHAR(32),
+    downgrade_info TEXT,
+    used_materials TEXT,
+    segment_keys TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_acceptance_job_output_idx (job_id, idx),
+    INDEX idx_acceptance_job_output_job (job_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS output_version (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    job_output_id BIGINT,
+    job_id BIGINT,
+    idx INT,
+    version_no INT NOT NULL DEFAULT 1,
+    status VARCHAR(32) NOT NULL DEFAULT 'rendering',
+    file_path VARCHAR(1024),
+    duration_sec DOUBLE,
+    thumbnail VARCHAR(1024),
+    plan_snapshot TEXT,
+    params_snapshot TEXT,
+    used_materials TEXT,
+    repair_strategy TEXT,
+    qc_json TEXT,
+    qc_report TEXT,
+    error TEXT,
+    parent_version_no INT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_acceptance_output_version (job_id, idx, version_no),
+    INDEX idx_acceptance_output_version_output (job_output_id),
+    INDEX idx_acceptance_output_version_job_idx (job_id, idx)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS output_repair (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    output_version_id BIGINT,
+    job_output_id BIGINT,
+    job_id BIGINT,
+    idx INT,
+    category VARCHAR(64),
+    severity VARCHAR(16),
+    issue_id VARCHAR(128),
+    evidence TEXT,
+    auto_fixable TINYINT(1) NOT NULL DEFAULT 0,
+    ai_assessment TEXT,
+    recommended_action VARCHAR(64),
+    candidate_actions TEXT,
+    selected_action VARCHAR(64),
+    execution_impact TEXT,
+    status VARCHAR(32) NOT NULL DEFAULT 'pending',
+    before_qc TEXT,
+    after_qc TEXT,
+    error TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_acceptance_repair_version (output_version_id),
+    INDEX idx_acceptance_repair_job_idx (job_id, idx)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
