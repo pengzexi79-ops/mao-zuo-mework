@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "routes": [
+    {"path": "/ok", "method": "GET", "status": 200},
+    {"path": "/rate-limit", "method": "GET", "status": 429, "retryAfterSec": 1},
+    {"path": "/server-error", "method": "GET", "status": 500},
+    {"path": "/timeout", "method": "GET", "status": 200, "delayMs": 250},
+    {"path": "/retry-success", "method": "GET", "status": 200, "failsBeforeSuccess": 2},
+    {"path": "/idempotency", "method": "POST", "status": 200}
+  ]
+}
