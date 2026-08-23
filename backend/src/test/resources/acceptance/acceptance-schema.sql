@@ -103,7 +103,10 @@ CREATE TABLE IF NOT EXISTS media_generation_task (
 
 CREATE TABLE IF NOT EXISTS job (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    workflow_id BIGINT,
+    project_id BIGINT,
     name VARCHAR(255),
+    `count` INT NOT NULL DEFAULT 1,
     status VARCHAR(32) NOT NULL DEFAULT 'pending',
     progress INT NOT NULL DEFAULT 0,
     params JSON,
