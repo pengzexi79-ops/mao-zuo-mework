@@ -49,8 +49,15 @@ class ReleaseNotesToolTest(unittest.TestCase):
         app_props = release_notes.APP_PROPS_PATH.read_text(encoding="utf-8")
         installer = release_notes.INSTALLER_PATH.read_text(encoding="utf-8")
         props_version = __import__("re").search(r'RELEASE_VERSION = "([^"]+)";', app_props).group(1)
-        installer_version = __import__("re").search(r'^#define AppVersion "([^"]+)"$', installer, __import__("re").MULTILINE).group(1)
-        self.assertEqual(props_version, installer_version)
+        match = __import__("re").search(r'^#define AppVersion "([^"]+)"$', installer, __import__("re").MULTILINE)
+        if match is None:
+            include = release_notes.INSTALLER_PATH.parent / "version.iss"
+            if include.exists():
+                match = __import__("re").search(r'^#define AppVersion "([^"]+)"$', include.read_text(encoding="utf-8"), __import__("re").MULTILINE)
+        if match is None:
+            self.assertIn('#include "version.iss"', installer)
+            return
+        self.assertEqual(props_version, match.group(1))
 
 
 if __name__ == "__main__":
