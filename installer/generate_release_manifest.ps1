@@ -44,7 +44,7 @@ function Get-TreeSummary([string]$RelativeRoot, [string]$Component, [string]$Pur
   $digest = [Security.Cryptography.SHA256]::Create()
   try {
     $parts = foreach ($file in ($files | Sort-Object FullName)) {
-      $relative = [IO.Path]::GetRelativePath($fullRoot, $file.FullName).Replace('\\','/')
+      $relative = $file.FullName.Substring($fullRoot.TrimEnd('\\').Length).TrimStart('\\').Replace('\\','/')
       $hash = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
       "$relative`n$($file.Length)`n$hash`n"
     }

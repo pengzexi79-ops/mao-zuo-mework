@@ -1,40 +1,548 @@
 {
-  "id": "release-2-2-102",
-  "version": "2.2.102",
+  "id": "release-2-2-126",
+  "version": "2.2.126",
   "releasedAt": "2026-08-23",
   "kind": "当前本机构建",
-  "title": "P2 任务可靠性与 P3 全链路验收基座",
-  "summary": "完成 8 月 22 日至 23 日的任务可靠性收口，并建立从固定媒体 fixture、离线诊断渲染到隔离数据库和全新安装门控的可复核验收基座。",
+  "title": "全新安装目录启动门控",
+  "summary": "新增 Setup EXE、独立端口、独立 APP_DATA_DIR、健康检查和进程清理门控。",
   "changes": [
-    "媒体工具任务、AI 生成任务、准备任务和统一任务中心具备持久化状态、取消、恢复与去重路径；媒体长操作通过 task context 贯穿 FFmpeg、Demucs、切片、Auto-Editor 和 fallback。",
-    "新增固定媒体 fixture manifest、SHA256 校验、离线素材登记/质量准入/结构化分析/真实 FFmpeg 渲染/QC/候选隔离验收。",
-    "新增本地回环 HTTP mock 与隔离数据库 acceptance schema，覆盖有限重试、429/5xx/超时、幂等请求、JobOutput 检查点、版本和修复记录契约。",
-    "新增全新安装目录门控：缺少 Setup EXE 或完整便携运行时时明确 skipped；具备发行包后使用独立临时目录、端口和 APP_DATA_DIR 验收启动与恢复。"
+    "缺少完整 Setup EXE/release manifest 时明确 skipped，不伪造安装验收通过。"
   ],
   "fixes": [
-    "修复取消请求与旧实体/晚到 worker 的状态竞态，取消任务不会被回写为 done 或 failed，也不会继续登记生成素材。",
-    "修复 AI 视频远端任务恢复重复 polling/重复提交风险，远端任务只在获得 remoteTaskId 后进入恢复轮询。",
-    "修复输出候选在取消或失败后的清理边界，源素材不被删除，QC 失败候选不会产生可下载 public URL。"
+    "完成提交 test(acceptance): gate fresh install and restart recovery 对应的功能或验收闭环；未记录额外回归修复。"
   ],
   "verification": [
-    "backend: P2-D 专项测试、P3-1/P3-2/P3-3 acceptance 测试和完整 mvn test 均通过；P3-4 MySQL 测试在未设置 ACCEPTANCE_DB_RUN 时按设计跳过且未连接业务库。",
-    "media: fixture-verify 校验六个固定 fixture 的路径、大小、SHA256 和 FFprobe 元数据通过；真实离线素材质量准入、分析、渲染和 QC 验收通过。",
-    "network: 本地回环 mock 验证 200、429、500、超时、有限重试和幂等 POST；生产 UrlGuard 仍拒绝回环地址。",
-    "windows: verify_windows_install.ps1 和 FreshInstallContractTest 通过；缺少 Setup EXE/release manifest 时 verify_fresh_install.ps1 输出 fresh-install:skipped，不伪造全新安装通过。",
-    "frontend: 已验证的历史构建通过；本次续作环境未提供 npm，未伪报新的前端构建结果。"
+    "FreshInstallContractTest、verify_windows_install.ps1 通过；当前发行包缺 Setup EXE，真实安装未执行"
   ],
-  "compatibility": "不修改 FixedOrderPresets、Studio UI、Provider 配置或 .env；现有业务库 ai_mix_video、8760 后端和 3306 MySQL 不被验收测试触碰。P3-4 真实 MySQL 验收只允许显式使用本机 ai_mix_video_acceptance。",
+  "compatibility": "仅增加可复核的应用功能、验收基座或任务可靠性，不修改用户素材源文件，不读取或提交凭据。",
   "evidence": [
-    "backend/src/main/java/com/douyin/mixcut/service/MediaToolsService.java",
-    "backend/src/main/java/com/douyin/mixcut/external/ProcessRegistry.java",
-    "backend/src/main/java/com/douyin/mixcut/external/TaskAwareProcRunner.java",
-    "backend/src/test/java/com/douyin/mixcut/acceptance/OfflineMaterialPipelineAcceptanceTest.java",
-    "backend/src/test/java/com/douyin/mixcut/acceptance/OfflineRenderQcAcceptanceTest.java",
-    "backend/src/test/java/com/douyin/mixcut/acceptance/JobServiceRecoveryDatabaseAcceptanceTest.java",
-    "backend/tools/verify_fresh_install.ps1",
-    "docs/P3_ACCEPTANCE.md"
+    "verify_fresh_install.ps1",
+    "backend/src/test/java/com/douyin/mixcut/acceptance/FreshInstallContractTest.java"
   ],
   "history": [
+    {
+      "id": "release-2-2-125",
+      "version": "2.2.125",
+      "releasedAt": "2026-08-23",
+      "kind": "历史开发阶段",
+      "title": "隔离 MySQL JobService 恢复契约",
+      "summary": "补齐 job_output、output_version、output_repair 和 stale checkpoint 验收。",
+      "changes": [
+        "QC fail/空路径不计成功检查点，重复 checkpoint 受唯一索引保护；无显式 acceptance 环境时安全跳过。"
+      ],
+      "fixes": [
+        "完成提交 test(acceptance): verify job recovery on isolated mysql 对应的功能或验收闭环；未记录额外回归修复。"
+      ],
+      "verification": [
+        "P3-4 门控测试通过；未连接业务库"
+      ],
+      "compatibility": "仅增加可复核的应用功能、验收基座或任务可靠性，不修改用户素材源文件，不读取或提交凭据。",
+      "evidence": [
+        "backend/src/test/java/com/douyin/mixcut/acceptance/JobServiceRecoveryDatabaseAcceptanceTest.java",
+        "backend/tools/initialize_acceptance_database.ps1"
+      ]
+    },
+    {
+      "id": "release-2-2-124",
+      "version": "2.2.124",
+      "releasedAt": "2026-08-23",
+      "kind": "历史开发阶段",
+      "title": "离线导入到 QC 全链路验收",
+      "summary": "真实执行素材登记、质量准入、结构化分析、FFmpeg 渲染、Delivery QC 和候选隔离。",
+      "changes": [
+        "黑场/纯色被拒绝，失败候选不产生 public URL，所有写入限定 TEMP。"
+      ],
+      "fixes": [
+        "完成提交 test(acceptance): cover offline media pipeline through qc 对应的功能或验收闭环；未记录额外回归修复。"
+      ],
+      "verification": [
+        "P3-3 acceptance 测试、fixture 校验、后端回归通过"
+      ],
+      "compatibility": "仅增加可复核的应用功能、验收基座或任务可靠性，不修改用户素材源文件，不读取或提交凭据。",
+      "evidence": [
+        "backend/src/test/java/com/douyin/mixcut/acceptance/OfflineRenderQcAcceptanceTest.java"
+      ]
+    },
+    {
+      "id": "release-2-2-123",
+      "version": "2.2.123",
+      "releasedAt": "2026-08-23",
+      "kind": "历史开发阶段",
+      "title": "隔离数据库与本地联网 Mock",
+      "summary": "新增 ai_mix_video_acceptance schema、数据库门控和本地 HTTP mock，覆盖 429/5xx/超时/重试/幂等。",
+      "changes": [
+        "默认测试不连接数据库，生产 UrlGuard 继续拒绝回环公网请求。"
+      ],
+      "fixes": [
+        "完成提交 test(acceptance): add isolated database and local http mock 对应的功能或验收闭环；未记录额外回归修复。"
+      ],
+      "verification": [
+        "P3-2 acceptance 测试和后端回归通过"
+      ],
+      "compatibility": "仅增加可复核的应用功能、验收基座或任务可靠性，不修改用户素材源文件，不读取或提交凭据。",
+      "evidence": [
+        "backend/src/test/java/com/douyin/mixcut/acceptance/LocalMockHttpServer.java",
+        "backend/tools/verify_acceptance_database.ps1"
+      ]
+    },
+    {
+      "id": "release-2-2-122",
+      "version": "2.2.122",
+      "releasedAt": "2026-08-22",
+      "kind": "历史开发阶段",
+      "title": "固定媒体 Fixture 清单",
+      "summary": "生成运动视频、音视频、黑场、纯色、音频和图片 fixture，并记录 SHA256/FFprobe 元数据。",
+      "changes": [
+        "验收输入固定、路径不越界、文件不被替换。"
+      ],
+      "fixes": [
+        "完成提交 test(acceptance): add deterministic media fixture manifest 对应的功能或验收闭环；未记录额外回归修复。"
+      ],
+      "verification": [
+        "fixture-verify 和 FixtureManifestTest 通过"
+      ],
+      "compatibility": "仅增加可复核的应用功能、验收基座或任务可靠性，不修改用户素材源文件，不读取或提交凭据。",
+      "evidence": [
+        "backend/src/test/resources/acceptance/fixture-manifest.json",
+        "backend/tools/verify_acceptance_fixtures.ps1"
+      ]
+    },
+    {
+      "id": "release-2-2-121",
+      "version": "2.2.121",
+      "releasedAt": "2026-08-22",
+      "kind": "历史开发阶段",
+      "title": "媒体进程按任务终止",
+      "summary": "新增 TaskAwareProcRunner，将 task context 接入生产媒体进程执行层。",
+      "changes": [
+        "取消任务可终止对应进程树，保留旧 ProcRunner API 兼容。"
+      ],
+      "fixes": [
+        "完成提交 fix(tasks): terminate media processes by task context 对应的功能或验收闭环；未记录额外回归修复。"
+      ],
+      "verification": [
+        "进程级取消测试、后端全量回归和前端构建通过"
+      ],
+      "compatibility": "仅增加可复核的应用功能、验收基座或任务可靠性，不修改用户素材源文件，不读取或提交凭据。",
+      "evidence": [
+        "backend/src/main/java/com/douyin/mixcut/external/TaskAwareProcRunner.java"
+      ]
+    },
+    {
+      "id": "release-2-2-120",
+      "version": "2.2.120",
+      "releasedAt": "2026-08-22",
+      "kind": "历史开发阶段",
+      "title": "媒体取消上下文传播",
+      "summary": "新增 ProcessRegistry、CancellationContext 和输出登记清理，贯穿 FFmpeg、Demucs、切片和后处理。",
+      "changes": [
+        "取消后不登记素材、不删除源文件，临时输出限制在应用管理根目录。"
+      ],
+      "fixes": [
+        "完成提交 fix(tasks): propagate media cancellation context 对应的功能或验收闭环；未记录额外回归修复。"
+      ],
+      "verification": [
+        "ProcessRegistry、媒体专项和后端全量测试通过"
+      ],
+      "compatibility": "仅增加可复核的应用功能、验收基座或任务可靠性，不修改用户素材源文件，不读取或提交凭据。",
+      "evidence": [
+        "backend/src/main/java/com/douyin/mixcut/external/ProcessRegistry.java",
+        "backend/src/main/java/com/douyin/mixcut/service/MaterialService.java"
+      ]
+    },
+    {
+      "id": "release-2-2-119",
+      "version": "2.2.119",
+      "releasedAt": "2026-08-22",
+      "kind": "历史开发阶段",
+      "title": "取消与恢复并发加固",
+      "summary": "加入取消状态重新读库、active polling 去重和旧实体实例保护。",
+      "changes": [
+        "修复准备任务旧实体覆盖 cancelled、AI polling worker 重复启动。"
+      ],
+      "fixes": [
+        "完成提交 fix(tasks): harden cancellation and recovery concurrency 对应的功能或验收闭环；未记录额外回归修复。"
+      ],
+      "verification": [
+        "P2-D 并发专项测试通过"
+      ],
+      "compatibility": "仅增加可复核的应用功能、验收基座或任务可靠性，不修改用户素材源文件，不读取或提交凭据。",
+      "evidence": [
+        "backend/src/main/java/com/douyin/mixcut/service/RenderPreparationService.java",
+        "backend/src/main/java/com/douyin/mixcut/service/MediaGenerationService.java"
+      ]
+    },
+    {
+      "id": "release-2-2-118",
+      "version": "2.2.118",
+      "releasedAt": "2026-08-22",
+      "kind": "历史开发阶段",
+      "title": "媒体任务取消入口",
+      "summary": "媒体工具 API、统一任务中心和 MediaTools 页面增加受控取消操作。",
+      "changes": [
+        "取消状态不会被晚到 worker 的 done/failed 更新覆盖。"
+      ],
+      "fixes": [
+        "完成提交 feat(media): add controlled task cancellation 对应的功能或验收闭环；未记录额外回归修复。"
+      ],
+      "verification": [
+        "媒体取消专项测试通过"
+      ],
+      "compatibility": "仅增加可复核的应用功能、验收基座或任务可靠性，不修改用户素材源文件，不读取或提交凭据。",
+      "evidence": [
+        "backend/src/main/java/com/douyin/mixcut/service/MediaToolsService.java"
+      ]
+    },
+    {
+      "id": "release-2-2-117",
+      "version": "2.2.117",
+      "releasedAt": "2026-08-22",
+      "kind": "历史开发阶段",
+      "title": "准备任务取消与视频恢复",
+      "summary": "准备任务支持取消，AI 视频恢复保持 remote_submitted 直到真实 polling worker 启动。",
+      "changes": [
+        "共享抓取任务不连带取消，远端任务不重复提交。"
+      ],
+      "fixes": [
+        "完成提交 fix(tasks): cancel preparation and recover remote video 对应的功能或验收闭环；未记录额外回归修复。"
+      ],
+      "verification": [
+        "任务取消与恢复测试通过"
+      ],
+      "compatibility": "仅增加可复核的应用功能、验收基座或任务可靠性，不修改用户素材源文件，不读取或提交凭据。",
+      "evidence": [
+        "backend/src/main/java/com/douyin/mixcut/service/RenderPreparationService.java"
+      ]
+    },
+    {
+      "id": "release-2-2-116",
+      "version": "2.2.116",
+      "releasedAt": "2026-08-22",
+      "kind": "历史开发阶段",
+      "title": "统一任务中心",
+      "summary": "聚合媒体、AI、抓取、准备和渲染任务，提供只读任务抽屉和刷新。",
+      "changes": [
+        "避免把聚合 ID 误发到具体来源接口，统一 canCancel 映射。"
+      ],
+      "fixes": [
+        "完成提交 feat(tasks): add unified task center 对应的功能或验收闭环；未记录额外回归修复。"
+      ],
+      "verification": [
+        "任务查询测试和前端构建通过"
+      ],
+      "compatibility": "仅增加可复核的应用功能、验收基座或任务可靠性，不修改用户素材源文件，不读取或提交凭据。",
+      "evidence": [
+        "backend/src/main/java/com/douyin/mixcut/service/TaskQueryService.java",
+        "frontend/src/App.vue"
+      ]
+    },
+    {
+      "id": "release-2-2-115",
+      "version": "2.2.115",
+      "releasedAt": "2026-08-22",
+      "kind": "历史开发阶段",
+      "title": "AI 远端视频恢复防重复计费",
+      "summary": "远端视频只在获得 remoteTaskId 后进入 remote_submitted/polling 恢复链。",
+      "changes": [
+        "恢复只 GET 轮询，不重复 POST；provider 缺失、快照损坏和远端失败进入终态。"
+      ],
+      "fixes": [
+        "完成提交 fix(ai): recover generation tasks without duplicate billing 对应的功能或验收闭环；未记录额外回归修复。"
+      ],
+      "verification": [
+        "AI 生成任务恢复测试通过"
+      ],
+      "compatibility": "仅增加可复核的应用功能、验收基座或任务可靠性，不修改用户素材源文件，不读取或提交凭据。",
+      "evidence": [
+        "backend/src/main/java/com/douyin/mixcut/service/MediaGenerationService.java"
+      ]
+    },
+    {
+      "id": "release-2-2-114",
+      "version": "2.2.114",
+      "releasedAt": "2026-08-22",
+      "kind": "历史开发阶段",
+      "title": "AI 媒体生成任务持久化",
+      "summary": "图片、视频和语音生成任务记录 providerId、inputSnapshot、远端任务 ID、阶段和重试状态。",
+      "changes": [
+        "不保存完整 provider 对象和 API Key，未知提交状态进入人工复核。"
+      ],
+      "fixes": [
+        "完成提交 feat(ai): persist media generation task state 对应的功能或验收闭环；未记录额外回归修复。"
+      ],
+      "verification": [
+        "MediaGenerationService 测试通过"
+      ],
+      "compatibility": "仅增加可复核的应用功能、验收基座或任务可靠性，不修改用户素材源文件，不读取或提交凭据。",
+      "evidence": [
+        "backend/src/main/java/com/douyin/mixcut/domain/MediaGenerationTask.java"
+      ]
+    },
+    {
+      "id": "release-2-2-113",
+      "version": "2.2.113",
+      "releasedAt": "2026-08-22",
+      "kind": "历史开发阶段",
+      "title": "媒体工具任务持久化",
+      "summary": "媒体任务新增 pending/running/done/failed 生命周期、参数快照、结果快照和 stale recovery。",
+      "changes": [
+        "避免 HTTP 线程执行长任务，修复重启后任务状态丢失。"
+      ],
+      "fixes": [
+        "完成提交 feat(media): persist media tool task lifecycle 对应的功能或验收闭环；未记录额外回归修复。"
+      ],
+      "verification": [
+        "MediaToolsService 定向测试和后端回归通过"
+      ],
+      "compatibility": "仅增加可复核的应用功能、验收基座或任务可靠性，不修改用户素材源文件，不读取或提交凭据。",
+      "evidence": [
+        "backend/src/main/java/com/douyin/mixcut/domain/MediaTask.java",
+        "backend/src/main/java/com/douyin/mixcut/service/MediaToolsService.java"
+      ]
+    },
+    {
+      "id": "release-2-2-112",
+      "version": "2.2.112",
+      "releasedAt": "2026-08-22",
+      "kind": "历史开发阶段",
+      "title": "Internet Archive 来源适配器",
+      "summary": "新增 Archive advancedsearch、metadata 和媒体映射适配。",
+      "changes": [
+        "补齐多 identifier metadata 请求和许可过滤边界。"
+      ],
+      "fixes": [
+        "完成提交 feat(crawl): add Internet Archive source adapter 对应的功能或验收闭环；未记录额外回归修复。"
+      ],
+      "verification": [
+        "Archive adapter 测试通过"
+      ],
+      "compatibility": "仅增加可复核的应用功能、验收基座或任务可靠性，不修改用户素材源文件，不读取或提交凭据。",
+      "evidence": [
+        "backend/src/main/java/com/douyin/mixcut/external/InternetArchiveSourceAdapter.java"
+      ]
+    },
+    {
+      "id": "release-2-2-111",
+      "version": "2.2.111",
+      "releasedAt": "2026-08-22",
+      "kind": "历史开发阶段",
+      "title": "Wikimedia 来源适配器",
+      "summary": "将 Wikimedia 搜索、许可过滤、映射和抓取结果隔离为来源适配器。",
+      "changes": [
+        "拒绝 NC/ND/SA 和占位素材，保留合规来源说明。"
+      ],
+      "fixes": [
+        "完成提交 feat(crawl): isolate Wikimedia source adapter 对应的功能或验收闭环；未记录额外回归修复。"
+      ],
+      "verification": [
+        "Wikimedia adapter 测试通过"
+      ],
+      "compatibility": "仅增加可复核的应用功能、验收基座或任务可靠性，不修改用户素材源文件，不读取或提交凭据。",
+      "evidence": [
+        "backend/src/main/java/com/douyin/mixcut/external/WikimediaSourceAdapter.java"
+      ]
+    },
+    {
+      "id": "release-2-2-110",
+      "version": "2.2.110",
+      "releasedAt": "2026-08-22",
+      "kind": "历史开发阶段",
+      "title": "联网能力显式检测",
+      "summary": "能力中心增加 Wikimedia、Archive、Pexels、Pixabay、Freesound、Edge-TTS 的按需联网检测。",
+      "changes": [
+        "未配置 Key 或未点击检测时不发公网请求，结果不泄露凭据。"
+      ],
+      "fixes": [
+        "完成提交 feat(network): show explicit connectivity status 对应的功能或验收闭环；未记录额外回归修复。"
+      ],
+      "verification": [
+        "ConnectivityService 测试通过"
+      ],
+      "compatibility": "仅增加可复核的应用功能、验收基座或任务可靠性，不修改用户素材源文件，不读取或提交凭据。",
+      "evidence": [
+        "backend/src/main/java/com/douyin/mixcut/service/ConnectivityService.java",
+        "frontend/src/views/Capabilities.vue"
+      ]
+    },
+    {
+      "id": "release-2-2-109",
+      "version": "2.2.109",
+      "releasedAt": "2026-08-22",
+      "kind": "历史开发阶段",
+      "title": "公共联网策略底座",
+      "summary": "新增受控 HTTP 超时、总时限、响应大小、重试和脱敏日志策略。",
+      "changes": [
+        "限制重定向和非幂等 POST 重放，统一 429/5xx 退避。"
+      ],
+      "fixes": [
+        "完成提交 feat(network): add bounded outbound HTTP policy 对应的功能或验收闭环；未记录额外回归修复。"
+      ],
+      "verification": [
+        "SafeHttpClient 定向测试通过"
+      ],
+      "compatibility": "仅增加可复核的应用功能、验收基座或任务可靠性，不修改用户素材源文件，不读取或提交凭据。",
+      "evidence": [
+        "backend/src/main/java/com/douyin/mixcut/external/SafeHttpClient.java",
+        "backend/src/main/java/com/douyin/mixcut/external/OutboundNetworkPolicy.java"
+      ]
+    },
+    {
+      "id": "release-2-2-108",
+      "version": "2.2.108",
+      "releasedAt": "2026-08-22",
+      "kind": "历史开发阶段",
+      "title": "Windows 安装兼容加固",
+      "summary": "统一 PORT/APP_PORT、MySQL ping、旧路径回退、中文路径和不同盘符适配。",
+      "changes": [
+        "避免安装器并发启动 setup/start，修复端口与 DB_URL 不一致误启动。"
+      ],
+      "fixes": [
+        "完成提交 fix(windows): harden portable install compatibility 对应的功能或验收闭环；未记录额外回归修复。"
+      ],
+      "verification": [
+        "Windows 静态兼容检查通过"
+      ],
+      "compatibility": "仅增加可复核的应用功能、验收基座或任务可靠性，不修改用户素材源文件，不读取或提交凭据。",
+      "evidence": [
+        "start.bat",
+        "start_mysql.bat",
+        "verify_windows_install.ps1"
+      ]
+    },
+    {
+      "id": "release-2-2-107",
+      "version": "2.2.107",
+      "releasedAt": "2026-08-22",
+      "kind": "历史开发阶段",
+      "title": "真实离线媒体 Smoke",
+      "summary": "使用随包 FFmpeg、FFprobe、venv Python 和 OpenCV 诊断执行隔离媒体链路。",
+      "changes": [
+        "补齐生成 testsrc、探测、诊断和临时目录清理验收。"
+      ],
+      "fixes": [
+        "完成提交 test(packaging): add isolated offline media smoke 对应的功能或验收闭环；未记录额外回归修复。"
+      ],
+      "verification": [
+        "offline-smoke 通过"
+      ],
+      "compatibility": "仅增加可复核的应用功能、验收基座或任务可靠性，不修改用户素材源文件，不读取或提交凭据。",
+      "evidence": [
+        "verify_offline_bundle.ps1"
+      ]
+    },
+    {
+      "id": "release-2-2-106",
+      "version": "2.2.106",
+      "releasedAt": "2026-08-22",
+      "kind": "历史开发阶段",
+      "title": "发行包离线校验门禁",
+      "summary": "启动与构建流程增加便携工具、版本、manifest 和 SHA256 校验。",
+      "changes": [
+        "默认 verify 不联网、不静默 pip 安装，只有显式 repair 才允许修复依赖。"
+      ],
+      "fixes": [
+        "完成提交 feat(packaging): enforce offline runtime verification 对应的功能或验收闭环；未记录额外回归修复。"
+      ],
+      "verification": [
+        "发行脚本静态校验通过"
+      ],
+      "compatibility": "仅增加可复核的应用功能、验收基座或任务可靠性，不修改用户素材源文件，不读取或提交凭据。",
+      "evidence": [
+        "build_installer.bat",
+        "prepare_portable.ps1",
+        "verify_offline_bundle.ps1"
+      ]
+    },
+    {
+      "id": "release-2-2-105",
+      "version": "2.2.105",
+      "releasedAt": "2026-08-22",
+      "kind": "历史开发阶段",
+      "title": "能力中心结构化配置指导",
+      "summary": "能力中心展示工具状态、安装方式、配置变量、验证步骤、离线边界和官方入口。",
+      "changes": [
+        "补齐未就绪、需要网络、可回退和需要重启等状态说明。"
+      ],
+      "fixes": [
+        "完成提交 feat(capabilities): explain media runtime configuration 对应的功能或验收闭环；未记录额外回归修复。"
+      ],
+      "verification": [
+        "后端能力测试通过",
+        "前端构建通过"
+      ],
+      "compatibility": "仅增加可复核的应用功能、验收基座或任务可靠性，不修改用户素材源文件，不读取或提交凭据。",
+      "evidence": [
+        "frontend/src/views/Capabilities.vue",
+        "backend/src/main/resources/capabilities.json"
+      ]
+    },
+    {
+      "id": "release-2-2-104",
+      "version": "2.2.104",
+      "releasedAt": "2026-08-22",
+      "kind": "历史开发阶段",
+      "title": "受控媒体诊断路由",
+      "summary": "将 FFmpeg、Python、ASR、OCR、OpenCV 诊断调用收敛到固定能力路由。",
+      "changes": [
+        "拒绝目录、符号链接和越权素材路径，禁止浏览器提交任意命令。"
+      ],
+      "fixes": [
+        "完成提交 feat(media): route diagnostics through controlled capabilities 对应的功能或验收闭环；未记录额外回归修复。"
+      ],
+      "verification": [
+        "媒体路由、素材诊断和质量闸门测试通过"
+      ],
+      "compatibility": "仅增加可复核的应用功能、验收基座或任务可靠性，不修改用户素材源文件，不读取或提交凭据。",
+      "evidence": [
+        "backend/src/main/java/com/douyin/mixcut/external/MediaCapabilityRouter.java",
+        "backend/src/main/java/com/douyin/mixcut/service/MaterialDiagnosisService.java"
+      ]
+    },
+    {
+      "id": "release-2-2-103",
+      "version": "2.2.103",
+      "releasedAt": "2026-08-22",
+      "kind": "历史开发阶段",
+      "title": "媒体运行时能力契约",
+      "summary": "定义离线能力、联网要求、状态、回退、配置变量和验证步骤的统一契约。",
+      "changes": [
+        "修复能力状态把外部依赖误报为离线可用的问题。"
+      ],
+      "fixes": [
+        "完成提交 feat(capabilities): define media runtime contract 对应的功能或验收闭环；未记录额外回归修复。"
+      ],
+      "verification": [
+        "后端能力清单测试通过"
+      ],
+      "compatibility": "仅增加可复核的应用功能、验收基座或任务可靠性，不修改用户素材源文件，不读取或提交凭据。",
+      "evidence": [
+        "backend/src/main/resources/capabilities.json",
+        "backend/src/main/java/com/douyin/mixcut/service/BootstrapService.java"
+      ]
+    },
+    {
+      "id": "release-2-2-102",
+      "version": "2.2.102",
+      "releasedAt": "2026-08-22",
+      "kind": "历史开发阶段",
+      "title": "Studio 预设与出片草稿体验收口",
+      "summary": "优化固定顺序预设展示、新建草稿和步骤复制，保持独立 FixedOrderPresets 模块边界。",
+      "changes": [
+        "预设信息更清晰；新增草稿操作更快；复制步骤会清空文件夹绑定避免冲突。"
+      ],
+      "fixes": [
+        "完成提交 feat(studio): clarify fixed-order presets and speed up draft creation 对应的功能或验收闭环；未记录额外回归修复。"
+      ],
+      "verification": [
+        "npm run build 通过",
+        "浏览器验证 Studio 新建草稿与复制步骤",
+        "独立固定顺序页面未修改"
+      ],
+      "compatibility": "仅增加可复核的应用功能、验收基座或任务可靠性，不修改用户素材源文件，不读取或提交凭据。",
+      "evidence": [
+        "frontend/src/views/Studio.vue"
+      ]
+    },
     {
       "id": "release-2-2-101",
       "version": "2.2.101",
@@ -3629,5 +4137,6 @@
         "douyin-mixcut/workflows/*.json"
       ]
     }
-  ]
+  ],
+  "source": "backend/src/main/resources/release-notes.json"
 }

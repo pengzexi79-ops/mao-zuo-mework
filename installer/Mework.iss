@@ -14,8 +14,12 @@ DefaultDirName={localappdata}\Programs\{#AppName}
 DefaultGroupName={#AppName}
 OutputDir=output
 OutputBaseFilename=Mework-Setup-{#AppVersion}
-Compression=lzma2
-SolidCompression=yes
+; The bundled runtime is multi-gigabyte. No compression keeps peak memory bounded on constrained build PCs.
+Compression=none
+SolidCompression=no
+; The complete portable runtime is multi-gigabyte; span data into companion .bin slices.
+DiskSpanning=yes
+DiskSliceSize=1500000000
 ArchitecturesInstallIn64BitMode=x64
 PrivilegesRequired=lowest
 DisableProgramGroupPage=yes
@@ -33,10 +37,11 @@ Source: "..\backend\tools\bootstrap_media_runtime.bat"; DestDir: "{app}\backend\
 Source: "..\backend\tools\media_diagnose.py"; DestDir: "{app}\backend\tools"; Flags: ignoreversion
 Source: "..\backend\tools\natural_tts.py"; DestDir: "{app}\backend\tools"; Flags: ignoreversion
 Source: "..\backend\src\main\resources\release-notes.json"; DestDir: "{app}\backend\src\main\resources"; Flags: ignoreversion
-Source: "output\release-manifest.json"; DestDir: "{app}\installer"; Flags: ignoreversion
+Source: ".\output\release-manifest.json"; DestDir: "{app}\installer"; Flags: ignoreversion
 ; Required runtime folders: a release build must fail rather than silently omit an offline prerequisite.
-Source: "..\portable\*"; DestDir: "{app}\portable"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "..\backend\.venv\*"; DestDir: "{app}\backend\.venv"; Flags: ignoreversion recursesubdirs createallsubdirs
+; Exclude caches/bytecode only; binaries, models, MySQL data and Python packages remain packaged.
+Source: "..\portable\*"; DestDir: "{app}\portable"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "**\__pycache__\**;**\*.pyc;**\*.pyo;**\*.log"
+Source: "..\backend\.venv\*"; DestDir: "{app}\backend\.venv"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "**\__pycache__\**;**\*.pyc;**\*.pyo;**\*.log"
 
 [Icons]
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\start.bat"; WorkingDir: "{app}"; IconFilename: "{sys}\shell32.dll"; IconIndex: 14
