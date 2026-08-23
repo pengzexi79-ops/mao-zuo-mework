@@ -112,10 +112,9 @@ public class AiClient {
                 if (id.isBlank()) continue;
                 Set<String> declared = declaredCapabilities(item);
                 String lower = id.toLowerCase(java.util.Locale.ROOT);
-                boolean isImage = hasAny(declared, "image_generation", "image", "images", "text-to-image")
-                        || lower.matches(".*(gpt-image|dall[-.]e|imagen|stable-diffusion|stable_diffusion|flux|seedream|jimeng|image-gen).*" );
-                boolean isVideo = hasAny(declared, "video_generation", "video", "videos", "text-to-video")
-                        || lower.matches(".*(sora|veo|seedance|kling|runway|cogvideo|video-gen|text-to-video).*" );
+                boolean isImage = isImageGenerationModel(lower, declared);
+                boolean isVideo = hasAny(declared, "video_generation", "video-generation", "text-to-video", "text_to_video")
+                        || lower.matches(".*(sora|veo|seedance|kling|runway|cogvideo|wan[0-9.]*[-_]?video|video-gen|video-generation|text-to-video).*" );
                 boolean isVoice = hasAny(declared, "speech", "tts", "audio_generation", "audio", "voice")
                         || lower.matches(".*(tts|speech|voice|audio-gen|audiogen|cosyvoice|fish-speech).*" );
                 boolean isVision = hasAny(declared, "vision", "image_input", "image_understanding", "multimodal")
@@ -179,6 +178,16 @@ public class AiClient {
 
     private void addIfMissing(List<String> values, String value) {
         if (!values.contains(value)) values.add(value);
+    }
+
+    static boolean isImageGenerationModel(String lower, Set<String> declared) {
+        return hasAnyStatic(declared, "image_generation", "image-generation", "text-to-image", "text_to_image")
+                || lower.matches(".*(gpt-image|dall[-.]e|imagen|stable-diffusion|stable_diffusion|flux|seedream|jimeng|qwen-image|wan[0-9.]*[-_]?image|image-gen|image-generation).*" );
+    }
+
+    private static boolean hasAnyStatic(Set<String> values, String... expected) {
+        for (String value : values) for (String token : expected) if (value.contains(token)) return true;
+        return false;
     }
 
     public static boolean looksVisionCapableGpt(String modelId) {

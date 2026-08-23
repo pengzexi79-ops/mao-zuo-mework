@@ -12,6 +12,17 @@ class MediaProviderCatalogTest {
     private final MediaProviderCatalog catalog = new MediaProviderCatalog(new ObjectMapper());
 
     @Test
+    void keepsVisionSeparateAndPersistsVoiceProtocol() throws Exception {
+        String merged = catalog.mergeMediaConfig("{\"text\":[\"qwen-plus\"]}", "{\"image\":[\"qwen-image-2.0-pro\"],\"video\":[],\"voice\":[\"qwen3-tts-flash\"],\"vision\":[\"qwen3-vl-plus\"],\"voiceProtocol\":\"dashscope_tts_http\",\"voiceEndpoint\":\"https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation\"}");
+        AiProvider qwen = provider("https://dashscope.aliyuncs.com/compatible-mode");
+        qwen.setModels(merged);
+        var capability = catalog.read(qwen);
+        assertTrue(capability.imageModels().contains("qwen-image-2.0-pro"));
+        assertTrue(capability.visionModels().contains("qwen3-vl-plus"));
+        assertEquals("dashscope_tts_http", capability.voiceProtocol());
+    }
+
+    @Test
     void mergesMediaConfigWithoutDroppingLegacyTextModels() throws Exception {
         String merged = catalog.mergeMediaConfig("[\"gpt-4o-mini\"]", "{\"image\":[\"gpt-image-1\"],\"video\":[\"sora-2\"],\"voice\":[\"tts-1\"],\"setupUrl\":\"https://platform.openai.com/api-keys\"}");
 

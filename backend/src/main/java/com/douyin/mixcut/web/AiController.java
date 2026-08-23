@@ -410,6 +410,8 @@ public class AiController {
                     : objectMapper.createObjectNode();
             normalized.set("text", objectMapper.valueToTree(discovery.textModels()));
             normalized.set("vision", objectMapper.valueToTree(discovery.visionModels()));
+            com.fasterxml.jackson.databind.node.ObjectNode media = normalized.with("media");
+            media.set("vision", objectMapper.valueToTree(discovery.visionModels()));
             // Discovery is advisory. Keep paid media execution allowlists under media unchanged.
             // Users must explicitly confirm image/video/voice models through the provider editor.
             com.fasterxml.jackson.databind.node.ObjectNode observed = normalized.putObject("observed");
@@ -426,7 +428,7 @@ public class AiController {
             try {
                 return objectMapper.writeValueAsString(Map.of(
                         "text", discovery.textModels(),
-                        "media", Map.of("image", discovery.imageModels(), "video", discovery.videoModels(), "voice", discovery.voiceModels()),
+                        "media", Map.of("image", discovery.imageModels(), "video", discovery.videoModels(), "voice", discovery.voiceModels(), "vision", discovery.visionModels()),
                         "vision", discovery.visionModels(),
                         "discoveryStatus", "success",
                         "discoveredAt", discovery.discoveredAt()));
