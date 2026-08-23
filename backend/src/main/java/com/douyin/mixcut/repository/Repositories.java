@@ -2,7 +2,12 @@ package com.douyin.mixcut.repository;
 
 import com.douyin.mixcut.domain.*;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -57,6 +62,65 @@ public interface Repositories {
         List<Job> findByStatus(String status);
 
         long countByStatus(String status);
+
+        @Transactional
+        @Modifying(flushAutomatically = true, clearAutomatically = true)
+        @Query("update Job j set j.status = 'running', j.version = j.version + 1, j.executionEpoch = j.executionEpoch + 1, j.leaseToken = :token, "
+                + "j.leaseExpiresAt = :expiresAt, j.lastActivityAt = :now where j.id = :id and j.status = 'pending'")
+        int claimPendingJob(@Param("id") Long id, @Param("token") String token,
+                            @Param("now") LocalDateTime now, @Param("expiresAt") LocalDateTime expiresAt);
+
+        @Transactional
+        @Modifying(flushAutomatically = true, clearAutomatically = true)
+        @Query("update Job j set j.lastActivityAt = :now, j.currentStep = :step, j.phaseProgress = :phaseProgress, "
+                + "j.leaseExpiresAt = :expiresAt where j.id = :id and j.status = 'running' "
+                + "and j.executionEpoch = :epoch and j.leaseToken = :token")
+        int heartbeatOwnedJob(@Param("id") Long id, @Param("epoch") Long epoch, @Param("token") String token,
+                              @Param("step") String step, @Param("phaseProgress") Integer phaseProgress,
+                              @Param("now") LocalDateTime now, @Param("expiresAt") LocalDateTime expiresAt);
+
+        @Transactional
+        @Modifying(flushAutomatically = true, clearAutomatically = true)
+        @Query("update Job j set j.version = j.version + 1, j.executionEpoch = j.executionEpoch + 1, j.leaseToken = null, j.leaseExpiresAt = null "
+                + "where j.id = :id and j.status in :statuses")
+        int invalidateLease(@Param("id") Long id, @Param("statuses") List<String> statuses);
+
+        @Transactional
+        @Modifying(flushAutomatically = true, clearAutomatically = true)
+        @Query("update Job j set j.status = 'failed', j.summary = :summary, j.error = :error, "
+                + "j.version = j.version + 1, j.lastActivityAt = :now, j.leaseToken = null, j.leaseExpiresAt = null, j.executionEpoch = j.executionEpoch + 1 "
+                + "where j.id = :id and j.status = 'running' and "
+                + "(j.lastActivityAt <= :activityBefore or j.leaseExpiresAt <= :now)")
+        int failStaleRunningJob(@Param("id") Long id, @Param("summary") String summary, @Param("error") String error,
+                                @Param("now") LocalDateTime now, @Param("activityBefore") LocalDateTime activityBefore);
+
+        @Transactional
+        @Modifying(flushAutomatically = true, clearAutomatically = true)
+        @Query("update Job j set j.status = 'failed', j.summary = :summary, j.error = :error, "
+                + "j.version = j.version + 1, j.lastActivityAt = :now, j.leaseToken = null, j.leaseExpiresAt = null, j.executionEpoch = j.executionEpoch + 1 "
+                + "where j.id = :id and j.status = 'running' and j.createdAt <= :createdBefore")
+        int failTimedOutRunningJob(@Param("id") Long id, @Param("summary") String summary, @Param("error") String error,
+                                   @Param("now") LocalDateTime now, @Param("createdBefore") LocalDateTime createdBefore);
+
+        @Transactional
+        @Modifying(flushAutomatically = true, clearAutomatically = true)
+        @Query("update Job j set j.status = 'cancelled', j.version = j.version + 1, j.executionEpoch = j.executionEpoch + 1, "
+                + "j.leaseToken = null, j.leaseExpiresAt = null, j.current = :current, j.progress = :progress, "
+                + "j.summary = :summary, j.error = null, j.lastActivityAt = :now "
+                + "where j.id = :id and j.status in :statuses")
+        int transitionCancelled(@Param("id") Long id, @Param("statuses") List<String> statuses,
+                                @Param("current") Integer current, @Param("progress") Integer progress,
+                                @Param("summary") String summary, @Param("now") LocalDateTime now);
+
+        @Transactional
+        @Modifying(flushAutomatically = true, clearAutomatically = true)
+        @Query("update Job j set j.status = 'paused', j.version = j.version + 1, j.executionEpoch = j.executionEpoch + 1, "
+                + "j.leaseToken = null, j.leaseExpiresAt = null, j.current = :current, j.progress = :progress, "
+                + "j.summary = :summary, j.error = null, j.lastActivityAt = :now "
+                + "where j.id = :id and j.status in :statuses")
+        int transitionPaused(@Param("id") Long id, @Param("statuses") List<String> statuses,
+                             @Param("current") Integer current, @Param("progress") Integer progress,
+                             @Param("summary") String summary, @Param("now") LocalDateTime now);
     }
 
     interface CrawlJobRepo extends JpaRepository<CrawlJob, Long> {

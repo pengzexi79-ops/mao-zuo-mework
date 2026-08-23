@@ -97,6 +97,7 @@ public class BootstrapService implements ApplicationRunner {
         databaseReady = probeDatabase();
         if (databaseReady) {
             migrateOutputSegmentKeys();
+            migrateJobExecutionLease();
             migrateOutputDeliveryQc();
             migrateMaterialFlags();
             migrateProjectTemplates();
@@ -152,6 +153,32 @@ public class BootstrapService implements ApplicationRunner {
             }
         } catch (Exception e) {
             log.warn("无法补齐 job_output.segment_keys；成片库可能暂不可用", e);
+        }
+    }
+
+    /** Adds durable Job execution fencing without altering existing task records. */
+    private void migrateJobExecutionLease() {
+        addJobColumnIfMissing("version", "ALTER TABLE job ADD COLUMN version BIGINT NOT NULL DEFAULT 0");
+        addJobColumnIfMissing("execution_epoch", "ALTER TABLE job ADD COLUMN execution_epoch BIGINT NOT NULL DEFAULT 0");
+        addJobColumnIfMissing("lease_token", "ALTER TABLE job ADD COLUMN lease_token VARCHAR(64) NULL");
+        addJobColumnIfMissing("lease_expires_at", "ALTER TABLE job ADD COLUMN lease_expires_at DATETIME NULL");
+    }
+
+    private void addJobColumnIfMissing(String column, String alterSql) {
+        String existsSql = "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?";
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement exists = connection.prepareStatement(existsSql)) {
+            exists.setString(1, "job");
+            exists.setString(2, column);
+            try (ResultSet result = exists.executeQuery()) {
+                if (result.next() && result.getInt(1) > 0) return;
+            }
+            try (PreparedStatement alter = connection.prepareStatement(alterSql)) {
+                alter.execute();
+                log.info("已补齐 job.{}，用于任务执行租约", column);
+            }
+        } catch (Exception e) {
+            log.warn("无法补齐 job.{}；任务恢复将保持保守模式", column, e);
         }
     }
 

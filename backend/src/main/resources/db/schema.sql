@@ -120,6 +120,7 @@ CREATE TABLE IF NOT EXISTS skill_def (
 
 CREATE TABLE IF NOT EXISTS job (
     id          BIGINT AUTO_INCREMENT PRIMARY KEY,
+    version     BIGINT NOT NULL DEFAULT 0,
     workflow_id BIGINT,
     project_id  BIGINT,
     name        VARCHAR(255),
@@ -131,6 +132,9 @@ CREATE TABLE IF NOT EXISTS job (
     total       INT NOT NULL DEFAULT 0,
     timeout_sec INT NOT NULL DEFAULT 0,
     stale_after_sec INT NOT NULL DEFAULT 0,
+    execution_epoch BIGINT NOT NULL DEFAULT 0,
+    lease_token VARCHAR(64),
+    lease_expires_at DATETIME NULL,
     last_activity_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     current_step VARCHAR(512),
     phase_progress INT NOT NULL DEFAULT 0,
