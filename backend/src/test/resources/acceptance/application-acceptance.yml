@@ -1,0 +1,14 @@
+spring:
+  datasource:
+    url: ${ACCEPTANCE_DB_URL:}
+    username: ${ACCEPTANCE_DB_USERNAME:}
+    password: ${ACCEPTANCE_DB_PASSWORD:}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jpa:
+    hibernate:
+      ddl-auto: none
+  sql:
+    init:
+      mode: never
+app:
+  data-dir: ./target/acceptance-data

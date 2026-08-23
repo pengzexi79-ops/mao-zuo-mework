@@ -15,6 +15,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.function.Function;
 
 /** Small bounded transport primitive. Callers decide whether a request is safe to retry. */
 @Slf4j
@@ -26,9 +27,10 @@ public class SafeHttpClient {
     }
 
     private final OutboundNetworkPolicy policy;
+    private final Function<String, String> urlValidator;
 
     public SafeHttpClient() {
-        this(OutboundNetworkPolicy.defaults());
+        this(OutboundNetworkPolicy.defaults(), UrlGuard::validate);
     }
 
     @Autowired
@@ -41,11 +43,20 @@ public class SafeHttpClient {
                 Math.max(0, props.getNetworkMaxRetries()),
                 java.time.Duration.ofMillis(Math.max(0, props.getNetworkRetryBackoffMs())),
                 Math.max(1, props.getNetworkMaxResponseBytes()),
-                Math.max(1, props.getNetworkMaxDownloadBytes())));
+                Math.max(1, props.getNetworkMaxDownloadBytes())), UrlGuard::validate);
     }
 
     public SafeHttpClient(OutboundNetworkPolicy policy) {
+        this(policy, UrlGuard::validate);
+    }
+
+    /**
+     * Explicit validation seam for deterministic transport tests. Application wiring always uses
+     * {@link UrlGuard#validate(String)}; this constructor is never selected by configuration.
+     */
+    public SafeHttpClient(OutboundNetworkPolicy policy, Function<String, String> urlValidator) {
         this.policy = policy;
+        this.urlValidator = urlValidator;
     }
 
     public Response get(String url) {
@@ -63,7 +74,7 @@ public class SafeHttpClient {
 
     private Response execute(String method, String rawUrl, byte[] body, Map<String, String> headers, boolean retryable) {
         long deadline = System.nanoTime() + policy.totalTimeout().toNanos();
-        String current = UrlGuard.validate(rawUrl);
+        String current = urlValidator.apply(rawUrl);
         int attempts = retryable ? policy.maxRetries() + 1 : 1;
         for (int attempt = 0; attempt < attempts; attempt++) {
             try {
@@ -84,7 +95,7 @@ public class SafeHttpClient {
     private Response once(String method, String urlValue, byte[] body, Map<String, String> headers, long deadline) {
         HttpURLConnection connection = null;
         try {
-            URI uri = URI.create(UrlGuard.validate(urlValue));
+            URI uri = URI.create(urlValidator.apply(urlValue));
             connection = (HttpURLConnection) new URL(uri.toString()).openConnection();
             connection.setInstanceFollowRedirects(false);
             connection.setRequestMethod(method);
