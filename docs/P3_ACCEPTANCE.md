@@ -30,6 +30,12 @@ mvn -q -Dtest=AcceptanceDatabaseContractTest,LocalMockHttpServerTest,OutboundPol
 
 本地 HTTP mock 只绑定 `127.0.0.1` 随机端口，覆盖成功、429、500、超时、有限重试和幂等 POST。它只证明 `SafeHttpClient` 的边界行为，不代表真实公网来源、AI Provider 或 Edge-TTS 已验收。
 
+## P3-3 离线媒体链路
+
+P3-3 从固定 fixture 复制到 JUnit `@TempDir` 后，执行真实本地 `FFmpeg`/`FFprobe`、素材登记、质量准入、结构化分析、渲染、Delivery QC 和候选隔离。测试不会启动 Spring Boot、MySQL 或前端，不读取 `.env`，不会访问网络、AI Provider、ASR 下载、Edge-TTS 或 Demucs。
+
+正向成片仅位于 TEMP output；黑场候选在 QC 失败后仅保留于 TEMP `cache/qc-candidates`，不生成可下载 public URL。`JobOutput` / `OutputVersion` 当前为记录字段契约验收；真实 `JobService` 的异步派发、事务和隔离数据库恢复将在 P3-4 结合 `ai_mix_video_acceptance` 单独验证。
+
 ## 验收边界
 
 P3-1 证明固定媒体输入可复核、路径未越界、文件未被替换、FFprobe 元数据稳定。P3-2 证明隔离数据库契约和本地 HTTP 传输策略可复核。它们都不代表真实公网供应商、模型下载或安装器全链路已验收。
