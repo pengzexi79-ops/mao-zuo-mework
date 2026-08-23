@@ -56,6 +56,12 @@ P3-3 从固定 fixture 复制到 JUnit `@TempDir` 后，执行真实本地 `FFmp
 
 正向成片仅位于 TEMP output；黑场候选在 QC 失败后仅保留于 TEMP `cache/qc-candidates`，不生成可下载 public URL。`JobOutput` / `OutputVersion` 当前为记录字段契约验收；真实 `JobService` 的异步派发、事务和隔离数据库恢复将在 P3-4 结合 `ai_mix_video_acceptance` 单独验证。
 
+## P3-5 全新安装目录门控
+
+`verify_fresh_install.ps1` 只在完整 Setup EXE、release manifest 和随包 JDK/MySQL/FFmpeg/venv 都存在时才执行临时安装。缺任何发行产物时输出 `[fresh-install:skipped]`，这不算安装通过，也不会创建目录、停止当前应用或访问当前 8760/3306 实例。
+
+完整发行包可用时，脚本只在 TEMP GUID 目录运行，动态选择独立 APP/MySQL 端口，设置独立 `APP_DATA_DIR`，等待 `/api/system/env` 200 后清理本次进程与临时目录。当前源码树和已打开的应用不能作为全新安装证据。
+
 ## 验收边界
 
 P3-1 证明固定媒体输入可复核、路径未越界、文件未被替换、FFprobe 元数据稳定。P3-2 证明隔离数据库契约和本地 HTTP 传输策略可复核。它们都不代表真实公网供应商、模型下载或安装器全链路已验收。
