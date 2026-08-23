@@ -1,36 +1,73 @@
 {
-  "id": "release-2-2-101",
-  "version": "2.2.101",
-  "releasedAt": "2026-08-20",
+  "id": "release-2-2-102",
+  "version": "2.2.102",
+  "releasedAt": "2026-08-23",
   "kind": "当前本机构建",
-  "title": "移除无限画布入口并保留 AI 媒体创作",
-  "summary": "移除不再提供的无限画布页面、导航和 Studio 入口，将旧路由兼容重定向到 AI 创作，不影响共享的图片、视频、配音、素材库、编辑器和任务能力。",
+  "title": "P2 任务可靠性与 P3 全链路验收基座",
+  "summary": "完成 8 月 22 日至 23 日的任务可靠性收口，并建立从固定媒体 fixture、离线诊断渲染到隔离数据库和全新安装门控的可复核验收基座。",
   "changes": [
-    "删除 InfiniteCanvas 视图、侧边栏导航、Studio 快捷入口及双模式弹窗分支；Studio 保留直达 AI 创作的入口。",
-    "`#/infinite-canvas` 重定向 `#/ai-create`，不再加载已删除的异步组件或旧画布草稿。",
-    "AI 创作移除旧画布草稿导入逻辑，保留 Provider、图片/视频/配音任务和素材入库链路。"
+    "媒体工具任务、AI 生成任务、准备任务和统一任务中心具备持久化状态、取消、恢复与去重路径；媒体长操作通过 task context 贯穿 FFmpeg、Demucs、切片、Auto-Editor 和 fallback。",
+    "新增固定媒体 fixture manifest、SHA256 校验、离线素材登记/质量准入/结构化分析/真实 FFmpeg 渲染/QC/候选隔离验收。",
+    "新增本地回环 HTTP mock 与隔离数据库 acceptance schema，覆盖有限重试、429/5xx/超时、幂等请求、JobOutput 检查点、版本和修复记录契约。",
+    "新增全新安装目录门控：缺少 Setup EXE 或完整便携运行时时明确 skipped；具备发行包后使用独立临时目录、端口和 APP_DATA_DIR 验收启动与恢复。"
   ],
   "fixes": [
-    "消除导航、教程、AI 接入和 Studio 中对已移除产品的不可达 UI 描述。",
-    "消除已删除画布对 AI 创作的 localStorage 依赖，避免读取无主页面的草稿。"
+    "修复取消请求与旧实体/晚到 worker 的状态竞态，取消任务不会被回写为 done 或 failed，也不会继续登记生成素材。",
+    "修复 AI 视频远端任务恢复重复 polling/重复提交风险，远端任务只在获得 remoteTaskId 后进入恢复轮询。",
+    "修复输出候选在取消或失败后的清理边界，源素材不被删除，QC 失败候选不会产生可下载 public URL。"
   ],
   "verification": [
-    "frontend: npm run build 通过，静态资源校验通过。",
-    "backend: mvn -q test 通过。",
-    "源码扫描确认前端仅保留 `/infinite-canvas` 兼容重定向，无 InfiniteCanvas 组件、旧草稿 key 或 Studio 入口。",
-    "重新生成的 static 产物不包含 InfiniteCanvas 资源。"
+    "backend: P2-D 专项测试、P3-1/P3-2/P3-3 acceptance 测试和完整 mvn test 均通过；P3-4 MySQL 测试在未设置 ACCEPTANCE_DB_RUN 时按设计跳过且未连接业务库。",
+    "media: fixture-verify 校验六个固定 fixture 的路径、大小、SHA256 和 FFprobe 元数据通过；真实离线素材质量准入、分析、渲染和 QC 验收通过。",
+    "network: 本地回环 mock 验证 200、429、500、超时、有限重试和幂等 POST；生产 UrlGuard 仍拒绝回环地址。",
+    "windows: verify_windows_install.ps1 和 FreshInstallContractTest 通过；缺少 Setup EXE/release manifest 时 verify_fresh_install.ps1 输出 fresh-install:skipped，不伪造全新安装通过。",
+    "frontend: 已验证的历史构建通过；本次续作环境未提供 npm，未伪报新的前端构建结果。"
   ],
-  "compatibility": "不改变素材、AI 媒体任务、成片、播放/下载/质检/编辑/删除或 Studio 任务接口；旧画布链接会转入 AI 创作，原有媒体和任务记录不删除。",
+  "compatibility": "不修改 FixedOrderPresets、Studio UI、Provider 配置或 .env；现有业务库 ai_mix_video、8760 后端和 3306 MySQL 不被验收测试触碰。P3-4 真实 MySQL 验收只允许显式使用本机 ai_mix_video_acceptance。",
   "evidence": [
-    "frontend/src/router.js",
-    "frontend/src/App.vue",
-    "frontend/src/views/Studio.vue",
-    "frontend/src/views/AiCreate.vue",
-    "frontend/src/views/AiSettings.vue",
-    "frontend/src/views/Tutorial.vue",
-    "Mework_PROJECT_HANDOFF.md"
+    "backend/src/main/java/com/douyin/mixcut/service/MediaToolsService.java",
+    "backend/src/main/java/com/douyin/mixcut/external/ProcessRegistry.java",
+    "backend/src/main/java/com/douyin/mixcut/external/TaskAwareProcRunner.java",
+    "backend/src/test/java/com/douyin/mixcut/acceptance/OfflineMaterialPipelineAcceptanceTest.java",
+    "backend/src/test/java/com/douyin/mixcut/acceptance/OfflineRenderQcAcceptanceTest.java",
+    "backend/src/test/java/com/douyin/mixcut/acceptance/JobServiceRecoveryDatabaseAcceptanceTest.java",
+    "backend/tools/verify_fresh_install.ps1",
+    "docs/P3_ACCEPTANCE.md"
   ],
   "history": [
+    {
+      "id": "release-2-2-101",
+      "version": "2.2.101",
+      "releasedAt": "2026-08-20",
+      "kind": "历史开发阶段",
+      "title": "移除无限画布入口并保留 AI 媒体创作",
+      "summary": "移除不再提供的无限画布页面、导航和 Studio 入口，将旧路由兼容重定向到 AI 创作，不影响共享的图片、视频、配音、素材库、编辑器和任务能力。",
+      "changes": [
+        "删除 InfiniteCanvas 视图、侧边栏导航、Studio 快捷入口及双模式弹窗分支；Studio 保留直达 AI 创作的入口。",
+        "`#/infinite-canvas` 重定向 `#/ai-create`，不再加载已删除的异步组件或旧画布草稿。",
+        "AI 创作移除旧画布草稿导入逻辑，保留 Provider、图片/视频/配音任务和素材入库链路。"
+      ],
+      "fixes": [
+        "消除导航、教程、AI 接入和 Studio 中对已移除产品的不可达 UI 描述。",
+        "消除已删除画布对 AI 创作的 localStorage 依赖，避免读取无主页面的草稿。"
+      ],
+      "verification": [
+        "frontend: npm run build 通过，静态资源校验通过。",
+        "backend: mvn -q test 通过。",
+        "源码扫描确认前端仅保留 `/infinite-canvas` 兼容重定向，无 InfiniteCanvas 组件、旧草稿 key 或 Studio 入口。",
+        "重新生成的 static 产物不包含 InfiniteCanvas 资源。"
+      ],
+      "compatibility": "不改变素材、AI 媒体任务、成片、播放/下载/质检/编辑/删除或 Studio 任务接口；旧画布链接会转入 AI 创作，原有媒体和任务记录不删除。",
+      "evidence": [
+        "frontend/src/router.js",
+        "frontend/src/App.vue",
+        "frontend/src/views/Studio.vue",
+        "frontend/src/views/AiCreate.vue",
+        "frontend/src/views/AiSettings.vue",
+        "frontend/src/views/Tutorial.vue",
+        "Mework_PROJECT_HANDOFF.md"
+      ]
+    },
     {
       "id": "release-2-2-100",
       "version": "2.2.100",
