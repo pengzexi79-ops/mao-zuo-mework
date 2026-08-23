@@ -35,7 +35,7 @@
           <el-form label-position="top">
             <el-form-item label="配音模型"><el-select v-model="voice.model" style="width:100%" :disabled="!voice.providerId"><el-option v-for="model in activeModels(voice.providerId, 'voice')" :key="model" :label="model" :value="model" /></el-select></el-form-item>
             <el-form-item label="配音文本"><el-input v-model="voice.input" type="textarea" :rows="7" maxlength="6000" show-word-limit placeholder="输入需要配音的台词或旁白。" /></el-form-item>
-            <div class="two"><el-form-item label="声音"><el-select v-model="voice.voice"><el-option v-for="name in voices" :key="name" :label="name" :value="name" /></el-select></el-form-item><el-form-item label="风格说明"><el-input v-model="voice.instructions" maxlength="1000" placeholder="例如：平静、清晰、适合短剧旁白" /></el-form-item></div>
+            <div class="two"><el-form-item label="声音"><el-select v-model="voice.voice" filterable allow-create><el-option v-for="name in voiceOptions(voice)" :key="name" :label="name" :value="name" /></el-select></el-form-item><el-form-item label="风格说明"><el-input v-model="voice.instructions" maxlength="1000" placeholder="例如：平静、清晰、适合短剧旁白" /></el-form-item></div>
             <ConfirmBox v-model="voice.confirm" /><el-button type="primary" :loading="voiceSubmitting" :disabled="!canSubmit(voice, 'input')" @click="generateVoice">确认并生成配音</el-button>
           </el-form>
         </section>
@@ -60,7 +60,20 @@ const mode = ref('image'); const providers = ref([]); const tasks = ref([]); con
 const image = reactive({ providerId: null, model: '', prompt: '', size: '1024x1024', quality: 'medium', confirm: false }); const video = reactive({ providerId: null, model: '', prompt: '', size: '1280x720', seconds: 4, confirm: false }); const voice = reactive({ providerId: null, model: '', input: '', voice: 'coral', instructions: '', confirm: false })
 function operationProviders (operation) { const field = `${operation}Models`; return providers.value.filter(provider => Array.isArray(provider[field]) && provider[field].length) }
 function activeModels (providerId, operation) { return operationProviders(operation).find(provider => provider.id === providerId)?.[`${operation}Models`] || [] }
-function ensureModel (form, operation) { const choices = activeModels(form.providerId, operation); form.model = choices.includes(form.model) ? form.model : (choices[0] || '') }
+function ensureModel (form, operation) {
+  const provider = operationProviders(operation).find(item => item.id === form.providerId)
+  const choices = activeModels(form.providerId, operation)
+  const providerBase = String(provider?.baseUrl || '').toLowerCase()
+  const preferred = operation === 'voice' && providerBase.includes('dashscope')
+    ? choices.find(model => /qwen(?:3)?-tts|qwen-tts/i.test(model))
+    : choices[0]
+  form.model = choices.includes(form.model) ? form.model : (preferred || choices[0] || '')
+  if (operation === 'voice') {
+    const lower = String(form.model || '').toLowerCase()
+    if ((lower.includes('qwen3-tts') || lower.includes('qwen-tts')) && !['Cherry', 'longanhuan_v3.6'].includes(form.voice)) form.voice = 'Cherry'
+  }
+}
+function voiceOptions (form) { const model = String(form.model || '').toLowerCase(); return (model.includes('qwen3-tts') || model.includes('qwen-tts')) ? ['Cherry', 'longanhuan_v3.6'] : voices }
 function canSubmit (form, field = 'prompt') { return !!form.providerId && !!form.model && String(form[field] || '').trim().length >= 2 && !!form.confirm }
 function kindLabel (kind) { return ({ 'ai-image': '图片', 'ai-video': '视频', 'ai-voice': '配音' })[kind] || kind }
 function statusLabel (status) { return ({ pending: '排队中', running: '处理中', done: '已完成', failed: '失败' })[status] || status }

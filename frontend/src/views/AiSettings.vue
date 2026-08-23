@@ -173,7 +173,9 @@
         <div v-if="form.observedMedia" class="observed-picker"><el-input v-model="form.observedQuery" size="small" clearable placeholder="搜索候选模型名称" /><div v-for="group in observedGroups" :key="group.key" class="observed-group"><div class="observed-group-head"><b>{{ group.label }}</b><span>{{ group.models.length }} 个候选</span><el-button link size="small" @click="toggleObservedGroup(group.key)">{{ group.models.every(model => form.observedSelected[group.key].includes(model)) ? '清除本组' : '全选本组' }}</el-button></div><label v-for="model in group.models" :key="model" class="observed-model-row"><input v-model="form.observedSelected[group.key]" type="checkbox" :value="model" /><code>{{ model }}</code><span class="muted">已发现 · 未确认</span></label></div></div>
         <el-form-item label="图片模型"><el-input v-model="form.imageModels" placeholder="逗号分隔，例如 image-model-a,image-model-b" /></el-form-item>
         <el-form-item label="视频模型"><el-input v-model="form.videoModels" placeholder="逗号分隔，例如 video-model-a" /></el-form-item>
-        <el-form-item label="配音模型"><el-input v-model="form.voiceModels" placeholder="逗号分隔，例如 tts-model-a" /></el-form-item>
+        <el-form-item label="配音模型"><el-input v-model="form.voiceModels" placeholder="逗号分隔，例如 qwen3-tts-flash" /></el-form-item>
+        <el-form-item label="配音协议"><el-select v-model="form.voiceProtocol" style="width:100%"><el-option label="OpenAI /v1/audio/speech（兼容中转）" value="openai_audio_speech" /><el-option label="千问 HTTP TTS（按中转文档）" value="dashscope_tts_http" /><el-option label="千问 WebSocket TTS（暂需专用适配）" value="dashscope_tts_websocket" /></el-select></el-form-item>
+        <el-form-item label="配音 Endpoint（可选）"><el-input v-model="form.voiceEndpoint" placeholder="留空则按 Provider baseUrl 自动补 /v1/audio/speech" /></el-form-item>
         <el-form-item label="官方接入页"><el-input v-model="form.setupUrl" placeholder="https:// 服务商获取 API Key 的官方页面" /><el-link v-if="form.setupUrl" :href="form.setupUrl" target="_blank" rel="noopener noreferrer" type="primary">打开官方接入 / API Key 页面</el-link></el-form-item>
         <el-form-item label="计费 / 额度页"><el-input v-model="form.billingUrl" placeholder="https:// 服务商官方计费或额度页面" /><el-link v-if="form.billingUrl" :href="form.billingUrl" target="_blank" rel="noopener noreferrer" type="primary">打开官方计费 / 额度页面</el-link></el-form-item>
         <el-form-item label="优先级">
@@ -201,7 +203,7 @@ const providerTemplates = [
   { name: 'OpenAI 官方', kind: 'openai', baseUrl: 'https://api.openai.com', model: 'gpt-4o-mini', image: 'gpt-image-1,gpt-image-1-mini', video: 'sora-2,sora-2-pro', voice: 'gpt-4o-mini-tts,tts-1,tts-1-hd', setupUrl: 'https://platform.openai.com/api-keys', billingUrl: 'https://platform.openai.com/settings/organization/billing/overview' },
   { name: 'OpenAI-compatible 第三方', kind: 'openai', baseUrl: '', model: '', image: '', video: '', voice: '', setupUrl: '', billingUrl: '' },
   { name: '火山方舟 / 豆包（文本 / 视觉理解）', kind: 'openai', baseUrl: 'https://ark.cn-beijing.volces.com/api/v3', model: 'doubao-seed-1-6-250615', image: '', video: '', voice: '', setupUrl: 'https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey', billingUrl: 'https://console.volcengine.com/finance/expense' },
-  { name: '通义千问（备用 / 视觉理解）', kind: 'openai', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode', model: 'qwen-plus', image: '', video: '', voice: '', setupUrl: 'https://dashscope.console.aliyun.com/apiKey', billingUrl: 'https://usercenter.console.aliyun.com/#/manage-account/payment' },
+  { name: '通义千问兼容 Provider（按识别结果采用视觉、图片或配音）', kind: 'openai', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode', model: 'qwen-plus', image: '', video: '', voice: '', setupUrl: 'https://dashscope.console.aliyun.com/apiKey', billingUrl: 'https://usercenter.console.aliyun.com/#/manage-account/payment' },
   { name: 'DeepSeek 官方（文本 / 分镜）', kind: 'openai', baseUrl: 'https://api.deepseek.com', model: 'deepseek-chat', image: '', video: '', voice: '', setupUrl: 'https://platform.deepseek.com/api_keys', billingUrl: 'https://platform.deepseek.com/usage' },
   { name: 'Claude 官方（文本 / 分镜）', kind: 'anthropic', baseUrl: 'https://api.anthropic.com', model: 'claude-3-5-haiku-20241022', image: '', video: '', voice: '', setupUrl: 'https://console.anthropic.com/settings/keys', billingUrl: 'https://console.anthropic.com/settings/billing' },
   { name: 'Gemini 官方（文本 / 分镜）', kind: 'gemini', baseUrl: 'https://generativelanguage.googleapis.com', model: 'gemini-2.0-flash', image: '', video: '', voice: '', setupUrl: 'https://aistudio.google.com/app/apikey', billingUrl: 'https://aistudio.google.com/' }
@@ -234,7 +236,7 @@ const dlgVisible = ref(false)
 
 const form = reactive({
   id: null, name: '', kind: 'openai', baseUrl: '', apiKey: '', defaultModel: '', priority: 10, enabled: true,
-  imageModels: '', videoModels: '', voiceModels: '', setupUrl: '', billingUrl: '', observedMedia: null, observedMediaText: '', observedQuery: '', observedSelected: { image: [], video: [], voice: [] }
+  imageModels: '', videoModels: '', voiceModels: '', visionModels: '', voiceEndpoint: '', voiceProtocol: 'openai_audio_speech', setupUrl: '', billingUrl: '', observedMedia: null, observedMediaText: '', observedQuery: '', observedSelected: { image: [], video: [], voice: [] }
 })
 
 const presetList = computed(() => presets.value[form.kind] || [])
@@ -311,6 +313,9 @@ function capabilityBody () {
     image: splitModels(form.imageModels),
     video: splitModels(form.videoModels),
     voice: splitModels(form.voiceModels),
+    vision: splitModels(form.visionModels),
+    voiceEndpoint: form.voiceEndpoint.trim(),
+    voiceProtocol: form.voiceProtocol,
     setupUrl: form.setupUrl.trim(),
     billingUrl: form.billingUrl.trim()
   })
@@ -443,7 +448,8 @@ function openEdit(row) {
   Object.assign(form, {
     id: row.id, name: row.name, kind: row.kind, baseUrl: row.baseUrl, apiKey: '',
     defaultModel: row.defaultModel, priority: row.priority, enabled: row.enabled,
-    imageModels: capabilityText(row, 'imageModels'), videoModels: capabilityText(row, 'videoModels'), voiceModels: capabilityText(row, 'voiceModels'),
+    imageModels: capabilityText(row, 'imageModels'), videoModels: capabilityText(row, 'videoModels'), voiceModels: capabilityText(row, 'voiceModels'), visionModels: capabilityText(row, 'visionModels'),
+    voiceEndpoint: row.mediaCapabilities?.voiceEndpoint || '', voiceProtocol: row.mediaCapabilities?.voiceProtocol || 'openai_audio_speech',
     setupUrl: row.mediaCapabilities?.setupUrl || '', billingUrl: row.mediaCapabilities?.billingUrl || '',
     observedMedia: observed, observedMediaText: observedMediaText(observed), observedQuery: '', observedSelected: { image: [...current.image], video: [...current.video], voice: [...current.voice] }
   })

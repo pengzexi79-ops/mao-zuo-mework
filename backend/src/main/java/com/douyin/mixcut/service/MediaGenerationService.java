@@ -183,7 +183,7 @@ public class MediaGenerationService {
         if (input.length() < 2 || input.length() > 6000) throw new IllegalArgumentException("配音文本长度必须在 2 到 6000 个字符之间");
         AiProvider provider = supportedProvider(request.getProviderId());
         String model = requiredModel(provider, "voice", request.getModel());
-        String voice = List.of("alloy", "ash", "ballad", "coral", "echo", "fable", "onyx", "nova", "sage", "shimmer").contains(request.getVoice()) ? request.getVoice() : "coral";
+        String voice = normalizeVoice(provider, model, request.getVoice());
         Task task = newTask("ai-voice", "已确认官方计费，正在生成配音", provider, model,
                 Map.of("providerId", provider.getId(), "input", input, "model", model, "voice", voice, "instructions", request.getInstructions() == null ? "" : request.getInstructions().substring(0, Math.min(1000, request.getInstructions().length()))));
         executor.execute(() -> generateVoice(task, provider, input, model, voice, request.getInstructions()));
@@ -204,6 +204,18 @@ public class MediaGenerationService {
         if (requested == null || requested.isBlank()) return available.get(0);
         if (!available.contains(requested)) throw new IllegalArgumentException("所选模型不在该供应商已配置的" + operation + "能力中");
         return requested;
+    }
+
+    private String normalizeVoice(AiProvider provider, String model, String requested) {
+        String value = requested == null ? "" : requested.trim();
+        if (!value.matches("[A-Za-z0-9._:/-]{1,80}")) value = "";
+        String lower = model.toLowerCase(java.util.Locale.ROOT);
+        if (lower.contains("qwen3-tts") || lower.contains("qwen-tts")) return value.isBlank() ? "Cherry" : value;
+        return value.isBlank() ? "coral" : value;
+    }
+
+    private MediaProviderCatalog.Capability mediaCapability(AiProvider provider) {
+        return mediaCatalog.read(provider);
     }
 
     private Task newTask(String kind, String message) { return newTask(kind, message, null, null, Map.of()); }
@@ -292,8 +304,11 @@ public class MediaGenerationService {
 
     private void generateVoice(Task task, AiProvider provider, String input, String model, String voice, String instructions) {
         try {
-            update(task, "running", 15, "正在调用官方兼容配音接口"); var payload = om.createObjectNode(); payload.put("model", model); payload.put("input", input); payload.put("voice", voice); payload.put("response_format", "mp3"); if (instructions != null && !instructions.isBlank()) payload.put("instructions", instructions.substring(0, Math.min(1000, instructions.length())));
-            HttpURLConnection conn = openPost(endpoint(provider, "/v1/audio/speech"), secret(provider), "application/json", om.writeValueAsBytes(payload), 180000); int status = conn.getResponseCode(); if (status < 200 || status >= 300) throw providerFailure(status, "配音生成");
+            update(task, "running", 15, "正在调用配音接口"); var payload = om.createObjectNode(); payload.put("model", model); payload.put("input", input); payload.put("voice", voice); payload.put("response_format", "mp3"); if (instructions != null && !instructions.isBlank()) payload.put("instructions", instructions.substring(0, Math.min(1000, instructions.length())));
+            MediaProviderCatalog.Capability capability = mediaCapability(provider);
+            if ("dashscope_tts_websocket".equals(capability.voiceProtocol())) throw new IllegalStateException("该千问 TTS 仅提供 WebSocket 协议，当前 HTTP 生成入口不会伪装调用；请配置支持 /v1/audio/speech 的中转 endpoint");
+            String voicePath = capability.voiceEndpoint() == null || capability.voiceEndpoint().isBlank() ? "/v1/audio/speech" : capability.voiceEndpoint();
+            HttpURLConnection conn = openPost(voicePath.startsWith("https://") ? voicePath : endpoint(provider, voicePath), secret(provider), "application/json", om.writeValueAsBytes(payload), 180000); int status = conn.getResponseCode(); if (status < 200 || status >= 300) throw providerFailure(status, "配音生成");
             Path dir = props.mediaToolsOutput().resolve("generated-ai-audio"); Files.createDirectories(dir); Path output = dir.resolve("voice-" + Instant.now().toEpochMilli() + ".mp3"); try (InputStream in = conn.getInputStream()) { Files.copy(in, output); } finally { conn.disconnect(); }
             if (!Files.isRegularFile(output) || Files.size(output) < 1024) throw new IllegalStateException("供应商返回的配音文件无效"); Material material = materialService.register(output.toString(), null, false, Material.Source.generated, normalizedBase(provider)); material.setRole(MaterialRole.voice); material.setTags("AI生成,配音," + model + "," + voice); material = materialService.save(material); materialService.attachBrowserUrls(material); task.setMaterialId(material.getId()); update(task, "done", 100, "配音生成完成，已作为新素材入库");
         } catch (Exception e) { update(task, "failed", task.getProgress(), concise(e)); }
@@ -303,7 +318,15 @@ public class MediaGenerationService {
     private HttpURLConnection openPost(String endpoint, String secret, String contentType, byte[] body, int timeout) throws Exception { HttpURLConnection conn = (HttpURLConnection) new URL(endpoint).openConnection(); conn.setRequestMethod("POST"); conn.setDoOutput(true); conn.setConnectTimeout(20000); conn.setReadTimeout(timeout); conn.setRequestProperty("Content-Type", contentType); conn.setRequestProperty("Authorization", "Bearer " + secret); conn.setFixedLengthStreamingMode(body.length); try (var out = conn.getOutputStream()) { out.write(body); } return conn; }
     private HttpURLConnection openGet(String endpoint, String secret, int timeout) throws Exception { HttpURLConnection conn = (HttpURLConnection) new URL(endpoint).openConnection(); conn.setRequestMethod("GET"); conn.setConnectTimeout(20000); conn.setReadTimeout(timeout); conn.setRequestProperty("Authorization", "Bearer " + secret); return conn; }
     private JsonNode getJson(String endpoint, String secret) throws Exception { HttpURLConnection conn = openGet(endpoint, secret, 30000); int status = conn.getResponseCode(); if (status < 200 || status >= 300) throw providerFailure(status, "视频状态查询"); try (InputStream in = conn.getInputStream()) { return om.readTree(in); } finally { conn.disconnect(); } }
-    private IllegalStateException providerFailure(int status, String action) { return new IllegalStateException(status == 401 || status == 403 ? "供应商拒绝认证，请检查 API Key、项目权限和账单状态" : status == 429 ? "供应商限流或额度不足，请检查额度后重试" : status == 404 ? action + "接口或模型不可用，请在供应商官方文档确认兼容性" : action + "失败（HTTP " + status + "）"); }
+    private IllegalStateException providerFailure(int status, String action) {
+        String detail = status == 400 ? "请求字段、模型或 voice 不被该接口接受，请按中转文档配置"
+                : status == 401 || status == 403 ? "供应商拒绝认证，请检查 API Key、项目权限和账单状态"
+                : status == 404 || status == 405 ? action + "接口或模型不可用；该中转可能不支持 OpenAI-compatible 媒体路径"
+                : status == 429 ? "供应商限流或额度不足，请检查额度后重试"
+                : status >= 500 ? "供应商服务端暂时错误，请稍后重试"
+                : action + "失败（HTTP " + status + "）";
+        return new IllegalStateException(detail);
+    }
     private String concise(Exception e) { String message = e.getMessage() == null ? "生成任务失败" : e.getMessage(); return message.length() > 300 ? message.substring(0, 300) : message; }
 
     private void generateOpenAiImage(Task task, AiProvider provider, String prompt, String model, String size, String quality) {

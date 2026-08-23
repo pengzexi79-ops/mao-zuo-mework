@@ -3,6 +3,8 @@ package com.douyin.mixcut.external;
 import com.douyin.mixcut.domain.ProviderKind;
 import org.junit.jupiter.api.Test;
 
+import java.util.Set;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -12,6 +14,14 @@ class AiClientTest {
     void volcanoArkCompatibleBaseDoesNotDuplicateVersionPath() {
         assertEquals("https://ark.cn-beijing.volces.com/api/v3/chat/completions",
                 AiClient.buildValidatedUrl("https://ark.cn-beijing.volces.com/api/v3", "/v1/chat/completions"));
+    }
+
+    @Test
+    void qwenImageIsImageGenerationButQwenVlRemainsVisionOnly() {
+        assertTrue(AiClient.isImageGenerationModel("qwen-image-2.0-pro", Set.of()));
+        assertTrue(AiClient.isImageGenerationModel("wan2.7-image", Set.of()));
+        assertTrue(!AiClient.isImageGenerationModel("qwen3-vl-plus", Set.of()));
+        assertTrue(!AiClient.isImageGenerationModel("qwen-plus", Set.of()));
     }
 
     @Test
