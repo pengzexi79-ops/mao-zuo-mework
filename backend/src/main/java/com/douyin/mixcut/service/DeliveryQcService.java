@@ -34,8 +34,7 @@ public class DeliveryQcService {
                              FfmpegTool.MediaInfo info, FfmpegTool.AudioQuality audioQuality,
                              FfmpegTool.VideoQuality videoQuality, boolean hookBurned,
                              boolean subtitlesRequested, boolean subtitlesBurned, int subtitleCount) {
-        AudioContract contract = AudioContract.from(info, audioQuality, videoDuration, "rendered");
-        return assess(plan, params, videoDuration, info, audioQuality, videoQuality, contract,
+        return assess(plan, params, videoDuration, info, audioQuality, videoQuality, null,
                 hookBurned, subtitlesRequested, subtitlesBurned, subtitleCount);
     }
 
@@ -83,6 +82,14 @@ public class DeliveryQcService {
                              AudioContract contract, double videoDuration, double tolerance) {
         DeliveryQc.CategoryResult audio = report.category("audio");
         boolean hasAudio = info != null && info.isHasAudio() && info.getAudioDuration() > 0;
+
+        if (contract != null && hasAudio) {
+            AudioContractService contractService = new AudioContractService(null, props);
+            for (String code : contractService.validate(contract, videoDuration)) {
+                audio.setStatus("fail");
+                audio.issue(code);
+            }
+        }
 
         if (!hasAudio) {
             if (props.isQcAllowSilentAudio()) {
