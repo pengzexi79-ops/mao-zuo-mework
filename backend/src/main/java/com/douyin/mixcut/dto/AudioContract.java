@@ -31,8 +31,11 @@ public class AudioContract {
             contract.outputDuration = Math.max(0, media.getAudioDuration() > 0 ? media.getAudioDuration() : media.getDuration());
             contract.startSec = media.getAudioStartSec();
         }
-        contract.inputDuration = Math.max(0, inputDuration);
-        contract.endSec = contract.startSec + contract.outputDuration;
+        contract.inputDuration = Double.isFinite(inputDuration) ? Math.max(0, inputDuration) : 0;
+        contract.startSec = Double.isFinite(contract.startSec) ? contract.startSec : Double.NaN;
+        contract.outputDuration = Double.isFinite(contract.outputDuration) ? contract.outputDuration : Double.NaN;
+        contract.endSec = Double.isFinite(contract.startSec) && Double.isFinite(contract.outputDuration)
+                ? contract.startSec + contract.outputDuration : Double.NaN;
         contract.loudness = quality == null ? null : quality.getMeanVolumeDb();
         double silence = quality == null ? 0 : Math.max(0, quality.getMaxSilenceSec());
         contract.silenceRatio = contract.outputDuration <= 0 ? 0 : Math.min(1, silence / contract.outputDuration);

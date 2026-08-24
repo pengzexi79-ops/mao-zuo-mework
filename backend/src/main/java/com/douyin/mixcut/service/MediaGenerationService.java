@@ -304,13 +304,14 @@ public class MediaGenerationService {
     }
 
     private void generateVoice(Task task, AiProvider provider, String input, String model, String voice, String instructions) {
+        Path output = null;
         try {
             update(task, "running", 15, "正在调用配音接口"); var payload = om.createObjectNode(); payload.put("model", model); payload.put("input", input); payload.put("voice", voice); payload.put("response_format", "mp3"); if (instructions != null && !instructions.isBlank()) payload.put("instructions", instructions.substring(0, Math.min(1000, instructions.length())));
             MediaProviderCatalog.Capability capability = mediaCapability(provider);
             if ("dashscope_tts_websocket".equals(capability.voiceProtocol())) throw new IllegalStateException("该千问 TTS 仅提供 WebSocket 协议，当前 HTTP 生成入口不会伪装调用；请配置支持 /v1/audio/speech 的中转 endpoint");
             String voicePath = capability.voiceEndpoint() == null || capability.voiceEndpoint().isBlank() ? "/v1/audio/speech" : capability.voiceEndpoint();
             HttpURLConnection conn = openPost(voicePath.startsWith("https://") ? voicePath : endpoint(provider, voicePath), secret(provider), "application/json", om.writeValueAsBytes(payload), 180000); int status = conn.getResponseCode(); if (status < 200 || status >= 300) throw providerFailure(status, "配音生成");
-            Path dir = props.mediaToolsOutput().resolve("generated-ai-audio"); Files.createDirectories(dir); Path output = dir.resolve("voice-" + Instant.now().toEpochMilli() + ".mp3"); try (InputStream in = conn.getInputStream()) { Files.copy(in, output); } finally { conn.disconnect(); }
+            Path dir = props.mediaToolsOutput().resolve("generated-ai-audio"); Files.createDirectories(dir); output = dir.resolve("voice-" + Instant.now().toEpochMilli() + ".mp3"); try (InputStream in = conn.getInputStream()) { Files.copy(in, output); } finally { conn.disconnect(); }
             if (!Files.isRegularFile(output) || Files.size(output) < 1024) throw new IllegalStateException("供应商返回的配音文件无效");
             var contract = audioContractService.inspect(output.toString(), 0, "ai-voice", com.douyin.mixcut.external.ProcessRegistry.CancellationContext.none());
             var validation = audioContractService.validate(contract, 0);
@@ -319,7 +320,12 @@ public class MediaGenerationService {
                 throw new IllegalStateException("AI 配音音频准入失败：" + String.join(", ", validation));
             }
             Material material = materialService.register(output.toString(), null, false, Material.Source.generated, normalizedBase(provider)); material.setRole(MaterialRole.voice); material.setTags("AI生成,配音," + model + "," + voice); material = materialService.save(material); materialService.attachBrowserUrls(material); task.setMaterialId(material.getId()); update(task, "done", 100, "配音生成完成，已作为新素材入库");
-        } catch (Exception e) { update(task, "failed", task.getProgress(), concise(e)); }
+        } catch (Exception e) {
+            if (output != null) {
+                try { Files.deleteIfExists(output); } catch (Exception cleanup) { }
+            }
+            update(task, "failed", task.getProgress(), concise(e));
+        }
     }
 
     private String secret(AiProvider provider) { String value = cipher.decrypt(provider.getApiKey()); if (value == null || value.isBlank()) throw new IllegalStateException("供应商密钥不可用，请在 AI 接入页重新配置"); return value.trim(); }

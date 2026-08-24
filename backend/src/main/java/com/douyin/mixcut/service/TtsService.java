@@ -64,7 +64,7 @@ public class TtsService {
                         material.setRole(MaterialRole.voice);
                         material.setTags("自然配音," + selectedVoice);
                         return materials.save(material);
-                    } catch (IllegalStateException rejected) {
+                    } catch (Exception rejected) {
                         log.warn("natural TTS audio admission rejected: {}", rejected.getMessage());
                     }
                 }
