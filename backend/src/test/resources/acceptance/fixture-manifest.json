@@ -1,7 +1,7 @@
 ﻿{
     "schemaVersion":  1,
     "generatedBy":  "generate_acceptance_fixtures.ps1",
-    "generatedAt":  "2026-08-22T14:35:29.5755387Z",
+    "generatedAt":  "2026-08-24T10:04:41.7331486Z",
     "fixtures":  [
                      {
                          "id":  "video_motion",
@@ -78,7 +78,7 @@
                      {
                          "id":  "audio_voice",
                          "relativePath":  "fixtures/audio_voice.wav",
-                         "kind":  "positive_audio",
+                         "kind":  "positive_audio_voice",
                          "mediaType":  "audio",
                          "durationSec":  2,
                          "width":  0,
@@ -90,6 +90,42 @@
                          "expected":  {
                                           "minSegments":  0,
                                           "qualityGate":  "admit",
+                                          "readable":  true
+                                      }
+                     },
+                     {
+                         "id":  "audio_bgm",
+                         "relativePath":  "fixtures/audio_bgm.wav",
+                         "kind":  "positive_audio_bgm",
+                         "mediaType":  "audio",
+                         "durationSec":  2,
+                         "width":  0,
+                         "height":  0,
+                         "fps":  0,
+                         "hasAudio":  true,
+                         "sha256":  "beaf44a42c450a025691d76192efdb817b92b9425f77e6b886a3c2687abf420c",
+                         "sizeBytes":  176478,
+                         "expected":  {
+                                          "minSegments":  0,
+                                          "qualityGate":  "admit",
+                                          "readable":  true
+                                      }
+                     },
+                     {
+                         "id":  "audio_silence",
+                         "relativePath":  "fixtures/audio_silence.wav",
+                         "kind":  "negative_audio_silence",
+                         "mediaType":  "audio",
+                         "durationSec":  2,
+                         "width":  0,
+                         "height":  0,
+                         "fps":  0,
+                         "hasAudio":  true,
+                         "sha256":  "d15ce110807a8a6fac8f23d1b4740db43629c8a4f670d070cbd49ec2d98cb017",
+                         "sizeBytes":  352878,
+                         "expected":  {
+                                          "minSegments":  0,
+                                          "qualityGate":  "reject",
                                           "readable":  true
                                       }
                      },

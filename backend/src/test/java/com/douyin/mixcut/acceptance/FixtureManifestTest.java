@@ -19,7 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class FixtureManifestTest {
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final Set<String> IDS = Set.of(
-            "video_motion", "video_av", "video_black", "video_solid", "audio_voice", "cover");
+            "video_motion", "video_av", "video_black", "video_solid", "audio_voice", "audio_bgm", "audio_silence", "cover");
 
     @Test
     void manifestHasStableSafeFixtureContract() throws Exception {

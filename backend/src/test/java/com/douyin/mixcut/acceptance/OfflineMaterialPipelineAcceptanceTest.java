@@ -68,7 +68,7 @@ class OfflineMaterialPipelineAcceptanceTest {
         Path inputRoot = tempDir.resolve("copied-fixtures");
         Map<String, Path> inputs = new LinkedHashMap<>();
         Map<String, String> hashes = new LinkedHashMap<>();
-        for (String id : List.of("video_motion", "video_av", "video_black", "video_solid", "audio_voice", "cover")) {
+        for (String id : List.of("video_motion", "video_av", "video_black", "video_solid", "audio_voice", "audio_bgm", "audio_silence", "cover")) {
             Path input = OfflineAcceptanceSupport.copyFixture(id, inputRoot);
             inputs.put(id, input);
             hashes.put(id, OfflineAcceptanceSupport.sha256(input));
@@ -86,6 +86,9 @@ class OfflineMaterialPipelineAcceptanceTest {
         assertEquals(Material.Status.ready, registered.get("video_motion").getStatus());
         assertEquals(Material.Status.ready, registered.get("video_av").getStatus());
         assertEquals(Material.Status.ready, registered.get("audio_voice").getStatus());
+        assertEquals(Material.Status.ready, registered.get("audio_bgm").getStatus());
+        assertEquals(Material.Status.failed, registered.get("audio_silence").getStatus());
+        assertHasAdmissionReason(registered.get("audio_silence"));
         assertEquals(Material.Status.ready, registered.get("cover").getStatus(), "images remain usable for manual/product work");
         assertEquals(Material.FileType.image, registered.get("cover").getFileType());
         assertEquals(Material.Status.failed, registered.get("video_black").getStatus());
