@@ -35,7 +35,7 @@ try {
   Fail 1 'manifest is not valid JSON'
 }
 if ([int]$data.schemaVersion -ne 1) { Fail 1 'unsupported manifest schemaVersion' }
-if (-not $data.fixtures -or @($data.fixtures).Count -ne 6) { Fail 1 'manifest must contain exactly six fixtures' }
+if (-not $data.fixtures -or @($data.fixtures).Count -ne 8) { Fail 1 'manifest must contain exactly eight fixtures' }
 
 $acceptanceRoot = [IO.Path]::GetFullPath((Join-Path $root 'backend/src/test/resources/acceptance'))
 $separator = [IO.Path]::DirectorySeparatorChar
@@ -64,4 +64,4 @@ foreach ($fixture in @($data.fixtures)) {
   if ([bool]$fixture.hasAudio -ne ($audio.Count -gt 0)) { Fail 4 "$($fixture.id) audio presence mismatch" }
   if (-not $fixture.expected.readable) { Fail 1 "$($fixture.id) must be readable in this manifest" }
 }
-Write-Host '[fixture-verify:0] six deterministic fixtures, hashes, paths, and ffprobe metadata passed'
+Write-Host '[fixture-verify:0] eight deterministic fixtures, hashes, paths, and ffprobe metadata passed'

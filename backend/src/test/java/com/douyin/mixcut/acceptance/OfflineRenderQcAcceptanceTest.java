@@ -75,7 +75,7 @@ class OfflineRenderQcAcceptanceTest {
 
         Path inputRoot = tempDir.resolve("inputs");
         Path black = OfflineAcceptanceSupport.copyFixture("video_black", inputRoot);
-        Path bgm = OfflineAcceptanceSupport.copyFixture("audio_voice", inputRoot);
+        Path bgm = OfflineAcceptanceSupport.copyFixture("audio_bgm", inputRoot);
         MaterialStore materials = mock(MaterialStore.class);
         when(materials.findById(2L)).thenReturn(Optional.of(videoMaterial(2L, black)));
         FfmpegTool ffmpeg = new FfmpegTool(props, runner);
@@ -104,7 +104,7 @@ class OfflineRenderQcAcceptanceTest {
         ProcRunner runner = new ProcRunner();
         assumeBundledMediaTools(props, runner);
 
-        Path bgmPath = OfflineAcceptanceSupport.copyFixture("audio_voice", tempDir.resolve("inputs"));
+        Path bgmPath = OfflineAcceptanceSupport.copyFixture("audio_bgm", tempDir.resolve("inputs"));
         Material bgm = new Material();
         bgm.setId(9L);
         bgm.setRole(MaterialRole.bgm);

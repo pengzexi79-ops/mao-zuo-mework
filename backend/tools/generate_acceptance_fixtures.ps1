@@ -52,13 +52,17 @@ $av = Join-Path $script:fixtureRoot 'video_av.mp4'
 $black = Join-Path $script:fixtureRoot 'video_black.mp4'
 $solid = Join-Path $script:fixtureRoot 'video_solid.mp4'
 $audio = Join-Path $script:fixtureRoot 'audio_voice.wav'
+$bgm = Join-Path $script:fixtureRoot 'audio_bgm.wav'
+$silence = Join-Path $script:fixtureRoot 'audio_silence.wav'
 $cover = Join-Path $script:fixtureRoot 'cover.png'
 
 Invoke-Tool $script:ffmpeg @('-y','-v','error','-f','lavfi','-i','testsrc=size=320x568:rate=24','-t','2.0','-an','-c:v','libx264','-pix_fmt','yuv420p',$motion) 'motion fixture'
 Invoke-Tool $script:ffmpeg @('-y','-v','error','-f','lavfi','-i','testsrc=size=320x568:rate=24','-f','lavfi','-i','sine=frequency=440:sample_rate=44100','-t','2.0','-c:v','libx264','-pix_fmt','yuv420p','-c:a','pcm_s16le',$av) 'audio-video fixture'
 Invoke-Tool $script:ffmpeg @('-y','-v','error','-f','lavfi','-i','color=c=black:size=320x568:rate=24','-t','2.0','-an','-c:v','libx264','-pix_fmt','yuv420p',$black) 'black fixture'
 Invoke-Tool $script:ffmpeg @('-y','-v','error','-f','lavfi','-i','color=c=blue:size=320x568:rate=24','-t','2.0','-an','-c:v','libx264','-pix_fmt','yuv420p',$solid) 'solid fixture'
-Invoke-Tool $script:ffmpeg @('-y','-v','error','-f','lavfi','-i','sine=frequency=220:sample_rate=44100','-t','2.0','-c:a','pcm_s16le',$audio) 'audio fixture'
+Invoke-Tool $script:ffmpeg @('-y','-v','error','-f','lavfi','-i','sine=frequency=220:sample_rate=44100','-t','2.0','-c:a','pcm_s16le',$audio) 'voice audio fixture'
+Invoke-Tool $script:ffmpeg @('-y','-v','error','-f','lavfi','-i','sine=frequency=880:sample_rate=44100','-t','2.0','-c:a','pcm_s16le',$bgm) 'bgm audio fixture'
+Invoke-Tool $script:ffmpeg @('-y','-v','error','-f','lavfi','-i','anullsrc=channel_layout=stereo:sample_rate=44100','-t','2.0','-c:a','pcm_s16le',$silence) 'silence audio fixture'
 Invoke-Tool $script:ffmpeg @('-y','-v','error','-f','lavfi','-i','color=c=white:size=320x320','-frames:v','1',$cover) 'image fixture'
 
 $definitions = @(
@@ -66,7 +70,9 @@ $definitions = @(
   @{ id='video_av'; path='fixtures/video_av.mp4'; kind='positive_audio_video'; mediaType='video'; expected=@{ readable=$true; qualityGate='admit'; minSegments=2 } },
   @{ id='video_black'; path='fixtures/video_black.mp4'; kind='negative_black'; mediaType='video'; expected=@{ readable=$true; qualityGate='reject'; minSegments=1 } },
   @{ id='video_solid'; path='fixtures/video_solid.mp4'; kind='negative_solid'; mediaType='video'; expected=@{ readable=$true; qualityGate='reject'; minSegments=1 } },
-  @{ id='audio_voice'; path='fixtures/audio_voice.wav'; kind='positive_audio'; mediaType='audio'; expected=@{ readable=$true; qualityGate='admit'; minSegments=0 } },
+  @{ id='audio_voice'; path='fixtures/audio_voice.wav'; kind='positive_audio_voice'; mediaType='audio'; expected=@{ readable=$true; qualityGate='admit'; minSegments=0 } },
+  @{ id='audio_bgm'; path='fixtures/audio_bgm.wav'; kind='positive_audio_bgm'; mediaType='audio'; expected=@{ readable=$true; qualityGate='admit'; minSegments=0 } },
+  @{ id='audio_silence'; path='fixtures/audio_silence.wav'; kind='negative_audio_silence'; mediaType='audio'; expected=@{ readable=$true; qualityGate='reject'; minSegments=0 } },
   @{ id='cover'; path='fixtures/cover.png'; kind='positive_image'; mediaType='image'; expected=@{ readable=$true; qualityGate='manual'; minSegments=0 } }
 )
 
