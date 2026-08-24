@@ -149,10 +149,9 @@ public interface Repositories {
         @Modifying
         @Transactional
         @Query("update MediaTask m set m.status = 'pending', m.phase = 'recovering', "
-                + "m.recoveryState = 'requeued', m.recoveryReason = :reason, "
-                + "m.retryCount = coalesce(m.retryCount, 0) + 1, m.lastActivityAt = :now "
+                + "m.recoveryState = 'requeued', m.recoveryReason = :reason, m.lastActivityAt = :now "
                 + "where m.taskKey = :taskKey and m.status = 'running' "
-                + "and m.lastActivityAt <= :cutoff")
+                + "and (m.lastActivityAt <= :cutoff or m.lastActivityAt is null)")
         int claimStaleForRecovery(@Param("taskKey") String taskKey,
                                   @Param("cutoff") LocalDateTime cutoff,
                                   @Param("reason") String reason,

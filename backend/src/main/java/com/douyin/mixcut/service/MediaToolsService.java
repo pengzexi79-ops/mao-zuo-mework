@@ -35,6 +35,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Future;
 import java.util.concurrent.FutureTask;
+import java.util.concurrent.atomic.AtomicReference;
 import org.springframework.scheduling.annotation.Scheduled;
 
 /** Bounded local media operations exposed to the workbench. */
@@ -83,11 +84,16 @@ public class MediaToolsService {
     private final Map<String, Future<?>> futures = new ConcurrentHashMap<>();
     private final Set<String> startedTasks = ConcurrentHashMap.newKeySet();
     private final Map<String, ProcessRegistry.CancellationContext> cancellationContexts = new ConcurrentHashMap<>();
+    private final Map<String, Object> lifecycleLocks = new ConcurrentHashMap<>();
+    private final ThreadLocal<WorkerBinding> workerBinding = new ThreadLocal<>();
     private final ObjectMapper objectMapper = new ObjectMapper();
+
+    private record WorkerBinding(String taskId, Task task, ProcessRegistry.CancellationContext context) {}
 
     @Data
     public static class Task {
         private String id;
+        private String generation;
         private String kind;
         private String status = "pending";
         private String phase = "queued";
@@ -185,7 +191,7 @@ public class MediaToolsService {
         if (source.getFileType() != Material.FileType.image) throw new IllegalArgumentException("图片工具只能处理图片素材");
         Path input = safeMaterialPath(source);
         String id = newTask("image", request);
-        dispatch(id, () -> runImage(id, source, input, request, context(id)));
+        dispatch(id, () -> runImage(id, source, input, request, currentContext(id)));
         return tasks.get(id);
     }
 
@@ -193,7 +199,7 @@ public class MediaToolsService {
         if (materialId == null) throw new IllegalArgumentException("请选择音视频素材");
         materials.findById(materialId).orElseThrow(() -> new IllegalArgumentException("素材不存在"));
         String id = newTask("audio-separate", Map.of("materialId", materialId));
-        dispatch(id, () -> runSeparation(id, materialId, context(id)));
+        dispatch(id, () -> runSeparation(id, materialId, currentContext(id)));
         return tasks.get(id);
     }
 
@@ -202,7 +208,7 @@ public class MediaToolsService {
         if (clipSec < 1 || clipSec > 15) throw new IllegalArgumentException("每段时长请设置在 1 到 15 秒之间");
         materials.findById(materialId).orElseThrow(() -> new IllegalArgumentException("素材不存在"));
         String id = newTask("video-split", Map.of("materialId", materialId, "clipSec", clipSec));
-        dispatch(id, () -> runSplit(id, materialId, clipSec, context(id)));
+        dispatch(id, () -> runSplit(id, materialId, clipSec, currentContext(id)));
         return tasks.get(id);
     }
 
@@ -226,7 +232,7 @@ public class MediaToolsService {
         String id = newTask("subtitle-cover", request);
         final double rangeStart = start;
         final double rangeEnd = end;
-        dispatch(id, () -> runCover(id, source, input, request, rangeStart, rangeEnd, context(id)));
+        dispatch(id, () -> runCover(id, source, input, request, rangeStart, rangeEnd, currentContext(id)));
         return tasks.get(id);
     }
 
@@ -248,7 +254,7 @@ public class MediaToolsService {
         if ("unmute".equals(audioMode) && !info.isHasAudio()) throw new IllegalArgumentException("原视频没有可恢复的音轨，无法解除静音");
         validateTimelineRequest(request, info.getDuration());
         String id = newTask("video-timeline", request);
-        dispatch(id, () -> runTimeline(id, source, input, request, info, context(id)));
+        dispatch(id, () -> runTimeline(id, source, input, request, info, currentContext(id)));
         return tasks.get(id);
     }
 
@@ -257,7 +263,7 @@ public class MediaToolsService {
         if (materialId == null) throw new IllegalArgumentException("请选择视频素材");
         materials.findById(materialId).orElseThrow(() -> new IllegalArgumentException("素材不存在"));
         String id = newTask("auto-trim", Map.of("materialId", materialId));
-        dispatch(id, () -> runAutoTrim(id, materialId, context(id)));
+        dispatch(id, () -> runAutoTrim(id, materialId, currentContext(id)));
         return tasks.get(id);
     }
 
@@ -332,6 +338,7 @@ public class MediaToolsService {
     private Task fromPersisted(MediaTask persisted) {
         Task task = new Task();
         task.setId(persisted.getTaskKey());
+        task.setGeneration(UUID.randomUUID().toString());
         task.setKind(persisted.getKind());
         task.setStatus(persisted.getStatus());
         task.setPhase(persisted.getPhase() == null ? persisted.getStatus() : persisted.getPhase());
@@ -375,6 +382,7 @@ public class MediaToolsService {
     private String newTask(String kind, Object params) {
         Task task = new Task();
         task.setId(UUID.randomUUID().toString());
+        task.setGeneration(UUID.randomUUID().toString());
         task.setKind(kind);
         task.setOutputDirectory(props.mediaToolsOutput().toString());
         tasks.put(task.getId(), task);
@@ -404,35 +412,65 @@ public class MediaToolsService {
         return task.getId();
     }
 
+    private Object lifecycleLock(String id) {
+        return lifecycleLocks.computeIfAbsent(id, ignored -> new Object());
+    }
+
+    private WorkerBinding currentWorker(String id) {
+        WorkerBinding binding = workerBinding.get();
+        return binding != null && binding.taskId().equals(id) ? binding : null;
+    }
+
+    private ProcessRegistry.CancellationContext currentContext(String id) {
+        WorkerBinding binding = currentWorker(id);
+        return binding == null ? context(id) : binding.context();
+    }
+
     private void dispatch(String id, Runnable work) {
+        Task workerTask = tasks.get(id);
+        ProcessRegistry.CancellationContext workerContext = cancellationContexts.get(id);
+        AtomicReference<FutureTask<Void>> futureRef = new AtomicReference<>();
         FutureTask<Void> future = new FutureTask<>(() -> {
+            workerBinding.set(new WorkerBinding(id, workerTask, workerContext));
             try {
-                checkpoint(id);
+                checkpoint(id, workerContext);
+                if (tasks.get(id) != workerTask || cancellationContexts.get(id) != workerContext) return null;
                 startedTasks.add(id);
-                update(tasks.get(id), "running", 1, "媒体任务已开始");
+                update(workerTask, "running", 1, "媒体任务已开始");
                 work.run();
             } catch (java.util.concurrent.CancellationException cancelled) {
-                markCancelled(id);
+                markCancelled(id, workerTask);
             } finally {
-                futures.remove(id);
-                startedTasks.remove(id);
-                if (isTerminal(id)) {
-                    MediaTask persisted = mediaTaskRepo.findByTaskKey(id).orElse(null);
-                    if (persisted != null && ("failed".equals(persisted.getStatus()) || "cancelled".equals(persisted.getStatus()))) {
-                        cleanupTaskOutputs(id);
+                synchronized (lifecycleLock(id)) {
+                    if (tasks.get(id) == workerTask && cancellationContexts.get(id) == workerContext) {
+                        futures.remove(id, futureRef.get());
+                        startedTasks.remove(id);
+                        if (isTerminal(id)) {
+                            MediaTask persisted = mediaTaskRepo.findByTaskKey(id).orElse(null);
+                            if (persisted != null && ("failed".equals(persisted.getStatus()) || "cancelled".equals(persisted.getStatus()))) {
+                                cleanupTaskOutputs(id);
+                            }
+                            releaseContext(id);
+                        }
                     }
-                    releaseContext(id);
                 }
+                workerBinding.remove();
             }
             return null;
         });
+        futureRef.set(future);
         futures.put(id, future);
         try {
             mediaExecutor.execute(future);
         } catch (RuntimeException error) {
             futures.remove(id, future);
             Task task = tasks.get(id);
-            if (task != null) update(task, "pending", 0, "媒体任务等待执行器资源");
+            if (task != null) {
+                task.setErrorCode("MEDIA_EXECUTOR_REJECTED");
+                task.setRecoveryState("requeued");
+                task.setRecoveryReason("执行器暂时没有可用资源");
+                update(task, "pending", 0, "媒体任务等待执行器资源，稍后将自动重试");
+            }
             log.warn("媒体任务 {} 未进入执行队列：{}", id, error.toString());
         }
     }
@@ -447,12 +485,12 @@ public class MediaToolsService {
         if ("image".equals(kind)) {
             ImageRequest request = objectMapper.treeToValue(root, ImageRequest.class);
             Material source = materials.findById(request.getMaterialId()).orElseThrow(() -> new IllegalArgumentException("素材不存在"));
-            dispatch(id, () -> runImage(id, source, safeMaterialPath(source), request, context(id)));
+            dispatch(id, () -> runImage(id, source, safeMaterialPath(source), request, currentContext(id)));
         } else if ("audio-separate".equals(kind)) {
             Long materialId = root.path("materialId").asLong(0);
-            dispatch(id, () -> runSeparation(id, materialId, context(id)));
+            dispatch(id, () -> runSeparation(id, materialId, currentContext(id)));
         } else if ("video-split".equals(kind)) {
-            dispatch(id, () -> runSplit(id, root.path("materialId").asLong(0), root.path("clipSec").asDouble(3), context(id)));
+            dispatch(id, () -> runSplit(id, root.path("materialId").asLong(0), root.path("clipSec").asDouble(3), currentContext(id)));
         } else if ("subtitle-cover".equals(kind)) {
             CoverRequest request = objectMapper.treeToValue(root, CoverRequest.class);
             Material source = materials.findById(request.getMaterialId()).orElseThrow(() -> new IllegalArgumentException("素材不存在"));
@@ -460,16 +498,31 @@ public class MediaToolsService {
             dispatch(id, () -> runCover(id, source, safeMaterialPath(source), request,
                     source.getFileType() == Material.FileType.image ? 0 : request.getStart() == null ? 0 : request.getStart(),
                     source.getFileType() == Material.FileType.image ? 1 : request.getEnd() == null ? info.getDuration() : request.getEnd(),
-                    context(id)));
+                    currentContext(id)));
         } else if ("video-timeline".equals(kind)) {
             TimelineRequest request = objectMapper.treeToValue(root, TimelineRequest.class);
             Material source = materials.findById(request.getMaterialId()).orElseThrow(() -> new IllegalArgumentException("素材不存在"));
             Path input = safeMaterialPath(source);
             FfmpegTool.MediaInfo info = ffmpeg.probe(input.toString());
-            dispatch(id, () -> runTimeline(id, source, input, request, info, context(id)));
+            dispatch(id, () -> runTimeline(id, source, input, request, info, currentContext(id)));
         } else if ("auto-trim".equals(kind)) {
-            dispatch(id, () -> runAutoTrim(id, root.path("materialId").asLong(0), context(id)));
+            dispatch(id, () -> runAutoTrim(id, root.path("materialId").asLong(0), currentContext(id)));
         } else throw new IllegalArgumentException("不支持恢复的媒体任务类型");
+    }
+
+    private void resetRuntimeForRecovery(String id) {
+        synchronized (lifecycleLock(id)) {
+            Future<?> previous = futures.remove(id);
+            if (previous != null && !previous.isDone()) previous.cancel(true);
+            startedTasks.remove(id);
+            ProcessRegistry.CancellationContext previousContext = cancellationContexts.remove(id);
+            if (previousContext != null) {
+                processRegistry.cancel(previousContext);
+                processRegistry.cleanupOutputs(previousContext);
+                processRegistry.forget(previousContext);
+            }
+            tasks.remove(id);
+        }
     }
 
     private String safeMessage(Exception error) {
@@ -482,8 +535,8 @@ public class MediaToolsService {
         return cancellationContexts.computeIfAbsent(id, processRegistry::create);
     }
 
-    private void checkpoint(String id) {
-        ProcessRegistry.CancellationContext context = context(id);
+    private void checkpoint(String id, ProcessRegistry.CancellationContext workerContext) {
+        ProcessRegistry.CancellationContext context = workerContext == null ? currentContext(id) : workerContext;
         context.throwIfCancelled();
         MediaTask persisted = mediaTaskRepo.findByTaskKey(id).orElse(null);
         if (persisted != null && "cancelled".equals(persisted.getStatus())) {
@@ -498,25 +551,28 @@ public class MediaToolsService {
         return mediaTaskRepo.findByTaskKey(id).map(task -> "cancelled".equals(task.getStatus())).orElse(false);
     }
 
-    private void markCancelled(String id) {
-        Task task = tasks.get(id);
-        if (task != null) {
-            task.setStatus("cancelled");
-            task.setMessage("已取消媒体任务");
-            task.setUpdatedAt(System.currentTimeMillis());
+    private void markCancelled(String id, Task expected) {
+        if (expected == null) return;
+        synchronized (lifecycleLock(id)) {
+            if (tasks.get(id) != expected) return;
+            expected.setStatus("cancelled");
+            expected.setPhase("finished");
+            expected.setErrorCode("MEDIA_CANCELLED");
+            expected.setMessage("已取消媒体任务");
+            expected.setUpdatedAt(System.currentTimeMillis());
+            cleanupTaskOutputs(id);
+            if (tasks.get(id) == expected) persistCancelled(id);
         }
-        cleanupTaskOutputs(id);
-        persistCancelled(id);
     }
 
     private void persistCancelled(String id) {
         mediaTaskRepo.findByTaskKey(id).ifPresent(task -> {
-            if (!"cancelled".equals(task.getStatus())) {
-                task.setStatus("cancelled");
-                task.setMessage("已取消媒体任务");
-                task.setLastActivityAt(LocalDateTime.now());
-                mediaTaskRepo.save(task);
-            }
+            task.setStatus("cancelled");
+            task.setPhase("finished");
+            task.setErrorCode("MEDIA_CANCELLED");
+            task.setMessage("已取消媒体任务");
+            task.setLastActivityAt(LocalDateTime.now());
+            mediaTaskRepo.save(task);
         });
     }
 
@@ -577,20 +633,37 @@ public class MediaToolsService {
                 int staleAfter = Math.max(1, persisted.getStaleAfterSec() == null ? 900 : persisted.getStaleAfterSec());
                 LocalDateTime cutoff = now.minusSeconds(staleAfter);
                 if (persisted.getLastActivityAt() != null && persisted.getLastActivityAt().isAfter(cutoff)) continue;
+                int attempts = persisted.getRetryCount() == null ? 0 : persisted.getRetryCount();
+                if (attempts >= 3) {
+                    persisted.setStatus("failed");
+                    persisted.setPhase("finished");
+                    persisted.setRecoveryState("failed");
+                    persisted.setRecoveryReason("已达到最大恢复次数");
+                    persisted.setErrorCode("MEDIA_RECOVERY_FAILED");
+                    persisted.setError("任务连续失去心跳，超过最大恢复次数");
+                    persisted.setMessage("媒体任务恢复次数已用尽，请检查本机媒体工具或重新提交");
+                    persisted.setLastActivityAt(now);
+                    mediaTaskRepo.save(persisted);
+                    continue;
+                }
                 int claimed = mediaTaskRepo.claimStaleForRecovery(persisted.getTaskKey(), cutoff,
                         "超过任务心跳阈值 " + staleAfter + " 秒", now);
                 if (claimed != 1) continue;
                 persisted.setStatus("pending");
                 persisted.setPhase("recovering");
-                persisted.setRetryCount((persisted.getRetryCount() == null ? 0 : persisted.getRetryCount()) + 1);
+                persisted.setRetryCount(attempts + 1);
                 persisted.setRecoveryState("requeued");
                 persisted.setRecoveryReason("超过任务心跳阈值 " + staleAfter + " 秒");
                 persisted.setMessage("后端服务中断，媒体任务已重新排队");
                 persisted.setLastActivityAt(now);
                 mediaTaskRepo.save(persisted);
+                resetRuntimeForRecovery(persisted.getTaskKey());
             }
             for (MediaTask persisted : mediaTaskRepo.findByStatusOrderByIdAsc("pending")) {
-                if (tasks.containsKey(persisted.getTaskKey())) continue;
+                Future<?> active = futures.get(persisted.getTaskKey());
+                if (active != null && !active.isDone()) continue;
+                if (startedTasks.contains(persisted.getTaskKey())) continue;
+                resetRuntimeForRecovery(persisted.getTaskKey());
                 try { restoreAndDispatch(persisted); }
                 catch (Exception error) {
                     persisted.setStatus("failed");
@@ -658,9 +731,9 @@ public class MediaToolsService {
             update(task, "done", 100, "图片处理完成，原图未覆盖");
             processRegistry.forgetOutput(cancellation, output);
         } catch (java.util.concurrent.CancellationException cancelled) {
-            markCancelled(id);
+            markCancelled(id, task);
         } catch (Exception e) {
-            if (isCancelled(id)) markCancelled(id);
+            if (isCancelled(id)) markCancelled(id, task);
             else failTask(task, "MEDIA_EXECUTION_FAILED", e.getMessage() == null ? "图片处理失败" : e.getMessage());
         }
     }
@@ -676,9 +749,9 @@ public class MediaToolsService {
             setResults(task, List.of(result.getVocals(), result.getInstrumental()));
             update(task, "done", 100, result.getMessage());
         } catch (java.util.concurrent.CancellationException cancelled) {
-            markCancelled(id);
+            markCancelled(id, task);
         } catch (Exception e) {
-            if (isCancelled(id)) markCancelled(id);
+            if (isCancelled(id)) markCancelled(id, task);
             else failTask(task, "MEDIA_EXECUTION_FAILED", e.getMessage() == null ? "音频分离失败" : e.getMessage());
         }
     }
@@ -694,9 +767,9 @@ public class MediaToolsService {
             setResults(task, clips);
             update(task, "done", 100, "视频切段完成，原视频未覆盖");
         } catch (java.util.concurrent.CancellationException cancelled) {
-            markCancelled(id);
+            markCancelled(id, task);
         } catch (Exception e) {
-            if (isCancelled(id)) markCancelled(id);
+            if (isCancelled(id)) markCancelled(id, task);
             else failTask(task, "MEDIA_EXECUTION_FAILED", e.getMessage() == null ? "视频切段失败" : e.getMessage());
         }
     }
@@ -736,9 +809,9 @@ public class MediaToolsService {
             update(task, "done", 100, "字幕遮盖完成（有损处理），原文件未覆盖；无法从烧录字幕恢复原画面");
             processRegistry.forgetOutput(cancellation, output);
         } catch (java.util.concurrent.CancellationException cancelled) {
-            markCancelled(id);
+            markCancelled(id, task);
         } catch (Exception e) {
-            if (isCancelled(id)) markCancelled(id);
+            if (isCancelled(id)) markCancelled(id, task);
             else failTask(task, "MEDIA_EXECUTION_FAILED", e.getMessage() == null ? "字幕遮盖失败" : e.getMessage());
         }
     }
@@ -805,9 +878,9 @@ public class MediaToolsService {
                     "时间线编辑完成：保留 %.1f 秒，%s，%s", outputInfo.getDuration(), audioSummary, sourcePolicySummary));
             processRegistry.forgetOutput(cancellation, output);
         } catch (java.util.concurrent.CancellationException cancelled) {
-            markCancelled(id);
+            markCancelled(id, task);
         } catch (Exception e) {
-            if (isCancelled(id)) markCancelled(id);
+            if (isCancelled(id)) markCancelled(id, task);
             else failTask(task, "MEDIA_EXECUTION_FAILED", e.getMessage() == null ? "时间线编辑失败" : e.getMessage());
         }
     }
@@ -878,9 +951,9 @@ public class MediaToolsService {
             update(task, "done", 100, "静音/废片剪除完成，原视频未覆盖");
             processRegistry.forgetOutput(cancellation, output);
         } catch (java.util.concurrent.CancellationException cancelled) {
-            markCancelled(id);
+            markCancelled(id, task);
         } catch (Exception e) {
-            if (isCancelled(id)) markCancelled(id);
+            if (isCancelled(id)) markCancelled(id, task);
             else failTask(task, "MEDIA_EXECUTION_FAILED", e.getMessage() == null ? "智能剪除失败" : e.getMessage());
         }
     }
@@ -1002,9 +1075,9 @@ public class MediaToolsService {
     }
 
     private void update(Task task, String status, int progress, String message) {
-        if (task == null) return;
+        if (task == null || tasks.get(task.getId()) != task) return;
         if (!"cancelled".equals(status) && isCancelled(task.getId())) {
-            markCancelled(task.getId());
+            markCancelled(task.getId(), task);
             return;
         }
         task.setStatus(status);
@@ -1018,7 +1091,7 @@ public class MediaToolsService {
     private void failTask(Task task, String code, String message) {
         if (task == null) return;
         if (isCancelled(task.getId())) {
-            markCancelled(task.getId());
+            markCancelled(task.getId(), task);
             return;
         }
         task.setErrorCode(code);

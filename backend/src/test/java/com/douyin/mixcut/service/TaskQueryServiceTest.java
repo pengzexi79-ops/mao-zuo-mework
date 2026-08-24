@@ -30,6 +30,18 @@ class TaskQueryServiceTest {
         assertEquals(2, result.get(0).getRetryCount());
     }
 
+    @Test
+    void mediaTaskAtRetryLimitCannotBeRetried() {
+        MediaTaskRepo media = mock(MediaTaskRepo.class);
+        MediaTask task = mediaTask("m-limit");
+        task.setStatus("failed");
+        task.setRetryCount(3);
+        when(media.findTop50ByOrderByIdDesc()).thenReturn(List.of(task));
+        TaskQueryService service = new TaskQueryService(media, mock(MediaGenerationTaskRepo.class), mock(CrawlJobRepo.class), mock(PreparationTaskRepo.class), mock(JobRepo.class));
+
+        assertEquals(false, service.list(10, "media", null).get(0).isCanRetry());
+    }
+
     private MediaTask mediaTask(String key) {
         MediaTask task = new MediaTask(); task.setTaskKey(key); task.setKind("image"); task.setStatus("done"); task.setPhase("finished"); task.setProgress(100); task.setMessage("done"); task.setErrorCode("MEDIA_EXECUTION_FAILED"); task.setRetryCount(2); task.setLastActivityAt(LocalDateTime.now()); return task;
     }
