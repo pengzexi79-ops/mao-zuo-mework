@@ -133,6 +133,42 @@ class FfmpegToolTest {
     }
 
     @Test
+    void duckingReducesBackgroundEnergyComparedWithUnduckedMix() throws Exception {
+        AppProps props = new AppProps();
+        ProcRunner runner = new ProcRunner();
+        assumeTrue(runner.available(props.getFfmpeg(), "-version"), "ffmpeg unavailable; integration test skipped");
+        Path work = Files.createTempDirectory("mixcut-ducking-energy-test-");
+        Path video = work.resolve("video.mp4");
+        Path voice = work.resolve("voice.wav");
+        Path bgm = work.resolve("bgm.wav");
+        Path ducked = work.resolve("ducked.mp4");
+        Path plain = work.resolve("plain.mp4");
+        assertTrue(runner.run(List.of(props.getFfmpeg(), "-y", "-f", "lavfi", "-i",
+                "color=c=black:s=360x640:r=30:d=5", "-an", "-c:v", "libx264", video.toString()), 120).ok());
+        assertTrue(runner.run(List.of(props.getFfmpeg(), "-y", "-f", "lavfi", "-i",
+                "sine=frequency=440:sample_rate=44100:duration=5", "-af", "volume=0.8", voice.toString()), 120).ok());
+        assertTrue(runner.run(List.of(props.getFfmpeg(), "-y", "-f", "lavfi", "-i",
+                "sine=frequency=880:sample_rate=44100:duration=5", "-af", "volume=0.8", bgm.toString()), 120).ok());
+
+        FfmpegTool tool = new FfmpegTool(props, runner);
+        assertTrue(tool.muxAudio(video, voice.toString(), bgm.toString(), 0.22, true, null, 0, 0, 1, 5, ducked));
+        assertTrue(tool.muxAudio(video, voice.toString(), bgm.toString(), 0.22, false, null, 0, 0, 1, 5, plain));
+        String bgmBand = "bandpass=frequency=880:width_type=h:width=40,volumedetect";
+        ProcRunner.Result duckedLevel = runner.run(List.of(props.getFfmpeg(), "-i", ducked.toString(), "-af", bgmBand, "-f", "null", "-"), 120);
+        ProcRunner.Result plainLevel = runner.run(List.of(props.getFfmpeg(), "-i", plain.toString(), "-af", bgmBand, "-f", "null", "-"), 120);
+        assertTrue(duckedLevel.ok(), duckedLevel.out());
+        assertTrue(plainLevel.ok(), plainLevel.out());
+        assertTrue(meanVolume(duckedLevel.out()) < meanVolume(plainLevel.out()),
+                "ducked mean volume should be lower than plain mix");
+    }
+
+    private double meanVolume(String output) {
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("mean_volume:\\s*(-?[0-9.]+) dB").matcher(output);
+        assertTrue(matcher.find(), "volumedetect output missing mean_volume: " + output);
+        return Double.parseDouble(matcher.group(1));
+    }
+
+    @Test
     void originalAudioMixKeepsSourceAudioAndVideoDuration() throws Exception {
         AppProps props = new AppProps();
         ProcRunner runner = new ProcRunner();
