@@ -215,12 +215,19 @@ public class FfmpegTool {
      * 失败或无可读输出时返回空列表，由调用方走均匀切片兜底，绝不抛出异常打断分析流程。
      */
     public List<SceneCut> detectSceneCuts(String file, double threshold) {
+        return detectSceneCuts(file, threshold, ProcessRegistry.CancellationContext.none());
+    }
+
+    public List<SceneCut> detectSceneCuts(String file, double threshold,
+                                          ProcessRegistry.CancellationContext context) {
+        context.throwIfCancelled();
         List<SceneCut> cuts = new ArrayList<>();
         try {
             List<String> cmd = List.of(props.getFfmpeg(), "-hide_banner", "-i", file,
                     "-vf", "select='gt(scene," + trimNum(threshold) + ")',showinfo",
                     "-an", "-f", "null", "-");
-            ProcRunner.Result result = runner.run(cmd, 600);
+            ProcRunner.Result result = runTask(cmd, 600, context);
+            context.throwIfCancelled();
             if (!result.ok()) return cuts;
             Pattern timePattern = Pattern.compile("pts_time:([0-9]+(?:\\.[0-9]+)?)");
             Pattern scorePattern = Pattern.compile("scene_score=([0-9]+(?:\\.[0-9]+)?)");
@@ -248,18 +255,26 @@ public class FfmpegTool {
                     pendingTime = null;
                 }
             }
+        } catch (java.util.concurrent.CancellationException e) {
+            throw e;
         } catch (Exception e) {
             log.warn("scene detection failed for {}: {}", file, e.toString());
             return List.of();
         }
+        context.throwIfCancelled();
         return cuts;
     }
 
     /** Detects long silent sections in the decoded final audio. */
     public AudioQuality audioQuality(Path file) {
+        return audioQuality(file, ProcessRegistry.CancellationContext.none());
+    }
+
+    public AudioQuality audioQuality(Path file, ProcessRegistry.CancellationContext context) {
+        context.throwIfCancelled();
         AudioQuality quality = new AudioQuality();
-        ProcRunner.Result result = runner.run(List.of(props.getFfmpeg(), "-v", "info", "-i", file.toString(),
-                "-af", "silencedetect=noise=-45dB:d=0.5,volumedetect", "-f", "null", "-"), 900);
+        ProcRunner.Result result = runTask(List.of(props.getFfmpeg(), "-v", "info", "-i", file.toString(),
+                "-af", "silencedetect=noise=-45dB:d=0.5,volumedetect", "-f", "null", "-"), 900, context);
         if (!result.ok()) {
             quality.getWarnings().add("音频质检无法读取成片");
             return quality;
@@ -294,7 +309,8 @@ public class FfmpegTool {
         if (volumeMatch.find()) {
             try { quality.setMeanVolumeDb(Double.parseDouble(volumeMatch.group(1))); } catch (Exception ignore) { }
         }
-        MediaInfo info = probe(file.toString());
+        context.throwIfCancelled();
+        MediaInfo info = probe(file.toString(), context);
         if (silenceStart >= 0 && info.getDuration() > silenceStart) {
             quality.setMaxSilenceSec(Math.max(quality.getMaxSilenceSec(), info.getDuration() - silenceStart));
         }
@@ -308,10 +324,16 @@ public class FfmpegTool {
      * flag frozen / near-static sections, keeping the extra detection low-cost.
      */
     public VideoQuality videoQuality(Path file) {
+        return videoQuality(file, ProcessRegistry.CancellationContext.none());
+    }
+
+    public VideoQuality videoQuality(Path file, ProcessRegistry.CancellationContext context) {
+        context.throwIfCancelled();
         VideoQuality quality = new VideoQuality();
-        ProcRunner.Result result = runner.run(List.of(props.getFfmpeg(), "-v", "info", "-i", file.toString(),
+        ProcRunner.Result result = runTask(List.of(props.getFfmpeg(), "-v", "info", "-i", file.toString(),
                 "-vf", "blackdetect=d=0.4:pix_th=0.10,freezedetect=n=0.003:d=1.0,fps=1,signalstats,metadata=print",
-                "-an", "-f", "null", "-"), 900);
+                "-an", "-f", "null", "-"), 900, context);
+        context.throwIfCancelled();
         if (!result.ok()) return quality;
         quality.setReadable(true);
         String out = result.out();
@@ -323,7 +345,7 @@ public class FfmpegTool {
             try { quality.setBlackSec(quality.getBlackSec() + Double.parseDouble(space >= 0 ? value.substring(0, space) : value)); }
             catch (Exception ignore) { }
         }
-        quality.setFrozenSec(frozenSec(out, file));
+        quality.setFrozenSec(frozenSec(out, file, context));
         double[] solid = solidColorSeconds(out);
         quality.setRedMagentaSec(solid[0]);
         quality.setSolidColorSec(solid[1]);
@@ -399,7 +421,7 @@ public class FfmpegTool {
      * end of stream is closed against the probed duration, mirroring the trailing-silence
      * handling in {@link #audioQuality(Path)}.
      */
-    private double frozenSec(String output, Path file) {
+    private double frozenSec(String output, Path file, ProcessRegistry.CancellationContext context) {
         double frozen = 0;
         double freezeStart = -1;
         Pattern startPattern = Pattern.compile("freeze_start:\\s*([0-9.]+)");
@@ -426,7 +448,7 @@ public class FfmpegTool {
             }
         }
         if (freezeStart >= 0) {
-            double duration = probe(file.toString()).getDuration();
+            double duration = probe(file.toString(), context).getDuration();
             if (duration > freezeStart) frozen += duration - freezeStart;
         }
         return frozen;
@@ -598,10 +620,16 @@ public class FfmpegTool {
 
     /** 图片转成一段静帧视频（Ken Burns 轻微推近，避免死板） */
     public boolean imageToClip(String src, double dur, int w, int h, double fps, Path dst) {
-        return imageToClip(src, dur, w, h, fps, false, dst);
+        return imageToClip(src, dur, w, h, fps, false, dst, ProcessRegistry.CancellationContext.none());
     }
 
     public boolean imageToClip(String src, double dur, int w, int h, double fps, boolean preserveAudio, Path dst) {
+        return imageToClip(src, dur, w, h, fps, preserveAudio, dst, ProcessRegistry.CancellationContext.none());
+    }
+
+    public boolean imageToClip(String src, double dur, int w, int h, double fps, boolean preserveAudio, Path dst,
+                               ProcessRegistry.CancellationContext context) {
+        context.throwIfCancelled();
         int frames = Math.max(1, (int) Math.round(dur * fps));
         String vf = String.format(
                 "scale=%d:%d:force_original_aspect_ratio=increase,crop=%d:%d," +
@@ -615,20 +643,29 @@ public class FfmpegTool {
         if (preserveAudio) cmd.addAll(List.of("-map", "0:v:0", "-map", "1:a:0", "-shortest", "-c:a", "aac", "-ar", "44100", "-ac", "2"));
         cmd.addAll(List.of("-c:v", "libx264", "-preset", "veryfast", "-crf", "26",
                 "-video_track_timescale", "90000", dst.toString()));
-        ProcRunner.Result r = runner.run(cmd, 120);
+        ProcRunner.Result r = runTask(cmd, 120, context);
         if (!r.ok()) log.warn("imageToClip failed [{}]: {}", src, tail(r.out()));
+        context.throwIfCancelled();
         return r.ok() && dst.toFile().exists();
     }
 
     /** 纯色垫片（素材不够时兜底，保证时长达标） */
     public boolean colorClip(String color, double dur, int w, int h, double fps, Path dst) {
+        return colorClip(color, dur, w, h, fps, dst, ProcessRegistry.CancellationContext.none());
+    }
+
+    public boolean colorClip(String color, double dur, int w, int h, double fps, Path dst,
+                             ProcessRegistry.CancellationContext context) {
+        context.throwIfCancelled();
         List<String> cmd = List.of(props.getFfmpeg(), "-y",
                 "-f", "lavfi", "-i",
                 String.format("color=c=%s:s=%dx%d:r=%s:d=%s", color, w, h, trimNum(fps), trimNum(dur)),
                 "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
                 "-pix_fmt", "yuv420p", "-video_track_timescale", "90000",
                 dst.toString());
-        return runner.run(cmd, 120).ok();
+        ProcRunner.Result result = runTask(cmd, 120, context);
+        context.throwIfCancelled();
+        return result.ok();
     }
 
     /**
@@ -636,11 +673,11 @@ public class FfmpegTool {
      * 部分来源的 MP4 时间基/P​​TS 不连续，copy concat 可能得到数小时循环或错误时长。
      */
     public boolean concat(Path listFile, Path dst) {
-        return concat(listFile, dst, 30);
+        return concat(listFile, dst, 30, null, false, ProcessRegistry.CancellationContext.none());
     }
 
     public boolean concat(Path listFile, Path dst, double fps) {
-        return concat(listFile, dst, fps, null);
+        return concat(listFile, dst, fps, null, false, ProcessRegistry.CancellationContext.none());
     }
 
     /**
@@ -648,10 +685,16 @@ public class FfmpegTool {
      * subtitleFilter 只接受由 burnText 生成的受控 drawtext 片段，不能传入用户命令行参数。
      */
     public boolean concat(Path listFile, Path dst, double fps, String subtitleFilter) {
-        return concat(listFile, dst, fps, subtitleFilter, false);
+        return concat(listFile, dst, fps, subtitleFilter, false, ProcessRegistry.CancellationContext.none());
     }
 
     public boolean concat(Path listFile, Path dst, double fps, String subtitleFilter, boolean preserveAudio) {
+        return concat(listFile, dst, fps, subtitleFilter, preserveAudio, ProcessRegistry.CancellationContext.none());
+    }
+
+    public boolean concat(Path listFile, Path dst, double fps, String subtitleFilter, boolean preserveAudio,
+                          ProcessRegistry.CancellationContext context) {
+        context.throwIfCancelled();
         String videoFilter = "setpts=PTS-STARTPTS,fps=" + trimNum(fps) + ",format=yuv420p";
         if (subtitleFilter != null && !subtitleFilter.isBlank()) videoFilter += "," + subtitleFilter;
         List<String> cmd = new ArrayList<>(List.of(props.getFfmpeg(), "-y",
@@ -662,7 +705,8 @@ public class FfmpegTool {
         cmd.addAll(List.of("-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
                 "-movflags", "+faststart", "-avoid_negative_ts", "make_zero",
                 "-video_track_timescale", "90000", dst.toString()));
-        ProcRunner.Result result = runner.run(cmd, 1800);
+        ProcRunner.Result result = runTask(cmd, 1800, context);
+        context.throwIfCancelled();
         if (!result.ok()) log.error("concat re-encode failed: {}", tail(result.out()));
         // 短片或纯色垫片可以小于 4KB；最终由 RenderService 的 ffprobe 时长校验决定是否可交付。
         return result.ok() && dst.toFile().exists() && dst.toFile().length() > 1024;
@@ -683,6 +727,11 @@ public class FfmpegTool {
 
     /** Concatenates distinct source audio ranges without looping any source slice. */
     public boolean concatAudioSlices(List<AudioSlice> slices, Path dst) {
+        return concatAudioSlices(slices, dst, ProcessRegistry.CancellationContext.none());
+    }
+
+    public boolean concatAudioSlices(List<AudioSlice> slices, Path dst, ProcessRegistry.CancellationContext context) {
+        context.throwIfCancelled();
         if (slices == null || slices.isEmpty()) return false;
         List<String> cmd = new ArrayList<>(List.of(props.getFfmpeg(), "-y"));
         List<String> filters = new ArrayList<>();
@@ -702,7 +751,8 @@ public class FfmpegTool {
         concat.append("concat=n=").append(usable).append(":v=0:a=1,loudnorm=I=-16:TP=-1.5:LRA=11[aout]");
         filters.add(concat.toString());
         cmd.addAll(List.of("-filter_complex", String.join(";", filters), "-map", "[aout]", "-c:a", "aac", "-b:a", "192k", dst.toString()));
-        ProcRunner.Result result = runner.run(cmd, 900);
+        ProcRunner.Result result = runTask(cmd, 900, context);
+        context.throwIfCancelled();
         if (!result.ok()) log.warn("concatAudioSlices failed: {}", tail(result.out()));
         return result.ok();
     }
@@ -729,6 +779,14 @@ public class FfmpegTool {
     public boolean muxAudio(Path video, String voice, String bgm, double bgmVol, boolean duckBgm,
                             String hookAudio, double hookStartSec, double hookEndSec, double hookVolume,
                             double videoDur, Path dst) {
+        return muxAudio(video, voice, bgm, bgmVol, duckBgm, hookAudio, hookStartSec, hookEndSec, hookVolume,
+                videoDur, dst, ProcessRegistry.CancellationContext.none());
+    }
+
+    public boolean muxAudio(Path video, String voice, String bgm, double bgmVol, boolean duckBgm,
+                            String hookAudio, double hookStartSec, double hookEndSec, double hookVolume,
+                            double videoDur, Path dst, ProcessRegistry.CancellationContext context) {
+        context.throwIfCancelled();
         List<String> cmd = new ArrayList<>();
         cmd.add(props.getFfmpeg());
         cmd.add("-y");
@@ -744,7 +802,7 @@ public class FfmpegTool {
             // 没音频就补静音轨，抖音端无音轨的视频容易被判低质
             cmd.addAll(List.of("-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100"));
             cmd.addAll(List.of("-shortest", "-c:v", "copy", "-c:a", "aac", "-b:a", "128k", dst.toString()));
-            return runner.run(cmd, 600).ok();
+            return runTask(cmd, 600, context).ok();
         }
 
         int idx = 1;
@@ -810,7 +868,8 @@ public class FfmpegTool {
                 "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
                 "-t", trimNum(videoDur),
                 dst.toString()));
-        ProcRunner.Result r = runner.run(cmd, 900);
+        ProcRunner.Result r = runTask(cmd, 900, context);
+        context.throwIfCancelled();
         if (!r.ok()) log.warn("muxAudio failed: {}", tail(r.out()));
         return r.ok();
     }
@@ -818,12 +877,19 @@ public class FfmpegTool {
     /** Preserves normalized source audio and optionally adds a looped BGM track. */
     public boolean muxOriginalAudio(Path video, String bgm, double originalVolume, double bgmVolume,
                                     double videoDur, Path dst) {
+        return muxOriginalAudio(video, bgm, originalVolume, bgmVolume, videoDur, dst,
+                ProcessRegistry.CancellationContext.none());
+    }
+
+    public boolean muxOriginalAudio(Path video, String bgm, double originalVolume, double bgmVolume,
+                                    double videoDur, Path dst, ProcessRegistry.CancellationContext context) {
+        context.throwIfCancelled();
         List<String> cmd = new ArrayList<>(List.of(props.getFfmpeg(), "-y", "-i", video.toString()));
         boolean hasBgm = bgm != null && !bgm.isBlank();
         if (!hasBgm) {
             cmd.addAll(List.of("-map", "0:v:0", "-map", "0:a:0?", "-c:v", "copy", "-c:a", "aac",
                     "-t", trimNum(videoDur), dst.toString()));
-            return runner.run(cmd, 900).ok();
+            return runTask(cmd, 900, context).ok();
         }
         cmd.addAll(List.of("-stream_loop", "-1", "-i", bgm));
         double fadeOutStart = Math.max(0, videoDur - 2);
@@ -834,7 +900,8 @@ public class FfmpegTool {
                 trimNum(originalVolume), trimNum(videoDur), trimNum(bgmVolume), trimNum(fadeOutStart), trimNum(videoDur));
         cmd.addAll(List.of("-filter_complex", filter, "-map", "0:v:0", "-map", "[aout]", "-c:v", "copy", "-c:a", "aac",
                 "-b:a", "192k", "-t", trimNum(videoDur), dst.toString()));
-        ProcRunner.Result run = runner.run(cmd, 900);
+        ProcRunner.Result run = runTask(cmd, 900, context);
+        context.throwIfCancelled();
         if (!run.ok()) log.warn("muxOriginalAudio failed: {}", tail(run.out()));
         return run.ok();
     }
@@ -955,11 +1022,20 @@ public class FfmpegTool {
     /** 烧字幕（drawtext，硬字幕；钩子文案通常需要压在开头 3 秒）。 */
     public boolean burnText(Path video, String text, String fontFile, int fontSize,
                             String color, double from, double to, Path dst) {
+        return burnText(video, text, fontFile, fontSize, color, from, to, dst,
+                ProcessRegistry.CancellationContext.none());
+    }
+
+    public boolean burnText(Path video, String text, String fontFile, int fontSize,
+                            String color, double from, double to, Path dst,
+                            ProcessRegistry.CancellationContext context) {
+        context.throwIfCancelled();
         List<String> cmd = List.of(props.getFfmpeg(), "-y", "-i", video.toString(),
                 "-vf", hookTextFilter(text, fontFile, fontSize, color, from, to),
                 "-c:v", "libx264", "-preset", "medium", "-crf", "18",
                 "-c:a", "copy", dst.toString());
-        ProcRunner.Result r = runner.run(cmd, 900);
+        ProcRunner.Result r = runTask(cmd, 900, context);
+        context.throwIfCancelled();
         if (!r.ok()) log.warn("burnText failed: {}", tail(r.out()));
         return r.ok();
     }
@@ -982,7 +1058,12 @@ public class FfmpegTool {
 
     /** 抽取分析缓存帧；与素材列表缩略图共用受控的 ffmpeg 调用和超时边界。 */
     public boolean analysisFrame(String src, Path dst, double at) {
-        return thumbnail(src, dst, Math.max(0, at));
+        return analysisFrame(src, dst, at, ProcessRegistry.CancellationContext.none());
+    }
+
+    public boolean analysisFrame(String src, Path dst, double at,
+                                 ProcessRegistry.CancellationContext context) {
+        return thumbnail(src, dst, Math.max(0, at), context);
     }
 
     public static String trimNum(double d) {

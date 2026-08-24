@@ -5,6 +5,7 @@ import com.douyin.mixcut.domain.DeliveryQc;
 import com.douyin.mixcut.domain.Material;
 import com.douyin.mixcut.dto.MixParams;
 import com.douyin.mixcut.external.FfmpegTool;
+import com.douyin.mixcut.external.ProcessRegistry;
 import com.douyin.mixcut.repository.MaterialStore;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
@@ -19,6 +20,7 @@ import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CancellationException;
 import java.util.function.Consumer;
 
 /** Renders an already validated edit plan into one locally stored MP4. */
@@ -35,6 +37,8 @@ public class RenderService {
     /** 可选依赖：字段注入且可为空，保证既有单测无需 Spring 容器或数据库。 */
     @Autowired(required = false)
     private DeliveryQcService deliveryQc;
+    @Autowired(required = false)
+    private ProcessRegistry processRegistry;
 
     @Data
     public static class RenderResult {
@@ -52,12 +56,22 @@ public class RenderService {
     }
 
     public RenderResult render(MixPlanner.Plan plan, MixParams params, String outName, Consumer<String> onStep) {
-        return render(plan, params, outName, onStep, java.time.Instant.now().plusSeconds(1800));
+        return render(plan, params, outName, onStep, java.time.Instant.now().plusSeconds(1800), ProcessRegistry.CancellationContext.none());
     }
 
     public RenderResult render(MixPlanner.Plan plan, MixParams params, String outName, Consumer<String> onStep,
                                java.time.Instant deadline) {
+        return render(plan, params, outName, onStep, deadline, ProcessRegistry.CancellationContext.none());
+    }
+
+    public RenderResult render(MixPlanner.Plan plan, MixParams params, String outName, Consumer<String> onStep,
+                               java.time.Instant deadline, ProcessRegistry.CancellationContext context) {
         RenderResult result = new RenderResult();
+        ProcessRegistry.CancellationContext renderContext = context == null ? ProcessRegistry.CancellationContext.none() : context;
+        if (renderContext.isCancelled()) {
+            result.setError("渲染已取消：任务上下文已失效");
+            return result;
+        }
         MixParams p = params.normalized();
         if (!plan.isUsable()) {
             result.setError("剪辑计划未达到交付下限：" + String.join("；", plan.getNotes()));
@@ -67,10 +81,12 @@ public class RenderService {
             result.setError("没有可覆盖全片的音轨：钩子音频只覆盖开头，不能替代 BGM或口播。请指定任意可读音频作为 BGM、导入口播，或明确选择保留原片声音/AI 人声；已在切片前停止渲染");
             return result;
         }
+        renderContext.throwIfCancelled();
         if (!ffmpeg.ffmpegAvailable()) {
             result.setError("找不到 ffmpeg。请安装并把 ffmpeg/ffprobe 加入 PATH。");
             return result;
         }
+        renderContext.throwIfCancelled();
 
         double expectedDuration = sumPlanDuration(plan);
         if (expectedDuration < 1 || expectedDuration > p.getMaxSec() + durationTolerance(expectedDuration)) {
@@ -78,7 +94,13 @@ public class RenderService {
                     + "s，允许上限 " + p.getMaxSec() + "s；已拒绝渲染");
             return result;
         }
-        String audioCoverageError = audioCoverageError(plan, p, expectedDuration);
+        String audioCoverageError;
+        try {
+            audioCoverageError = audioCoverageError(plan, p, expectedDuration, renderContext);
+        } catch (CancellationException e) {
+            result.setError("渲染已取消：任务上下文已失效");
+            return result;
+        }
         if (audioCoverageError != null) {
             result.setError(audioCoverageError);
             return result;
@@ -118,14 +140,14 @@ public class RenderService {
 
                 boolean cutOk = "image".equals(segment.getKind())
                         ? ffmpeg.imageToClip(segment.getFilePath(), segment.getDuration(),
-                        p.getWidth(), p.getHeight(), p.getFps(), keepAudio, clip)
+                        p.getWidth(), p.getHeight(), p.getFps(), keepAudio, clip, renderContext)
                         : ffmpeg.cutNormalize(segment.getFilePath(), segment.getSourceStart(), segment.getDuration(),
-                        p.getWidth(), p.getHeight(), p.getFps(), keepAudio, clip);
+                        p.getWidth(), p.getHeight(), p.getFps(), keepAudio, clip, renderContext);
                 if (!cutOk) {
                     result.getWarnings().add("片段跳过：" + segment.getMaterialName() + "，FFmpeg 切片失败");
                     continue;
                 }
-                FfmpegTool.MediaInfo info = ffmpeg.probe(clip.toString());
+                FfmpegTool.MediaInfo info = ffmpeg.probe(clip.toString(), renderContext);
                 if (!isUsableClip(info, segment.getDuration(), p)) {
                     result.getWarnings().add("片段跳过：" + segment.getMaterialName() + "，实际时长 "
                             + FfmpegTool.trimNum(info.getDuration()) + "s 或画面规格异常");
@@ -199,15 +221,15 @@ public class RenderService {
             Files.writeString(listFile, list.toString(), StandardCharsets.UTF_8);
             Path silent = work.resolve("silent.mp4");
             boolean hasSubtitles = subtitleFilter != null && !subtitleFilter.isBlank();
-            boolean burnedInConcat = hasSubtitles && ffmpeg.concat(listFile, silent, p.getFps(), subtitleFilter, preserveOriginalAudio);
-            if (!burnedInConcat && !ffmpeg.concat(listFile, silent, p.getFps(), null, preserveOriginalAudio)) {
+            boolean burnedInConcat = hasSubtitles && ffmpeg.concat(listFile, silent, p.getFps(), subtitleFilter, preserveOriginalAudio, renderContext);
+            if (!burnedInConcat && !ffmpeg.concat(listFile, silent, p.getFps(), null, preserveOriginalAudio, renderContext)) {
                 result.setError("视频拼接失败，请查看后端 FFmpeg 日志");
                 return result;
             }
             if (burnRequested && !burnedInConcat) {
                 result.getWarnings().add("拼接阶段字幕烧录失败，已在混音后尝试兼容烧录");
             }
-            double silentDuration = requiredDuration(silent, "拼接输出", result);
+            double silentDuration = requiredDuration(silent, "拼接输出", result, renderContext);
             if (silentDuration <= 0) return result;
             if (silentDuration > expectedDuration + durationTolerance(expectedDuration)) {
                 result.setError(durationError("拼接输出", silentDuration, expectedDuration));
@@ -231,7 +253,7 @@ public class RenderService {
             double audioDuration = silentDuration;
             if (silentOutput) {
                 step(onStep, "静音封装中 · " + FfmpegTool.trimNum(silentDuration) + "s");
-                FfmpegTool.MediaInfo silentInfo = ffmpeg.probe(current.toString());
+                FfmpegTool.MediaInfo silentInfo = ffmpeg.probe(current.toString(), renderContext);
                 if (silentInfo.isHasAudio()) {
                     result.setError("静音模式封装异常：输出仍包含音频流");
                     return result;
@@ -245,24 +267,24 @@ public class RenderService {
                     List<FfmpegTool.AudioSlice> slices = plan.getVoiceSegments().stream()
                             .map(segment -> new FfmpegTool.AudioSlice(segment.getFilePath(), segment.getSourceStart(), segment.getDuration()))
                             .toList();
-                    if (!ffmpeg.concatAudioSlices(slices, scheduledVoice)) {
+                    if (!ffmpeg.concatAudioSlices(slices, scheduledVoice, renderContext)) {
                         result.setError("音频阶段失败：多段口播无法按时间线拼接，已拒绝回退为单段循环");
                         return result;
                     }
                     voicePath = scheduledVoice.toString();
                 }
                 boolean muxed = preserveOriginalAudio
-                        ? ffmpeg.muxOriginalAudio(silent, plan.getBgmPath(), p.getOriginalAudioVolume(), p.getBgmVolume(), silentDuration, withAudio)
+                        ? ffmpeg.muxOriginalAudio(silent, plan.getBgmPath(), p.getOriginalAudioVolume(), p.getBgmVolume(), silentDuration, withAudio, renderContext)
                         : ffmpeg.muxAudio(silent, voicePath, plan.getBgmPath(),
                         p.getBgmVolume(), Boolean.TRUE.equals(plan.getDuckBgm()), plan.getHookAudioPath(),
-                        hookStart, hookEnd, p.getHookAudioVolume(), silentDuration, withAudio);
+                        hookStart, hookEnd, p.getHookAudioVolume(), silentDuration, withAudio, renderContext);
                 if (!muxed) {
                     result.setError("音频阶段失败：无法生成可播放的混音轨，请更换可读 BGM/口播或选择保留原片声音");
                     result.getWarnings().add("混音失败，静音中间文件仅保留用于诊断，不进入最终成片");
                     return result;
                 }
                 current = withAudio;
-                audioDuration = requiredDuration(current, "混音输出", result);
+                audioDuration = requiredDuration(current, "混音输出", result, renderContext);
                 if (audioDuration <= 0 || !durationMatches(audioDuration, expectedDuration)) {
                     if (audioDuration > 0) result.setError(durationError("混音输出", audioDuration, expectedDuration));
                     return result;
@@ -280,20 +302,23 @@ public class RenderService {
                 double fallbackHookStart = Math.min(audioDuration, hookStart);
                 double fallbackHookEnd = Math.min(audioDuration, Math.max(fallbackHookStart + 0.2, hookEnd));
                 if (ffmpeg.burnText(current, plan.getHookText(), resolveFont(p), p.getHookFontSize(),
-                        p.getHookFontColor(), fallbackHookStart, fallbackHookEnd, burnedPath)) {
+                        p.getHookFontColor(), fallbackHookStart, fallbackHookEnd, burnedPath, renderContext)) {
                     current = burnedPath;
                     burned = true;
                 } else {
                     result.getWarnings().add("字幕烧录失败，已输出无字幕版本");
                 }
             }
-            double finalDurationBeforeMove = requiredDuration(current, burned ? "字幕输出" : "最终输出", result);
+            double finalDurationBeforeMove = requiredDuration(current, burned ? "字幕输出" : "最终输出", result, renderContext);
             if (finalDurationBeforeMove <= 0 || !durationMatches(finalDurationBeforeMove, expectedDuration)) {
                 if (finalDurationBeforeMove > 0) result.setError(durationError("最终输出", finalDurationBeforeMove, expectedDuration));
                 return result;
             }
+            if (processRegistry != null) processRegistry.registerOutput(renderContext, finalPath, props.output());
+            renderContext.throwIfCancelled();
             Files.move(current, finalPath, StandardCopyOption.REPLACE_EXISTING);
-            double finalDuration = requiredDuration(finalPath, "成片", result);
+            renderContext.throwIfCancelled();
+            double finalDuration = requiredDuration(finalPath, "成片", result, renderContext);
             if (finalDuration <= 0 || !durationMatches(finalDuration, expectedDuration)) {
                 Files.deleteIfExists(finalPath);
                 if (finalDuration > 0) result.setError(durationError("成片", finalDuration, expectedDuration));
@@ -303,13 +328,14 @@ public class RenderService {
                     || Boolean.TRUE.equals(p.getBurnAiVoiceCaptions()));
             boolean subtitlesBurned = captionsFilter != null && !captionsFilter.isBlank();
             if (!passesDeliveryQuality(plan, p, finalPath, finalDuration, result, burned,
-                    subtitlesRequested, subtitlesBurned, allCaptions.size())) {
-                retainQcCandidate(finalPath, result);
+                    subtitlesRequested, subtitlesBurned, allCaptions.size(), renderContext)) {
+                retainQcCandidate(finalPath, result, renderContext);
                 return result;
             }
 
             Path thumbnail = props.thumbs().resolve(finalPath.getFileName().toString().replace(".mp4", ".jpg"));
-            if (ffmpeg.thumbnail(finalPath.toString(), thumbnail, Math.min(1.0, Math.max(0, finalDuration / 3)))) {
+            if (ffmpeg.thumbnail(finalPath.toString(), thumbnail, Math.min(1.0, Math.max(0, finalDuration / 3)), renderContext)) {
+                if (processRegistry != null) processRegistry.registerOutput(renderContext, thumbnail, props.thumbs());
                 result.setThumbnail("/files/thumbs/" + thumbnail.getFileName());
             }
             result.setOk(true);
@@ -317,6 +343,9 @@ public class RenderService {
             result.setPublicUrl("/files/output/" + finalPath.getFileName());
             result.setDurationSec(finalDuration);
             step(onStep, "完成 · " + FfmpegTool.trimNum(finalDuration) + "s 已通过时长校验");
+            return result;
+        } catch (CancellationException e) {
+            result.setError("渲染已取消：" + (e.getMessage() == null ? "任务上下文已失效" : e.getMessage()));
             return result;
         } catch (Exception e) {
             log.error("render failed", e);
@@ -328,14 +357,15 @@ public class RenderService {
     }
 
     /** Reject audio that would inevitably become a long silent tail before any video work begins. */
-    private String audioCoverageError(MixPlanner.Plan plan, MixParams params, double videoDuration) {
+    private String audioCoverageError(MixPlanner.Plan plan, MixParams params, double videoDuration,
+                                      ProcessRegistry.CancellationContext context) {
         if (!plan.isRequiresExternalAudio() || "original".equalsIgnoreCase(params.getAudioMode())) return null;
         if (!isBlank(plan.getBgmPath())) return null; // BGM is looped by the mixer.
         if (isBlank(plan.getVoicePath())) {
             return "没有可覆盖全片的音轨：请指定任意可读音频作为 BGM，或选择保留原片声音；已在切片前停止渲染";
         }
         double voiceDuration = plan.getVoiceDurationSec();
-        FfmpegTool.MediaInfo info = ffmpeg.probe(plan.getVoicePath());
+        FfmpegTool.MediaInfo info = ffmpeg.probe(plan.getVoicePath(), context);
         if (info != null && info.isHasAudio() && info.getAudioDuration() > 0) voiceDuration = info.getAudioDuration();
         if (voiceDuration + 0.5 < videoDuration) {
             double silentTail = Math.max(0, videoDuration - voiceDuration);
@@ -423,7 +453,12 @@ public class RenderService {
     }
 
     private double requiredDuration(Path file, String stage, RenderResult result) {
-        FfmpegTool.MediaInfo info = ffmpeg.probe(file.toString());
+        return requiredDuration(file, stage, result, ProcessRegistry.CancellationContext.none());
+    }
+
+    private double requiredDuration(Path file, String stage, RenderResult result,
+                                    ProcessRegistry.CancellationContext context) {
+        FfmpegTool.MediaInfo info = ffmpeg.probe(file.toString(), context);
         if (!info.isHasVideo() || info.getDuration() <= 0) {
             result.setError(stage + "不可读取或时长为 0，已拒绝输出");
             return 0;
@@ -432,18 +467,24 @@ public class RenderService {
     }
 
     /** 将失败候选移出最终输出目录，仅供版本诊断与修复比较，不生成 publicUrl。 */
-    private void retainQcCandidate(Path finalPath, RenderResult result) {
+    private void retainQcCandidate(Path finalPath, RenderResult result,
+                                    ProcessRegistry.CancellationContext context) {
+        Path candidate = null;
         try {
             Path candidates = props.cache().resolve("qc-candidates");
             Files.createDirectories(candidates);
-            Path candidate = candidates.resolve(finalPath.getFileName().toString().replace(".mp4", "")
+            candidate = candidates.resolve(finalPath.getFileName().toString().replace(".mp4", "")
                     + "-qc-" + UUID.randomUUID().toString().substring(0, 8) + ".mp4");
+            if (processRegistry != null) processRegistry.registerOutput(context, candidate, props.cache());
+            context.throwIfCancelled();
             Files.move(finalPath, candidate, StandardCopyOption.REPLACE_EXISTING);
+            context.throwIfCancelled();
             result.setFilePath(candidate.toString());
-            result.setDurationSec(ffmpeg.probe(candidate.toString()).getDuration());
+            result.setDurationSec(ffmpeg.probe(candidate.toString(), context).getDuration());
             result.getWarnings().add("成片候选未通过质检，已隔离保存用于修复比较，不可下载或交付");
         } catch (Exception e) {
             try { Files.deleteIfExists(finalPath); } catch (Exception ignored) { }
+            try { if (candidate != null) Files.deleteIfExists(candidate); } catch (Exception ignored) { }
             result.getWarnings().add("质检失败候选清理完成：" + e.getClass().getSimpleName());
         }
     }
@@ -451,10 +492,11 @@ public class RenderService {
     /** Final delivery gate: build the explainable six-dimension QC report and block hard audio/video failures. */
     private boolean passesDeliveryQuality(MixPlanner.Plan plan, MixParams params, Path file, double videoDuration,
                                           RenderResult result, boolean hookBurned,
-                                          boolean subtitlesRequested, boolean subtitlesBurned, int subtitleCount) {
-        FfmpegTool.MediaInfo info = ffmpeg.probe(file.toString());
-        FfmpegTool.AudioQuality audioQuality = ffmpeg.audioQuality(file);
-        FfmpegTool.VideoQuality videoQuality = ffmpeg.videoQuality(file);
+                                          boolean subtitlesRequested, boolean subtitlesBurned, int subtitleCount,
+                                          ProcessRegistry.CancellationContext context) {
+        FfmpegTool.MediaInfo info = ffmpeg.probe(file.toString(), context);
+        FfmpegTool.AudioQuality audioQuality = ffmpeg.audioQuality(file, context);
+        FfmpegTool.VideoQuality videoQuality = ffmpeg.videoQuality(file, context);
 
         DeliveryQc report = deliveryQc != null
                 ? deliveryQc.assess(plan, params, videoDuration, info, audioQuality, videoQuality,

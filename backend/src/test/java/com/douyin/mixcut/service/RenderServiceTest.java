@@ -2,6 +2,7 @@ package com.douyin.mixcut.service;
 
 import com.douyin.mixcut.dto.MixParams;
 import com.douyin.mixcut.external.FfmpegTool;
+import com.douyin.mixcut.external.ProcessRegistry;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -69,6 +70,19 @@ class RenderServiceTest {
         segment.setDuration(duration);
         plan.getSegments().add(segment);
         return plan;
+    }
+
+    @Test
+    void cancelledRenderReturnsUnifiedCancellationErrorBeforeMediaWork() {
+        ProcessRegistry registry = new ProcessRegistry();
+        ProcessRegistry.CancellationContext context = registry.create("job:test-cancel");
+        registry.cancel(context);
+        RenderService.RenderResult result = new RenderService(null, null, null, null)
+                .render(usablePlan(50), new MixParams(), "unused", step -> { },
+                        java.time.Instant.now().plusSeconds(30), context);
+
+        assertFalse(result.isOk());
+        assertTrue(result.getError().contains("渲染已取消"));
     }
 
     @Test
