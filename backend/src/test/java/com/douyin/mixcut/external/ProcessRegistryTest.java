@@ -53,6 +53,21 @@ class ProcessRegistryTest {
     }
 
     @Test
+    void lateOutputRegistrationAfterCancellationDeletesTheOutput() throws Exception {
+        ProcessRegistry registry = new ProcessRegistry();
+        ProcessRegistry.CancellationContext context = registry.create("task-late-output");
+        Path root = temp.resolve("late-output");
+        Path output = root.resolve("late.mp4");
+        Files.createDirectories(root);
+        Files.writeString(output, "late");
+
+        registry.cancel(context);
+
+        assertFalse(registry.registerOutput(context, output, root));
+        assertFalse(Files.exists(output));
+    }
+
+    @Test
     void cleanupOnlyDeletesRegisteredDescendantAndKeepsSourceOutsideRoot() throws Exception {
         ProcessRegistry registry = new ProcessRegistry();
         ProcessRegistry.CancellationContext context = registry.create("task-output");

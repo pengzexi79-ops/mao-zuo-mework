@@ -370,6 +370,7 @@ public class JobService {
             job.setError(null);
             heartbeat(job, appliedAction == null ? "继续排队" : "已应用推荐修复");
             jobRepo.save(job);
+            replaceProcessContext(jobId);
             dispatch(jobId);
         });
     }
@@ -1831,6 +1832,12 @@ public class JobService {
         return renderContexts.compute(jobId, (id, current) -> current == null
                 ? processRegistry.create("job:" + id)
                 : current.isCancelled() ? processRegistry.replace("job:" + id) : current);
+    }
+
+    /** Starts a resumed execution generation without allowing an awaiting worker to reuse its context. */
+    private void replaceProcessContext(Long jobId) {
+        if (processRegistry == null || jobId == null) return;
+        renderContexts.compute(jobId, (id, current) -> processRegistry.replace("job:" + id));
     }
 
     private void cancelProcessContext(Long jobId) {

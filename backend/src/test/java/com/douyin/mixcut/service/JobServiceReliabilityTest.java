@@ -91,6 +91,22 @@ class JobServiceReliabilityTest {
     }
 
     @Test
+    void resumeStartsFreshProcessContextForAwaitingDecisionGeneration() {
+        Job job = runningJob(12L, 900, 7200);
+        job.setStatus(JobStatus.awaiting_decision.name());
+        when(jobRepo.findById(12L)).thenReturn(Optional.of(job));
+        ProcessRegistry.CancellationContext previous = new ProcessRegistry().create("job:12");
+        ProcessRegistry.CancellationContext fresh = new ProcessRegistry().create("job:12-fresh");
+        when(processRegistry.replace("job:12")).thenReturn(fresh);
+        ReflectionTestUtils.setField(service, "renderContexts", new java.util.concurrent.ConcurrentHashMap<>(java.util.Map.of(12L, previous)));
+
+        service.resume(12L);
+
+        verify(processRegistry).replace("job:12");
+        verify(jobRepo).save(job);
+    }
+
+    @Test
     void watchdogDistinguishesTotalTimeout() {
         Job job = runningJob(9L, 7200, 60);
         job.setCreatedAt(LocalDateTime.now().minusSeconds(120));

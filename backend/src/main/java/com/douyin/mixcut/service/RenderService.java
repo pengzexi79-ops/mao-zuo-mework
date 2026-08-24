@@ -98,6 +98,7 @@ public class RenderService {
         try {
             audioCoverageError = audioCoverageError(plan, p, expectedDuration, renderContext);
         } catch (CancellationException e) {
+            if (processRegistry != null) processRegistry.cleanupOutputs(renderContext);
             result.setError("渲染已取消：任务上下文已失效");
             return result;
         }
@@ -334,8 +335,16 @@ public class RenderService {
             }
 
             Path thumbnail = props.thumbs().resolve(finalPath.getFileName().toString().replace(".mp4", ".jpg"));
-            if (ffmpeg.thumbnail(finalPath.toString(), thumbnail, Math.min(1.0, Math.max(0, finalDuration / 3)), renderContext)) {
-                if (processRegistry != null) processRegistry.registerOutput(renderContext, thumbnail, props.thumbs());
+            Path thumbnailWork = work.resolve("thumbnail.jpg");
+            if (ffmpeg.thumbnail(finalPath.toString(), thumbnailWork,
+                    Math.min(1.0, Math.max(0, finalDuration / 3)), renderContext)) {
+                renderContext.throwIfCancelled();
+                Files.move(thumbnailWork, thumbnail, StandardCopyOption.REPLACE_EXISTING);
+                if (processRegistry != null) {
+                    boolean registered = processRegistry.registerOutput(renderContext, thumbnail, props.thumbs());
+                    if (renderContext.isTracked() && !registered) renderContext.throwIfCancelled();
+                }
+                renderContext.throwIfCancelled();
                 result.setThumbnail("/files/thumbs/" + thumbnail.getFileName());
             }
             result.setOk(true);
@@ -345,6 +354,7 @@ public class RenderService {
             step(onStep, "完成 · " + FfmpegTool.trimNum(finalDuration) + "s 已通过时长校验");
             return result;
         } catch (CancellationException e) {
+            if (processRegistry != null) processRegistry.cleanupOutputs(renderContext);
             result.setError("渲染已取消：" + (e.getMessage() == null ? "任务上下文已失效" : e.getMessage()));
             return result;
         } catch (Exception e) {
