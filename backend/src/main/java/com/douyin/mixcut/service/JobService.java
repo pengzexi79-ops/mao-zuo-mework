@@ -4,11 +4,13 @@ import com.douyin.mixcut.config.AppProps;
 import com.douyin.mixcut.domain.*;
 import com.douyin.mixcut.dto.MixParams;
 import com.douyin.mixcut.external.FfmpegTool;
+import com.douyin.mixcut.external.ProcessRegistry;
 import com.douyin.mixcut.repository.MaterialStore;
 import com.douyin.mixcut.repository.Repositories.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -66,6 +68,9 @@ public class JobService {
 
     @Qualifier("renderExecutor")
     private final Executor renderExecutor;
+    @Autowired(required = false)
+    private ProcessRegistry processRegistry;
+    private final Map<Long, ProcessRegistry.CancellationContext> renderContexts = new ConcurrentHashMap<>();
 
     /** 运行中任务的实时步骤描述（不落库，避免高频写库）。 */
     private final Map<Long, String> liveStep = new ConcurrentHashMap<>();
@@ -198,12 +203,18 @@ public class JobService {
                     int changed = jobRepo.failStaleRunningJob(job.getId(), "任务心跳超时",
                             "heartbeat_timeout：任务无活动超过 " + staleLimit + " 秒；外部渲染不会被强行中断，迟到结果将被丢弃。", now,
                             now.minusSeconds(staleLimit));
-                    if (changed > 0) liveStep.remove(job.getId());
+                    if (changed > 0) {
+                        cancelProcessContext(job.getId());
+                        liveStep.remove(job.getId());
+                    }
                 } else if (totalSec >= timeoutLimit) {
                     int changed = jobRepo.failTimedOutRunningJob(job.getId(), "任务总时限超时",
                             "job_timeout：任务执行超过 " + timeoutLimit + " 秒；外部渲染不会被强行中断，迟到结果将被丢弃。", now,
                             now.minusSeconds(timeoutLimit));
-                    if (changed > 0) liveStep.remove(job.getId());
+                    if (changed > 0) {
+                        cancelProcessContext(job.getId());
+                        liveStep.remove(job.getId());
+                    }
                 }
             }
         } catch (org.springframework.dao.DataAccessException ignored) {
@@ -290,6 +301,7 @@ public class JobService {
     private void safeRun(Long jobId, ExecutionLease lease) {
         if (lease == null) return;
         workerLease.set(lease);
+        ProcessRegistry.CancellationContext context = processContext(jobId);
         try {
             runJob(jobId);
         } catch (Throwable t) {
@@ -307,6 +319,11 @@ public class JobService {
             liveStep.remove(jobId);
             livePhaseProgress.remove(jobId);
             cancelled.remove(jobId);
+            ProcessRegistry.CancellationContext finishedContext = renderContexts.get(jobId);
+            if (finishedContext == context && renderContexts.remove(jobId, context) && processRegistry != null) {
+                if (finishedContext.isCancelled()) processRegistry.cleanupOutputs(finishedContext);
+                processRegistry.forget(finishedContext);
+            }
             workerLease.remove();
         }
     }
@@ -321,7 +338,10 @@ public class JobService {
                     List.of(JobStatus.pending.name(), JobStatus.running.name(), JobStatus.paused.name(), JobStatus.awaiting_decision.name()),
                     completed, progress(completed, totalFor(current)),
                     wasPending ? "已取消，尚未开始渲染" : "已取消；当前外部渲染步骤结束后不会继续下一条", LocalDateTime.now());
-            if (changed > 0) liveStep.remove(jobId);
+            if (changed > 0) {
+                cancelProcessContext(jobId);
+                liveStep.remove(jobId);
+            }
         });
     }
 
@@ -329,9 +349,10 @@ public class JobService {
         jobRepo.findById(jobId).ifPresent(current -> {
             if (isTerminal(current.getStatus())) throw new IllegalArgumentException("已结束的任务不能暂停");
             int completed = successfulIndexes(jobId, Integer.MAX_VALUE).size();
-            jobRepo.transitionPaused(jobId, List.of(JobStatus.pending.name(), JobStatus.running.name()),
+            int changed = jobRepo.transitionPaused(jobId, List.of(JobStatus.pending.name(), JobStatus.running.name()),
                     completed, progress(completed, totalFor(current)),
                     "正在暂停：当前条完成后会保留成片；已完成 " + completed + " 条", LocalDateTime.now());
+            if (changed > 0 && JobStatus.running.name().equals(current.getStatus())) cancelProcessContext(jobId);
         });
     }
 
@@ -577,6 +598,7 @@ public class JobService {
                     if (saveOutputIfAbsent(jobId, idx, result, plan.segmentKeys(), attempt.retries,
                             plan.getHookStrategy(), buildDowngradeInfo(plan, result, attempt.retries),
                             buildUsedMaterials(plan), result.getQcJson())) {
+                        forgetPersistedRenderOutputs(result, processContext(jobId));
                         usedSegments.addAll(plan.segmentKeys());
                         recordBatchAudioUsage(params.getRecentAudioUsage(), plan, warnings, idx);
                         recordBatchReuse(batchReuseUsage, plan);
@@ -814,7 +836,7 @@ public class JobService {
                 String outName = String.format("%s_%d_%02d_v%d_%d", itemParams.getNamePrefix(), jobId, idx,
                         attempt + 1, System.currentTimeMillis() % 100000);
                 result = renderService.render(plan, itemParams, outName,
-                        step -> updateStep(jobId, idx, total, step), deadline);
+                        step -> updateStep(jobId, idx, total, step), deadline, processContext(jobId));
             }
             finalizeOutputVersion(version, plan, result);
             if (result.isOk()) {
@@ -1179,11 +1201,30 @@ public class JobService {
     }
 
     private void discardRenderResult(RenderService.RenderResult result) {
-        if (result == null || result.getFilePath() == null || result.getFilePath().isBlank()) return;
+        if (result == null) return;
         try {
-            Files.deleteIfExists(Path.of(result.getFilePath()));
+            if (result.getFilePath() != null && !result.getFilePath().isBlank()) {
+                Files.deleteIfExists(Path.of(result.getFilePath()));
+            }
+            if (result.getThumbnail() != null && !result.getThumbnail().isBlank()) {
+                String name = result.getThumbnail().replace('\\', '/').substring(result.getThumbnail().lastIndexOf('/') + 1);
+                if (!name.isBlank()) Files.deleteIfExists(props.thumbs().resolve(name).normalize());
+            }
         } catch (Exception e) {
             log.warn("cannot discard output after terminal job state: {}", e.toString());
+        }
+    }
+
+    private void forgetPersistedRenderOutputs(RenderService.RenderResult result,
+                                              ProcessRegistry.CancellationContext context) {
+        if (processRegistry == null || result == null || context == null || !context.isTracked()) return;
+        if (result.getFilePath() != null && !result.getFilePath().isBlank()) {
+            processRegistry.forgetOutput(context, Path.of(result.getFilePath()));
+        }
+        if (result.getThumbnail() != null && !result.getThumbnail().isBlank()) {
+            String name = result.getThumbnail().replace('\\', '/');
+            name = name.substring(name.lastIndexOf('/') + 1);
+            if (!name.isBlank()) processRegistry.forgetOutput(context, props.thumbs().resolve(name));
         }
     }
 
@@ -1355,6 +1396,7 @@ public class JobService {
                 if (result.isOk() && saveOutputIfAbsent(jobId, idx, result, plan.segmentKeys(), attempt.retries,
                         plan.getHookStrategy(), buildDowngradeInfo(plan, result, attempt.retries),
                         buildUsedMaterials(plan), result.getQcJson())) {
+                    forgetPersistedRenderOutputs(result, processContext(jobId));
                     usedSegments.addAll(plan.segmentKeys());
                     recordBatchAudioUsage(params.getRecentAudioUsage(), plan, new ArrayList<>(), idx);
                     recordBatchReuse(batchReuseUsage, plan);
@@ -1782,6 +1824,21 @@ public class JobService {
         if (step.contains("字幕")) return 88;
         if (step.contains("完成")) return 100;
         return 10;
+    }
+
+    private ProcessRegistry.CancellationContext processContext(Long jobId) {
+        if (processRegistry == null || jobId == null) return ProcessRegistry.CancellationContext.none();
+        return renderContexts.compute(jobId, (id, current) -> current == null
+                ? processRegistry.create("job:" + id)
+                : current.isCancelled() ? processRegistry.replace("job:" + id) : current);
+    }
+
+    private void cancelProcessContext(Long jobId) {
+        ProcessRegistry.CancellationContext context = renderContexts.get(jobId);
+        if (context != null && processRegistry != null) {
+            processRegistry.cancel(context);
+            processRegistry.cleanupOutputs(context);
+        }
     }
 
     private boolean ownsLease(Job job) {

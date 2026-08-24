@@ -33,6 +33,26 @@ class ProcessRegistryTest {
     }
 
     @Test
+    void replacementKeepsGenerationsOutputCleanupIsolated() throws Exception {
+        ProcessRegistry registry = new ProcessRegistry();
+        ProcessRegistry.CancellationContext first = registry.create("task-generation");
+        Path root = temp.resolve("generation");
+        Path firstOutput = root.resolve("first.mp4");
+        Files.createDirectories(root);
+        Files.writeString(firstOutput, "first");
+        assertTrue(registry.registerOutput(first, firstOutput, root));
+
+        ProcessRegistry.CancellationContext second = registry.replace("task-generation");
+        Path secondOutput = root.resolve("second.mp4");
+        Files.writeString(secondOutput, "second");
+        assertTrue(registry.registerOutput(second, secondOutput, root));
+
+        registry.cleanupOutputs(first);
+        assertTrue(Files.exists(secondOutput));
+        assertFalse(Files.exists(firstOutput));
+    }
+
+    @Test
     void cleanupOnlyDeletesRegisteredDescendantAndKeepsSourceOutsideRoot() throws Exception {
         ProcessRegistry registry = new ProcessRegistry();
         ProcessRegistry.CancellationContext context = registry.create("task-output");
