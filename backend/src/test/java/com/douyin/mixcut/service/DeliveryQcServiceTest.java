@@ -136,6 +136,19 @@ class DeliveryQcServiceTest {
     }
 
     @Test
+    void failsOnExtremelyLowMeasuredLoudness() {
+        FfmpegTool.AudioQuality audio = goodAudio();
+        audio.setMeanVolumeDb(-72.0);
+
+        DeliveryQc report = service.assess(planWithOneSegment(), new MixParams(), 90,
+                goodInfo(), audio, goodVideo(), true, false, false, 0);
+
+        assertEquals("fail", report.getStatus());
+        assertTrue(report.getCategories().stream().flatMap(category -> category.getIssues().stream())
+                .anyMatch(issue -> issue.contains("平均响度")));
+    }
+
+    @Test
     void failsOnExcessiveSilence() {
         FfmpegTool.AudioQuality audio = goodAudio();
         audio.setMaxSilenceSec(5.0);

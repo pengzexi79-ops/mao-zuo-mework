@@ -38,6 +38,8 @@ public class RenderService {
     @Autowired(required = false)
     private DeliveryQcService deliveryQc;
     @Autowired(required = false)
+    private AudioContractService audioContractService;
+    @Autowired(required = false)
     private ProcessRegistry processRegistry;
 
     @Data
@@ -512,8 +514,11 @@ public class RenderService {
         FfmpegTool.AudioQuality audioQuality = ffmpeg.audioQuality(file, context);
         FfmpegTool.VideoQuality videoQuality = ffmpeg.videoQuality(file, context);
 
+        com.douyin.mixcut.dto.AudioContract audioContract = audioContractService == null
+                ? com.douyin.mixcut.dto.AudioContract.from(info, audioQuality, videoDuration, "rendered")
+                : audioContractService.contract(info, audioQuality, videoDuration, "rendered");
         DeliveryQc report = deliveryQc != null
-                ? deliveryQc.assess(plan, params, videoDuration, info, audioQuality, videoQuality,
+                ? deliveryQc.assess(plan, params, videoDuration, info, audioQuality, videoQuality, audioContract,
                         hookBurned, subtitlesRequested, subtitlesBurned, subtitleCount)
                 : legacyQc(info, audioQuality, videoQuality, videoDuration);
 
