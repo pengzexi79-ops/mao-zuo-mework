@@ -106,6 +106,7 @@ public class BootstrapService implements ApplicationRunner {
             migrateOutputEditSessions();
             migratePreparationTasks();
             migrateMediaTasks();
+            migrateMediaTaskDiagnostics();
             migrateMediaGenerationTasks();
             migrateCrawlTaskDiagnostics();
             migrateMaterialTranscripts();
@@ -351,6 +352,35 @@ public class BootstrapService implements ApplicationRunner {
             log.info("已确认媒体工具任务表可用");
         } catch (Exception e) {
             log.warn("无法初始化媒体工具任务表；媒体任务将在数据库恢复后重试", e);
+        }
+    }
+
+    /** Adds diagnostic columns to media tasks created by an older application version. */
+    private void migrateMediaTaskDiagnostics() {
+        addMediaTaskColumnIfMissing("phase", "ALTER TABLE media_task ADD COLUMN phase VARCHAR(32) DEFAULT 'queued'");
+        addMediaTaskColumnIfMissing("error_code", "ALTER TABLE media_task ADD COLUMN error_code VARCHAR(64)");
+        addMediaTaskColumnIfMissing("recovery_state", "ALTER TABLE media_task ADD COLUMN recovery_state VARCHAR(32) NOT NULL DEFAULT 'none'");
+        addMediaTaskColumnIfMissing("recovery_reason", "ALTER TABLE media_task ADD COLUMN recovery_reason TEXT");
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement update = connection.prepareStatement("UPDATE media_task SET phase = COALESCE(phase, CASE WHEN status IN ('done','failed','cancelled') THEN 'finished' ELSE 'queued' END), recovery_state = COALESCE(recovery_state, 'none')")) {
+            update.executeUpdate();
+        } catch (Exception e) {
+            log.warn("无法回填 media_task 诊断字段", e);
+        }
+    }
+
+    private void addMediaTaskColumnIfMissing(String column, String alterSql) {
+        String existsSql = "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'media_task' AND column_name = ?";
+        try (Connection connection = dataSource.getConnection(); PreparedStatement exists = connection.prepareStatement(existsSql)) {
+            exists.setString(1, column);
+            try (ResultSet rows = exists.executeQuery()) {
+                if (rows.next() && rows.getInt(1) > 0) return;
+            }
+            try (PreparedStatement alter = connection.prepareStatement(alterSql)) {
+                alter.executeUpdate();
+            }
+        } catch (Exception e) {
+            log.warn("无法补齐 media_task 列 {}", column, e);
         }
     }
 

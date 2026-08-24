@@ -47,5 +47,26 @@ class MediaToolsServiceTest {
         assertEquals(0, task.getRetryCount());
         assertEquals(1800, task.getTimeoutSec());
         assertEquals(900, task.getStaleAfterSec());
+        assertEquals("queued", task.getPhase());
+        assertEquals("none", task.getRecoveryState());
+    }
+
+    @Test
+    void diagnosticFieldsSurvivePersistedTaskMapping() {
+        MediaTask task = new MediaTask();
+        task.setTaskKey("diagnostic-1");
+        task.setKind("image");
+        task.setStatus("failed");
+        task.setPhase("finished");
+        task.setErrorCode("MEDIA_TIMEOUT");
+        task.setRecoveryState("failed");
+        task.setRecoveryReason("超时");
+        task.setRetryCount(2);
+        task.setTimeoutSec(30);
+        task.setStaleAfterSec(5);
+        task.setLastActivityAt(LocalDateTime.now());
+        assertEquals("MEDIA_TIMEOUT", task.getErrorCode());
+        assertEquals("failed", task.getRecoveryState());
+        assertEquals(2, task.getRetryCount());
     }
 }

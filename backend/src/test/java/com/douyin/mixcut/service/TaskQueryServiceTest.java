@@ -4,6 +4,7 @@ import com.douyin.mixcut.domain.MediaTask;
 import com.douyin.mixcut.repository.Repositories.*;
 import org.junit.jupiter.api.Test;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -24,9 +25,12 @@ class TaskQueryServiceTest {
         assertEquals(1, result.size());
         assertEquals("media", result.get(0).getSource());
         assertEquals("m-1", result.get(0).getId());
+        assertEquals("finished", result.get(0).getPhase());
+        assertEquals("MEDIA_EXECUTION_FAILED", result.get(0).getErrorCode());
+        assertEquals(2, result.get(0).getRetryCount());
     }
 
     private MediaTask mediaTask(String key) {
-        MediaTask task = new MediaTask(); task.setTaskKey(key); task.setKind("image"); task.setStatus("done"); task.setProgress(100); task.setMessage("done"); return task;
+        MediaTask task = new MediaTask(); task.setTaskKey(key); task.setKind("image"); task.setStatus("done"); task.setPhase("finished"); task.setProgress(100); task.setMessage("done"); task.setErrorCode("MEDIA_EXECUTION_FAILED"); task.setRetryCount(2); task.setLastActivityAt(LocalDateTime.now()); return task;
     }
 }

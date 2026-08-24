@@ -265,6 +265,7 @@ export const api = {
   mediaToolTasks: (config) => get('/api/media-tools/tasks', config),
   mediaToolTask: (id, config) => get(`/api/media-tools/tasks/${id}`, config),
   cancelMediaToolTask: (id) => http.post(`/api/media-tools/tasks/${id}/cancel`),
+  retryMediaToolTask: (id) => http.post(`/api/media-tools/tasks/${id}/retry`),
   uploadUrl: apiUrl('/api/materials/upload'),
   uploadHeaders: accessToken ? { 'X-Mixcut-Token': accessToken } : undefined,
   materialPreviewUrl: (id) => protectedUrl(`/api/materials/${id}/preview`),
