@@ -22,6 +22,8 @@ public class MediaTask {
     private String kind;
     @Column(length = 32, nullable = false)
     private String status = "pending";
+    @Column(length = 32)
+    private String phase = "queued";
     private Integer progress = 0;
     @Column(length = 128)
     private String engine;
@@ -31,6 +33,12 @@ public class MediaTask {
     private String message;
     @Column(columnDefinition = "text")
     private String error;
+    @Column(name = "error_code", length = 64)
+    private String errorCode;
+    @Column(name = "recovery_state", length = 32)
+    private String recoveryState = "none";
+    @Column(columnDefinition = "text")
+    private String recoveryReason;
     @Column(columnDefinition = "text")
     private String outputDirectory;
     @Column(name = "result_paths", columnDefinition = "json")

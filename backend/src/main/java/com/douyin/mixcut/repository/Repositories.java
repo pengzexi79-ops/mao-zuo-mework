@@ -146,6 +146,17 @@ public interface Repositories {
         List<MediaTask> findTop50ByOrderByIdDesc();
         List<MediaTask> findByStatusOrderByIdAsc(String status);
         long countByStatus(String status);
+        @Modifying
+        @Transactional
+        @Query("update MediaTask m set m.status = 'pending', m.phase = 'recovering', "
+                + "m.recoveryState = 'requeued', m.recoveryReason = :reason, "
+                + "m.retryCount = coalesce(m.retryCount, 0) + 1, m.lastActivityAt = :now "
+                + "where m.taskKey = :taskKey and m.status = 'running' "
+                + "and m.lastActivityAt <= :cutoff")
+        int claimStaleForRecovery(@Param("taskKey") String taskKey,
+                                  @Param("cutoff") LocalDateTime cutoff,
+                                  @Param("reason") String reason,
+                                  @Param("now") LocalDateTime now);
     }
 
     interface MediaGenerationTaskRepo extends JpaRepository<MediaGenerationTask, Long> {

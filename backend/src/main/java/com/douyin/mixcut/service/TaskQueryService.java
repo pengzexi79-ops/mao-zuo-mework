@@ -35,7 +35,16 @@ public class TaskQueryService {
     }
 
     private UnifiedTask media(MediaTask item) {
-        return task(item.getTaskKey(), "media", item.getKind(), item.getStatus(), item.getProgress(), item.getKind(), first(item.getMessage(), item.getError()), item.getCreatedAt(), item.getUpdatedAt(), List.of("pending", "running", "cancelling").contains(item.getStatus()), "failed".equals(item.getStatus()));
+        UnifiedTask result = task(item.getTaskKey(), "media", item.getKind(), item.getStatus(), item.getProgress(), item.getKind(), first(item.getMessage(), item.getError()), item.getCreatedAt(), item.getUpdatedAt(), List.of("pending", "running").contains(item.getStatus()), "failed".equals(item.getStatus()));
+        result.setPhase(item.getPhase());
+        result.setHeartbeatAt(item.getLastActivityAt() == null ? null : item.getLastActivityAt().toString());
+        result.setTimeoutSec(item.getTimeoutSec());
+        result.setStaleAfterSec(item.getStaleAfterSec());
+        result.setRecoveryState(item.getRecoveryState());
+        result.setRecoveryReason(item.getRecoveryReason());
+        result.setErrorCode(item.getErrorCode());
+        result.setRetryCount(item.getRetryCount());
+        return result;
     }
     private UnifiedTask generation(MediaGenerationTask item) {
         return task(item.getTaskKey(), "ai-generation", item.getKind(), item.getStatus(), item.getProgress(), item.getModel(), first(item.getMessage(), item.getError()), item.getCreatedAt(), item.getUpdatedAt(), false, "failed".equals(item.getStatus()) || "manual_review".equals(item.getStatus()));
@@ -51,7 +60,7 @@ public class TaskQueryService {
         return task("render-" + item.getId(), "render", "render", item.getStatus(), item.getProgress(), first(item.getCurrentStep(), item.getSummary()), first(item.getSummary(), item.getError()), item.getCreatedAt(), item.getUpdatedAt(), List.of("running", "pending", "paused").contains(item.getStatus()), List.of("failed", "awaiting_decision").contains(item.getStatus()));
     }
     private UnifiedTask task(String id, String source, String type, String status, Integer progress, String label, String message, LocalDateTime created, LocalDateTime updated, boolean cancel, boolean retry) {
-        UnifiedTask result = new UnifiedTask(); result.setId(id); result.setSource(source); result.setType(type); result.setRawStatus(status); result.setProgress(Math.max(0, Math.min(100, progress == null ? 0 : progress))); result.setLabel(label); result.setMessage(message); result.setCreatedAt(created == null ? null : created.toString()); result.setUpdatedAt(updated == null ? null : updated.toString()); result.setCanCancel(cancel); result.setCanRetry(retry); return result;
+        UnifiedTask result = new UnifiedTask(); result.setId(id); result.setSource(source); result.setType(type); result.setRawStatus(status); result.setPhase(status); result.setProgress(Math.max(0, Math.min(100, progress == null ? 0 : progress))); result.setLabel(label); result.setMessage(message); result.setCreatedAt(created == null ? null : created.toString()); result.setUpdatedAt(updated == null ? null : updated.toString()); result.setCanCancel(cancel); result.setCanRetry(retry); return result;
     }
     private String first(String primary, String fallback) { return primary == null || primary.isBlank() ? fallback : primary; }
     private static LocalDateTime time(UnifiedTask task) { try { return task.getUpdatedAt() == null ? LocalDateTime.MIN : LocalDateTime.parse(task.getUpdatedAt()); } catch (Exception e) { return LocalDateTime.MIN; } }

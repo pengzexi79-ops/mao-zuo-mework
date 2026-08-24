@@ -90,8 +90,17 @@ public class MediaToolsService {
         private String id;
         private String kind;
         private String status = "pending";
+        private String phase = "queued";
         private int progress;
         private String message;
+        private String error;
+        private String errorCode;
+        private String recoveryState = "none";
+        private String recoveryReason;
+        private String heartbeatAt;
+        private int timeoutSec;
+        private int staleAfterSec;
+        private int retryCount;
         private String engine;
         private String outputDirectory;
         private List<String> resultPaths = List.of();
@@ -257,6 +266,8 @@ public class MediaToolsService {
         if ("cancelled".equals(persisted.getStatus())) return fromPersisted(persisted);
         if ("done".equals(persisted.getStatus()) || "failed".equals(persisted.getStatus())) throw new IllegalArgumentException("任务已结束，不能取消");
         persisted.setStatus("cancelled");
+        persisted.setPhase("finished");
+        persisted.setErrorCode("MEDIA_CANCELLED");
         persisted.setMessage("已取消媒体任务");
         persisted.setLastActivityAt(LocalDateTime.now());
         mediaTaskRepo.save(persisted);
@@ -266,7 +277,12 @@ public class MediaToolsService {
         Future<?> future = futures.remove(id);
         if (future != null) future.cancel(true);
         Task task = tasks.get(id);
-        if (task != null) { task.setStatus("cancelled"); task.setMessage("已取消媒体任务"); }
+        if (task != null) {
+            task.setStatus("cancelled");
+            task.setPhase("finished");
+            task.setErrorCode("MEDIA_CANCELLED");
+            task.setMessage("已取消媒体任务");
+        }
         cleanupTaskOutputs(id);
         if (!startedTasks.contains(id)) releaseContext(id);
         return fromPersisted(persisted);
@@ -279,6 +295,36 @@ public class MediaToolsService {
         return fromPersisted(persisted);
     }
 
+    public Task retry(String id) {
+        MediaTask persisted = mediaTaskRepo.findByTaskKey(id).orElseThrow(() -> new IllegalArgumentException("媒体任务不存在"));
+        if (!"failed".equals(persisted.getStatus())) throw new IllegalArgumentException("只有失败的媒体任务可以重试");
+        int attempts = persisted.getRetryCount() == null ? 0 : persisted.getRetryCount();
+        if (attempts >= 3) throw new IllegalArgumentException("媒体任务已达到最大重试次数");
+        persisted.setStatus("pending");
+        persisted.setPhase("queued");
+        persisted.setRetryCount(attempts + 1);
+        persisted.setError(null);
+        persisted.setErrorCode(null);
+        persisted.setRecoveryState("retrying");
+        persisted.setRecoveryReason("用户发起失败重试");
+        persisted.setMessage("失败重试已排队");
+        persisted.setLastActivityAt(LocalDateTime.now());
+        mediaTaskRepo.save(persisted);
+        tasks.remove(id);
+        cancellationContexts.remove(id);
+        try { restoreAndDispatch(persisted); }
+        catch (Exception error) {
+            persisted.setStatus("failed");
+            persisted.setPhase("finished");
+            persisted.setRecoveryState("failed");
+            persisted.setErrorCode("MEDIA_RECOVERY_FAILED");
+            persisted.setError(safeMessage(error));
+            persisted.setMessage("媒体任务重试恢复失败：" + safeMessage(error));
+            mediaTaskRepo.save(persisted);
+        }
+        return fromPersisted(persisted);
+    }
+
     public List<Task> recent() {
         return mediaTaskRepo.findTop50ByOrderByIdDesc().stream().map(this::fromPersisted).toList();
     }
@@ -288,9 +334,18 @@ public class MediaToolsService {
         task.setId(persisted.getTaskKey());
         task.setKind(persisted.getKind());
         task.setStatus(persisted.getStatus());
+        task.setPhase(persisted.getPhase() == null ? persisted.getStatus() : persisted.getPhase());
         task.setProgress(persisted.getProgress() == null ? 0 : persisted.getProgress());
         task.setEngine(persisted.getEngine());
         task.setMessage(persisted.getMessage());
+        task.setError(persisted.getError());
+        task.setErrorCode(persisted.getErrorCode());
+        task.setRecoveryState(persisted.getRecoveryState() == null ? "none" : persisted.getRecoveryState());
+        task.setRecoveryReason(persisted.getRecoveryReason());
+        task.setHeartbeatAt(persisted.getLastActivityAt() == null ? null : persisted.getLastActivityAt().toString());
+        task.setTimeoutSec(persisted.getTimeoutSec() == null ? 0 : persisted.getTimeoutSec());
+        task.setStaleAfterSec(persisted.getStaleAfterSec() == null ? 0 : persisted.getStaleAfterSec());
+        task.setRetryCount(persisted.getRetryCount() == null ? 0 : persisted.getRetryCount());
         task.setOutputDirectory(persisted.getOutputDirectory());
         task.setCreatedAt(persisted.getCreatedAt() == null ? System.currentTimeMillis() : persisted.getCreatedAt().atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli());
         task.setUpdatedAt(persisted.getUpdatedAt() == null ? task.getCreatedAt() : persisted.getUpdatedAt().atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli());
@@ -328,7 +383,17 @@ public class MediaToolsService {
         persisted.setTaskKey(task.getId());
         persisted.setKind(kind);
         persisted.setStatus("pending");
+        persisted.setPhase("queued");
         persisted.setProgress(0);
+        persisted.setTimeoutSec(1800);
+        persisted.setStaleAfterSec(900);
+        persisted.setRetryCount(0);
+        persisted.setRecoveryState("none");
+        task.setPhase("queued");
+        task.setTimeoutSec(1800);
+        task.setStaleAfterSec(900);
+        task.setRetryCount(0);
+        task.setRecoveryState("none");
         persisted.setOutputDirectory(task.getOutputDirectory());
         try { persisted.setParams(params == null ? null : objectMapper.writeValueAsString(params)); }
         catch (Exception error) { throw new IllegalArgumentException("媒体任务参数无法保存", error); }
@@ -482,8 +547,13 @@ public class MediaToolsService {
         if (task == null || snapshot == null) return;
         if ("cancelled".equals(task.getStatus()) && !"cancelled".equals(snapshot.getStatus())) return;
         task.setStatus(snapshot.getStatus());
+        task.setPhase(snapshot.getPhase());
         task.setProgress(snapshot.getProgress());
         task.setMessage(snapshot.getMessage());
+        task.setError(snapshot.getError());
+        task.setErrorCode(snapshot.getErrorCode());
+        task.setRecoveryState(snapshot.getRecoveryState());
+        task.setRecoveryReason(snapshot.getRecoveryReason());
         task.setEngine(snapshot.getEngine());
         task.setOutputDirectory(snapshot.getOutputDirectory());
         try {
@@ -502,12 +572,21 @@ public class MediaToolsService {
     @Scheduled(fixedDelayString = "${app.job-watchdog-delay-ms:30000}")
     public void recoverMediaTasks() {
         try {
-            LocalDateTime cutoff = LocalDateTime.now().minusSeconds(900);
+            LocalDateTime now = LocalDateTime.now();
             for (MediaTask persisted : mediaTaskRepo.findByStatusOrderByIdAsc("running")) {
+                int staleAfter = Math.max(1, persisted.getStaleAfterSec() == null ? 900 : persisted.getStaleAfterSec());
+                LocalDateTime cutoff = now.minusSeconds(staleAfter);
                 if (persisted.getLastActivityAt() != null && persisted.getLastActivityAt().isAfter(cutoff)) continue;
+                int claimed = mediaTaskRepo.claimStaleForRecovery(persisted.getTaskKey(), cutoff,
+                        "超过任务心跳阈值 " + staleAfter + " 秒", now);
+                if (claimed != 1) continue;
                 persisted.setStatus("pending");
+                persisted.setPhase("recovering");
+                persisted.setRetryCount((persisted.getRetryCount() == null ? 0 : persisted.getRetryCount()) + 1);
+                persisted.setRecoveryState("requeued");
+                persisted.setRecoveryReason("超过任务心跳阈值 " + staleAfter + " 秒");
                 persisted.setMessage("后端服务中断，媒体任务已重新排队");
-                persisted.setLastActivityAt(LocalDateTime.now());
+                persisted.setLastActivityAt(now);
                 mediaTaskRepo.save(persisted);
             }
             for (MediaTask persisted : mediaTaskRepo.findByStatusOrderByIdAsc("pending")) {
@@ -515,6 +594,10 @@ public class MediaToolsService {
                 try { restoreAndDispatch(persisted); }
                 catch (Exception error) {
                     persisted.setStatus("failed");
+                    persisted.setPhase("finished");
+                    persisted.setRecoveryState("failed");
+                    persisted.setRecoveryReason(safeMessage(error));
+                    persisted.setErrorCode("MEDIA_RECOVERY_FAILED");
                     persisted.setMessage("媒体任务恢复失败：" + safeMessage(error));
                     persisted.setError(safeMessage(error));
                     persisted.setLastActivityAt(LocalDateTime.now());
@@ -556,8 +639,12 @@ public class MediaToolsService {
             registerOutput(id, output);
             update(task, "running", 35, "正在调用本地图片处理引擎：" + task.getEngine());
             cancellation.throwIfCancelled();
-            ProcRunner.Result result = runTask(command, 180, cancellation);
+            ProcRunner.Result result = runTask(command, timeoutFor(id, 180), cancellation);
             cancellation.throwIfCancelled();
+            if (result.code() == -2) {
+                failTask(task, "MEDIA_TIMEOUT", "图片处理超过任务时限");
+                return;
+            }
             if (!result.ok() || !Files.isRegularFile(output) || Files.size(output) < 128) throw new IllegalStateException("图片处理失败：" + tail(result.out()));
             update(task, "running", 80, "正在登记生成图片");
             cancellation.throwIfCancelled();
@@ -574,7 +661,7 @@ public class MediaToolsService {
             markCancelled(id);
         } catch (Exception e) {
             if (isCancelled(id)) markCancelled(id);
-            else update(task, "failed", task.getProgress(), e.getMessage() == null ? "图片处理失败" : e.getMessage());
+            else failTask(task, "MEDIA_EXECUTION_FAILED", e.getMessage() == null ? "图片处理失败" : e.getMessage());
         }
     }
 
@@ -592,7 +679,7 @@ public class MediaToolsService {
             markCancelled(id);
         } catch (Exception e) {
             if (isCancelled(id)) markCancelled(id);
-            else update(task, "failed", task.getProgress(), e.getMessage() == null ? "音频分离失败" : e.getMessage());
+            else failTask(task, "MEDIA_EXECUTION_FAILED", e.getMessage() == null ? "音频分离失败" : e.getMessage());
         }
     }
 
@@ -610,7 +697,7 @@ public class MediaToolsService {
             markCancelled(id);
         } catch (Exception e) {
             if (isCancelled(id)) markCancelled(id);
-            else update(task, "failed", task.getProgress(), e.getMessage() == null ? "视频切段失败" : e.getMessage());
+            else failTask(task, "MEDIA_EXECUTION_FAILED", e.getMessage() == null ? "视频切段失败" : e.getMessage());
         }
     }
 
@@ -652,7 +739,7 @@ public class MediaToolsService {
             markCancelled(id);
         } catch (Exception e) {
             if (isCancelled(id)) markCancelled(id);
-            else update(task, "failed", task.getProgress(), e.getMessage() == null ? "字幕遮盖失败" : e.getMessage());
+            else failTask(task, "MEDIA_EXECUTION_FAILED", e.getMessage() == null ? "字幕遮盖失败" : e.getMessage());
         }
     }
 
@@ -721,7 +808,7 @@ public class MediaToolsService {
             markCancelled(id);
         } catch (Exception e) {
             if (isCancelled(id)) markCancelled(id);
-            else update(task, "failed", task.getProgress(), e.getMessage() == null ? "时间线编辑失败" : e.getMessage());
+            else failTask(task, "MEDIA_EXECUTION_FAILED", e.getMessage() == null ? "时间线编辑失败" : e.getMessage());
         }
     }
 
@@ -746,8 +833,12 @@ public class MediaToolsService {
                     "--no-open");
             update(task, "running", 40, "正在调用 Auto-Editor 智能剪辑");
             cancellation.throwIfCancelled();
-            ProcRunner.Result result = runTask(cmd, 1800, cancellation);
+            ProcRunner.Result result = runTask(cmd, timeoutFor(id, 1800), cancellation);
             cancellation.throwIfCancelled();
+            if (result.code() == -2) {
+                failTask(task, "MEDIA_TIMEOUT", "智能剪除超过任务时限");
+                return;
+            }
             if (!result.ok() || !Files.isRegularFile(output) || Files.size(output) < 1024) {
                 // 降级策略：auto-editor 缺失/执行失败时回退 FFmpeg silenceremove 静音裁剪，
                 // 避免工具缺失直接导致整单失败；仅当回退也失败时才抛可读错误。
@@ -757,7 +848,7 @@ public class MediaToolsService {
                 List<String> ffCmd = List.of(props.getFfmpeg(), "-y", "-i", input.toString(),
                         "-af", "silenceremove=start_periods=1:start_threshold=-40dB:start_silence=0.5,areverse,silenceremove=start_periods=1:start_threshold=-40dB:start_silence=0.5,areverse",
                         "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", ffOutput.toString());
-                ProcRunner.Result ffResult = runTask(ffCmd, 1800, cancellation);
+                ProcRunner.Result ffResult = runTask(ffCmd, timeoutFor(id, 1800), cancellation);
                 cancellation.throwIfCancelled();
                 if (ffResult.ok() && Files.isRegularFile(ffOutput) && Files.size(ffOutput) >= 1024) {
                     update(task, "running", 80, "Auto-Editor 不可用，已降级 FFmpeg 静音裁剪");
@@ -790,7 +881,7 @@ public class MediaToolsService {
             markCancelled(id);
         } catch (Exception e) {
             if (isCancelled(id)) markCancelled(id);
-            else update(task, "failed", task.getProgress(), e.getMessage() == null ? "智能剪除失败" : e.getMessage());
+            else failTask(task, "MEDIA_EXECUTION_FAILED", e.getMessage() == null ? "智能剪除失败" : e.getMessage());
         }
     }
 
@@ -917,15 +1008,44 @@ public class MediaToolsService {
             return;
         }
         task.setStatus(status);
+        task.setPhase(phaseFor(status, message));
         task.setProgress(Math.max(0, Math.min(100, progress)));
         task.setMessage(message);
         task.setUpdatedAt(System.currentTimeMillis());
         persist(task.getId());
     }
 
+    private void failTask(Task task, String code, String message) {
+        if (task == null) return;
+        if (isCancelled(task.getId())) {
+            markCancelled(task.getId());
+            return;
+        }
+        task.setErrorCode(code);
+        task.setError(message);
+        task.setRecoveryState("none");
+        update(task, "failed", task.getProgress(), message);
+    }
+
+    private int timeoutFor(String id, int fallbackSec) {
+        return mediaTaskRepo.findByTaskKey(id)
+                .map(task -> Math.max(1, task.getTimeoutSec() == null ? fallbackSec : task.getTimeoutSec()))
+                .orElse(Math.max(1, fallbackSec));
+    }
+
     private ProcRunner.Result runTask(List<String> command, long timeoutSec,
                                       ProcessRegistry.CancellationContext context) {
         return taskRunner == null ? runner.run(command, timeoutSec) : taskRunner.run(command, timeoutSec, context);
+    }
+
+    private String phaseFor(String status, String message) {
+        if ("pending".equals(status)) return "queued";
+        if ("done".equals(status)) return "finished";
+        if ("failed".equals(status) || "cancelled".equals(status)) return "finished";
+        String text = message == null ? "" : message;
+        if (text.contains("登记") || text.contains("记录结果")) return "registering";
+        if (text.contains("分析") || text.contains("探测") || text.contains("校验")) return "probing";
+        return "processing";
     }
 
     private String tail(String value) {

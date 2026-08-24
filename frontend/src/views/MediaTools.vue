@@ -173,10 +173,11 @@
         <article v-for="row in tasks" :key="row.id" class="task-card">
           <div class="task-summary">
             <div><b>{{ taskKind(row.kind) }}</b><span class="muted">{{ row.engine || '本地引擎' }}</span></div>
-            <div class="task-summary-actions"><el-tag :type="taskType(row.status)">{{ taskLabel(row.status) }}</el-tag><el-popconfirm v-if="['pending','running'].includes(row.status)" title="取消此媒体任务？已生成的源素材不会删除。" @confirm="cancelTask(row)"><template #reference><el-button link type="warning" size="small">取消</el-button></template></el-popconfirm></div>
+            <div class="task-summary-actions"><el-tag :type="taskType(row.status)">{{ taskLabel(row.status) }}</el-tag><el-popconfirm v-if="['pending','running'].includes(row.status)" title="取消此媒体任务？已生成的源素材不会删除。" @confirm="cancelTask(row)"><template #reference><el-button link type="warning" size="small">取消</el-button></template></el-popconfirm><el-button v-if="row.status === 'failed' && (row.retryCount || 0) < 3" link type="primary" size="small" @click="retryTask(row)">重试</el-button></div>
           </div>
           <el-progress :percentage="row.progress || 0" :status="row.status === 'failed' ? 'exception' : row.status === 'done' ? 'success' : undefined" />
-          <p class="task-message">{{ row.message || '等待处理' }}</p>
+          <p class="task-message">{{ row.message || row.error || '等待处理' }}</p>
+          <div class="task-diagnostics"><span v-if="row.phase">阶段：{{ phaseLabel(row.phase) }}</span><span v-if="row.errorCode">错误码：{{ row.errorCode }}</span><span v-if="row.retryCount > 0">重试：{{ row.retryCount }} 次</span><span v-if="row.heartbeatAt">心跳：{{ heartbeatAge(row.heartbeatAt) }}</span><span v-if="row.timeoutSec">超时：{{ row.timeoutSec }} 秒</span><span v-if="row.staleAfterSec">失联阈值：{{ row.staleAfterSec }} 秒</span><span v-if="row.recoveryReason">恢复：{{ row.recoveryReason }}</span></div>
           <div class="task-path"><span>输出目录</span><code>{{ row.outputDirectory || outputLocation.path || '历史任务未记录路径' }}</code><el-button v-if="row.outputDirectory || outputLocation.path" link type="primary" @click="copyPath(row.outputDirectory || outputLocation.path)">复制</el-button></div>
           <div v-if="row.results?.length" class="result-grid">
             <article v-for="item in row.results" :key="item.materialId || item.filePath" class="result-card">
@@ -266,8 +267,10 @@ const timelineEndStyle = computed(() => handleStyle(timelineForm.sourceEnd))
 const timelinePlayheadStyle = computed(() => handleStyle(timelineCursor.value))
 const timelinePlayedStyle = computed(() => ({ left: '12px', width: `calc(${percent(timelineCursor.value)}% - 12px)` }))
 
-function taskLabel (status) { return ({ pending: '排队中', running: '处理中', done: '已完成', failed: '失败' })[status] || status || '未知' }
-function taskType (status) { return ({ pending: 'warning', running: 'primary', done: 'success', failed: 'danger' })[status] || 'info' }
+function taskLabel (status) { return ({ pending: '排队中', running: '处理中', done: '已完成', failed: '失败', cancelled: '已取消' })[status] || status || '未知' }
+function taskType (status) { return ({ pending: 'warning', running: 'primary', done: 'success', failed: 'danger', cancelled: 'info' })[status] || 'info' }
+function phaseLabel (phase) { return ({ queued: '排队', running: '执行中', probing: '探测/校验', processing: '处理中', registering: '登记结果', recovering: '恢复中', cancelling: '取消中', finished: '已结束' })[phase] || phase }
+function heartbeatAge (value) { const time = new Date(value).getTime(); if (!Number.isFinite(time)) return '未知'; const age = Math.max(0, Math.floor((Date.now() - time) / 1000)); return age < 60 ? `${age} 秒前` : `${Math.floor(age / 60)} 分钟前` }
 function taskKind (kind) { return ({ image: '图片处理', 'video-split': '视频分割', 'video-timeline': '时间线编辑', 'subtitle-cover': '字幕遮盖', 'auto-trim': '智能剪除', 'audio-separate': '音频分离' })[kind] || kind || '媒体任务' }
 function thumb (item) { return api.protectedUrl(item.thumbnailUrl || item.thumbnail || `/api/materials/${item.id}/preview`) }
 function hideImage (event) { event.currentTarget.style.display = 'none' }
@@ -374,6 +377,11 @@ async function copyPath (path) {
 async function cancelTask (row) {
   try { await api.cancelMediaToolTask(row.id); await loadTasks(); ElMessage.success('媒体任务已取消') }
   catch (error) { ElMessage.error(error.message || '取消媒体任务失败') }
+}
+
+async function retryTask (row) {
+  try { await api.retryMediaToolTask(row.id); await loadTasks(); startPolling(); ElMessage.success('媒体任务已重新排队') }
+  catch (error) { ElMessage.error(error.message || '重试媒体任务失败') }
 }
 
 async function loadTasks () {
@@ -795,6 +803,7 @@ onBeforeUnmount(() => {
 .task-summary-actions { display:flex; align-items:center; gap:6px; }.task-summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
 .task-summary div { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .task-message { margin: 8px 0; color: var(--el-text-color-regular); overflow-wrap: anywhere; }
+.task-diagnostics { display: flex; flex-wrap: wrap; gap: 6px 12px; margin: 6px 0 10px; color: var(--el-text-color-secondary); font-size: 12px; }
 .task-path { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 8px; background: var(--el-fill-color-light); border-radius: 4px; font-size: 12px; }
 .task-path code, .result-path, .legacy-paths code { min-width: 0; overflow-wrap: anywhere; white-space: normal; color: var(--el-text-color-secondary); }
 .result-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; margin-top: 10px; }

@@ -63,6 +63,11 @@ public class MediaToolsController {
         return R.ok(service.get(id));
     }
 
+    @PostMapping("/tasks/{id}/retry")
+    public R<MediaToolsService.Task> retry(@PathVariable String id) {
+        return R.ok(service.retry(id));
+    }
+
     @lombok.Data
     public static class IdRequest {
         private Long materialId;
