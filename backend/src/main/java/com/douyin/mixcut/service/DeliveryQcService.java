@@ -2,6 +2,7 @@ package com.douyin.mixcut.service;
 
 import com.douyin.mixcut.config.AppProps;
 import com.douyin.mixcut.domain.DeliveryQc;
+import com.douyin.mixcut.dto.AudioContract;
 import com.douyin.mixcut.dto.MixParams;
 import com.douyin.mixcut.external.FfmpegTool;
 import lombok.RequiredArgsConstructor;
@@ -33,6 +34,16 @@ public class DeliveryQcService {
                              FfmpegTool.MediaInfo info, FfmpegTool.AudioQuality audioQuality,
                              FfmpegTool.VideoQuality videoQuality, boolean hookBurned,
                              boolean subtitlesRequested, boolean subtitlesBurned, int subtitleCount) {
+        AudioContract contract = AudioContract.from(info, audioQuality, videoDuration, "rendered");
+        return assess(plan, params, videoDuration, info, audioQuality, videoQuality, contract,
+                hookBurned, subtitlesRequested, subtitlesBurned, subtitleCount);
+    }
+
+    public DeliveryQc assess(MixPlanner.Plan plan, MixParams params, double videoDuration,
+                             FfmpegTool.MediaInfo info, FfmpegTool.AudioQuality audioQuality,
+                             FfmpegTool.VideoQuality videoQuality, AudioContract contract,
+                             boolean hookBurned, boolean subtitlesRequested,
+                             boolean subtitlesBurned, int subtitleCount) {
         DeliveryQc report = new DeliveryQc();
         double tolerance = durationTolerance(videoDuration);
         // AI 自动出片 / 严格交付：显式开启后，hook/duplicate/subtitleSync 提示升级为硬拦截；默认关闭保持兼容。
@@ -41,7 +52,7 @@ public class DeliveryQcService {
         if (params != null && "silent".equalsIgnoreCase(params.getAudioMode())) {
             assessSilentOutput(report, info);
         } else {
-            assessAudio(report, info, audioQuality, videoDuration, tolerance);
+            assessAudio(report, info, audioQuality, contract, videoDuration, tolerance);
         }
         assessVideo(report, info, videoQuality, params, videoDuration);
         assessSubtitle(report, subtitlesRequested, subtitlesBurned, subtitleCount);
@@ -69,7 +80,7 @@ public class DeliveryQcService {
     }
 
     private void assessAudio(DeliveryQc report, FfmpegTool.MediaInfo info, FfmpegTool.AudioQuality audioQuality,
-                             double videoDuration, double tolerance) {
+                             AudioContract contract, double videoDuration, double tolerance) {
         DeliveryQc.CategoryResult audio = report.category("audio");
         boolean hasAudio = info != null && info.isHasAudio() && info.getAudioDuration() > 0;
 
@@ -102,6 +113,10 @@ public class DeliveryQcService {
             audio.setStatus("fail");
             audio.issue("检测到连续 " + FfmpegTool.trimNum(audioQuality.getMaxSilenceSec())
                     + "s 静音，超过 " + FfmpegTool.trimNum(props.getQcMaxSilenceSec()) + "s 上限");
+        }
+        if (contract != null && contract.getLoudness() != null && contract.getLoudness() < -60) {
+            audio.setStatus("fail");
+            audio.issue("最终音频平均响度 " + FfmpegTool.trimNum(contract.getLoudness()) + " dB 过低");
         }
 
         audio.check("音频可解码，时长 " + FfmpegTool.trimNum(audioDuration) + "s");
