@@ -27,6 +27,7 @@ public class TtsService {
     private final ProcRunner runner;
     private final FfmpegTool ffmpeg;
     private final MaterialService materials;
+    private final AudioContractService audioContractService;
 
     public boolean available() {
         return runner.run(List.of(props.localPythonPath(), "-c", "import edge_tts"), 12).ok();
@@ -57,12 +58,14 @@ public class TtsService {
                 ProcRunner.Result natural = runner.run(List.of(props.localPythonPath(), naturalScript.toString(),
                         "--text", clean, "--output", output.toString()), 300);
                 if (natural.ok() && Files.isRegularFile(output) && Files.size(output) > 1024) {
-                    FfmpegTool.MediaInfo naturalInfo = ffmpeg.probe(output.toString());
-                    if (naturalInfo.isHasAudio() && naturalInfo.getDuration() > 0.5) {
+                    try {
+                        validateVoiceOutput(output, "natural-tts");
                         Material material = materials.register(output.toString(), null, false, Material.Source.generated, null);
                         material.setRole(MaterialRole.voice);
                         material.setTags("自然配音," + selectedVoice);
                         return materials.save(material);
+                    } catch (IllegalStateException rejected) {
+                        log.warn("natural TTS audio admission rejected: {}", rejected.getMessage());
                     }
                 }
                 Files.deleteIfExists(output);
@@ -86,16 +89,7 @@ public class TtsService {
                 Files.deleteIfExists(output);
                 throw new IllegalStateException("配音生成失败，请检查网络或更换音色");
             }
-            FfmpegTool.MediaInfo info = ffmpeg.probe(output.toString());
-            if (!info.isHasAudio() || info.getDuration() < 0.5) {
-                Files.deleteIfExists(output);
-                throw new IllegalStateException("配音文件无有效声音，已拒绝入库");
-            }
-            FfmpegTool.AudioQuality quality = ffmpeg.audioQuality(output);
-            if (!quality.isReadable() || quality.getMaxSilenceSec() > Math.max(3, info.getDuration() * 0.7)) {
-                Files.deleteIfExists(output);
-                throw new IllegalStateException("配音检测到异常静音，已拒绝入库");
-            }
+            validateVoiceOutput(output, "edge-tts");
             Material material = materials.register(output.toString(), null, false, Material.Source.generated, null);
             material.setRole(MaterialRole.voice);
             material.setTags("自动配音," + selectedVoice);
@@ -104,6 +98,21 @@ public class TtsService {
             throw e;
         } catch (Exception e) {
             throw new IllegalStateException("配音处理失败：" + e.getMessage(), e);
+        }
+    }
+
+    private void validateVoiceOutput(Path output, String sourceType) throws Exception {
+        FfmpegTool.MediaInfo info = ffmpeg.probe(output.toString());
+        if (!info.isHasAudio() || info.getDuration() < 0.5) {
+            Files.deleteIfExists(output);
+            throw new IllegalStateException("配音文件无有效声音，已拒绝入库");
+        }
+        var contract = audioContractService.inspect(output.toString(), 0, sourceType,
+                com.douyin.mixcut.external.ProcessRegistry.CancellationContext.none());
+        var validation = audioContractService.validate(contract, 0);
+        if (!validation.isEmpty()) {
+            Files.deleteIfExists(output);
+            throw new IllegalStateException("配音音频准入失败：" + String.join(", ", validation));
         }
     }
 }
