@@ -11,6 +11,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class RenderServiceTest {
@@ -83,6 +85,30 @@ class RenderServiceTest {
 
         assertFalse(result.isOk());
         assertTrue(result.getError().contains("渲染已取消"));
+    }
+
+    @Test
+    void multiSegmentVoiceCoverageUsesPlannerSumInsteadOfFirstFileProbe() {
+        MixPlanner.Plan plan = usablePlan(50);
+        plan.setRequiresExternalAudio(true);
+        plan.setVoicePath("C:/fixtures/voice-first.wav");
+        plan.setVoiceDurationSec(55);
+        MixPlanner.Plan.VoiceSegment first = new MixPlanner.Plan.VoiceSegment();
+        first.setFilePath("C:/fixtures/voice-first.wav");
+        first.setDuration(15);
+        MixPlanner.Plan.VoiceSegment second = new MixPlanner.Plan.VoiceSegment();
+        second.setFilePath("C:/fixtures/voice-second.wav");
+        second.setDuration(40);
+        plan.setVoiceSegments(List.of(first, second));
+        FfmpegTool ffmpeg = mock(FfmpegTool.class);
+        RenderService service = new RenderService(null, ffmpeg, null, null);
+        MixParams params = new MixParams();
+
+        String error = org.springframework.test.util.ReflectionTestUtils.invokeMethod(service, "audioCoverageError",
+                plan, params, 50.0, ProcessRegistry.CancellationContext.none());
+
+        assertEquals(null, error);
+        verify(ffmpeg, never()).probe("C:/fixtures/voice-first.wav", ProcessRegistry.CancellationContext.none());
     }
 
     @Test
