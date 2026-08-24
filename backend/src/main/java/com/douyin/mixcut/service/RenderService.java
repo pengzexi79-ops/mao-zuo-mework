@@ -267,9 +267,7 @@ public class RenderService {
                 String voicePath = plan.getVoicePath();
                 if (!preserveOriginalAudio && shouldUsePlannedVoiceSegments(plan)) {
                     Path scheduledVoice = work.resolve("scheduled-voice.m4a");
-                    List<FfmpegTool.AudioSlice> slices = plan.getVoiceSegments().stream()
-                            .map(segment -> new FfmpegTool.AudioSlice(segment.getFilePath(), segment.getSourceStart(), segment.getDuration()))
-                            .toList();
+                    List<FfmpegTool.AudioSlice> slices = validatedVoiceSlices(plan.getVoiceSegments(), renderContext);
                     if (!ffmpeg.concatAudioSlices(slices, scheduledVoice, renderContext)) {
                         result.setError("音频阶段失败：多段口播无法按时间线拼接，已拒绝回退为单段循环");
                         return result;
@@ -395,6 +393,25 @@ public class RenderService {
                     + FfmpegTool.trimNum(videoDuration) + "s；已拒绝截断未读完的尾句，请缩短文案后重新生成";
         }
         return null;
+    }
+
+    private List<FfmpegTool.AudioSlice> validatedVoiceSlices(List<MixPlanner.Plan.VoiceSegment> segments,
+                                                               ProcessRegistry.CancellationContext context) {
+        if (segments == null || segments.isEmpty()) throw new IllegalStateException("口播时间线为空");
+        List<FfmpegTool.AudioSlice> slices = new ArrayList<>();
+        double previousEnd = 0;
+        for (MixPlanner.Plan.VoiceSegment segment : segments) {
+            context.throwIfCancelled();
+            if (segment == null || isBlank(segment.getFilePath()) || !Double.isFinite(segment.getDuration())
+                    || segment.getDuration() < 0.8 || !Double.isFinite(segment.getSourceStart())
+                    || segment.getSourceStart() < 0 || !Double.isFinite(segment.getTimelineStart())
+                    || segment.getTimelineStart() < previousEnd - 0.05) {
+                throw new IllegalStateException("口播时间线包含不可用、过短或重叠片段");
+            }
+            slices.add(new FfmpegTool.AudioSlice(segment.getFilePath(), segment.getSourceStart(), segment.getDuration()));
+            previousEnd = segment.getTimelineStart() + segment.getDuration();
+        }
+        return slices;
     }
 
     private boolean shouldUsePlannedVoiceSegments(MixPlanner.Plan plan) {

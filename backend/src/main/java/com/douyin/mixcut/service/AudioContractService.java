@@ -39,7 +39,11 @@ public class AudioContractService {
         if (contract == null) return List.of("AUDIO_CONTRACT_MISSING");
         if (!contract.isHasAudio()) errors.add("AUDIO_STREAM_MISSING");
         if (!contract.isReadable()) errors.add("AUDIO_NOT_READABLE");
-        if (contract.getOutputDuration() <= 0) errors.add("AUDIO_DURATION_INVALID");
+        if (!Double.isFinite(contract.getStartSec()) || !Double.isFinite(contract.getEndSec())
+                || contract.getStartSec() < 0 || contract.getEndSec() <= contract.getStartSec()) {
+            errors.add("AUDIO_TIMELINE_INVALID");
+        }
+        if (!Double.isFinite(contract.getOutputDuration()) || contract.getOutputDuration() <= 0) errors.add("AUDIO_DURATION_INVALID");
         if (contract.getSampleRate() == null || contract.getSampleRate() <= 0) errors.add("AUDIO_SAMPLE_RATE_INVALID");
         if (contract.getChannels() == null || contract.getChannels() <= 0) errors.add("AUDIO_CHANNELS_INVALID");
         if (contract.getCodec() == null || contract.getCodec().isBlank()) errors.add("AUDIO_CODEC_MISSING");
@@ -47,7 +51,7 @@ public class AudioContractService {
             errors.add("AUDIO_DURATION_MISMATCH");
         }
         if (Math.abs(contract.getEndSec() - contract.getStartSec()) <= 0) errors.add("AUDIO_TIMELINE_INVALID");
-        if (contract.getSilenceRatio() > silenceRatioLimit()) errors.add("AUDIO_SILENCE_EXCESSIVE");
+        if (!Double.isFinite(contract.getSilenceRatio()) || contract.getSilenceRatio() > silenceRatioLimit()) errors.add("AUDIO_SILENCE_EXCESSIVE");
         return errors;
     }
 
