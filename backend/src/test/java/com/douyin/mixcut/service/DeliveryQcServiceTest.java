@@ -140,8 +140,9 @@ class DeliveryQcServiceTest {
         FfmpegTool.AudioQuality audio = goodAudio();
         audio.setMeanVolumeDb(-72.0);
 
+        com.douyin.mixcut.dto.AudioContract contract = com.douyin.mixcut.dto.AudioContract.from(goodInfo(), audio, 90, "rendered");
         DeliveryQc report = service.assess(planWithOneSegment(), new MixParams(), 90,
-                goodInfo(), audio, goodVideo(), true, false, false, 0);
+                goodInfo(), audio, goodVideo(), contract, true, false, false, 0);
 
         assertEquals("fail", report.getStatus());
         assertTrue(report.getCategories().stream().flatMap(category -> category.getIssues().stream())
