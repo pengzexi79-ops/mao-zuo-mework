@@ -375,8 +375,12 @@ public class RenderService {
             return "没有可覆盖全片的音轨：请指定任意可读音频作为 BGM，或选择保留原片声音；已在切片前停止渲染";
         }
         double voiceDuration = plan.getVoiceDurationSec();
-        FfmpegTool.MediaInfo info = ffmpeg.probe(plan.getVoicePath(), context);
-        if (info != null && info.isHasAudio() && info.getAudioDuration() > 0) voiceDuration = info.getAudioDuration();
+        // voicePath represents only the first segment when a plan uses multiple narration files.
+        // Keep the planner's summed coverage as the authority for that case; probe a single file only.
+        if (plan.getVoiceSegments() == null || plan.getVoiceSegments().size() <= 1) {
+            FfmpegTool.MediaInfo info = ffmpeg.probe(plan.getVoicePath(), context);
+            if (info != null && info.isHasAudio() && info.getAudioDuration() > 0) voiceDuration = info.getAudioDuration();
+        }
         if (voiceDuration + 0.5 < videoDuration) {
             double silentTail = Math.max(0, videoDuration - voiceDuration);
             return "口播仅 " + FfmpegTool.trimNum(voiceDuration) + "s，计划 "
