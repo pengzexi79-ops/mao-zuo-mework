@@ -35,7 +35,7 @@ public class TaskQueryService {
     }
 
     private UnifiedTask media(MediaTask item) {
-        UnifiedTask result = task(item.getTaskKey(), "media", item.getKind(), item.getStatus(), item.getProgress(), item.getKind(), first(item.getMessage(), item.getError()), item.getCreatedAt(), item.getUpdatedAt(), List.of("pending", "running").contains(item.getStatus()), "failed".equals(item.getStatus()));
+        UnifiedTask result = task(item.getTaskKey(), "media", item.getKind(), item.getStatus(), item.getProgress(), item.getKind(), first(item.getMessage(), item.getError()), item.getCreatedAt(), item.getUpdatedAt(), List.of("pending", "running").contains(item.getStatus()), "failed".equals(item.getStatus()) && (item.getRetryCount() == null || item.getRetryCount() < 3));
         result.setPhase(item.getPhase());
         result.setHeartbeatAt(item.getLastActivityAt() == null ? null : item.getLastActivityAt().toString());
         result.setTimeoutSec(item.getTimeoutSec());
