@@ -46,6 +46,7 @@ public class MediaGenerationService {
     private final AppProps props;
     private final ObjectMapper om;
     private final MediaGenerationTaskRepo generationTaskRepo;
+    private final AudioContractService audioContractService;
     @Qualifier("mediaExecutor") private final Executor executor;
     private final Map<String, Task> tasks = new ConcurrentHashMap<>();
     private final java.util.Set<String> activePollingTasks = ConcurrentHashMap.newKeySet();
@@ -310,7 +311,14 @@ public class MediaGenerationService {
             String voicePath = capability.voiceEndpoint() == null || capability.voiceEndpoint().isBlank() ? "/v1/audio/speech" : capability.voiceEndpoint();
             HttpURLConnection conn = openPost(voicePath.startsWith("https://") ? voicePath : endpoint(provider, voicePath), secret(provider), "application/json", om.writeValueAsBytes(payload), 180000); int status = conn.getResponseCode(); if (status < 200 || status >= 300) throw providerFailure(status, "配音生成");
             Path dir = props.mediaToolsOutput().resolve("generated-ai-audio"); Files.createDirectories(dir); Path output = dir.resolve("voice-" + Instant.now().toEpochMilli() + ".mp3"); try (InputStream in = conn.getInputStream()) { Files.copy(in, output); } finally { conn.disconnect(); }
-            if (!Files.isRegularFile(output) || Files.size(output) < 1024) throw new IllegalStateException("供应商返回的配音文件无效"); Material material = materialService.register(output.toString(), null, false, Material.Source.generated, normalizedBase(provider)); material.setRole(MaterialRole.voice); material.setTags("AI生成,配音," + model + "," + voice); material = materialService.save(material); materialService.attachBrowserUrls(material); task.setMaterialId(material.getId()); update(task, "done", 100, "配音生成完成，已作为新素材入库");
+            if (!Files.isRegularFile(output) || Files.size(output) < 1024) throw new IllegalStateException("供应商返回的配音文件无效");
+            var contract = audioContractService.inspect(output.toString(), 0, "ai-voice", com.douyin.mixcut.external.ProcessRegistry.CancellationContext.none());
+            var validation = audioContractService.validate(contract, 0);
+            if (!validation.isEmpty()) {
+                Files.deleteIfExists(output);
+                throw new IllegalStateException("AI 配音音频准入失败：" + String.join(", ", validation));
+            }
+            Material material = materialService.register(output.toString(), null, false, Material.Source.generated, normalizedBase(provider)); material.setRole(MaterialRole.voice); material.setTags("AI生成,配音," + model + "," + voice); material = materialService.save(material); materialService.attachBrowserUrls(material); task.setMaterialId(material.getId()); update(task, "done", 100, "配音生成完成，已作为新素材入库");
         } catch (Exception e) { update(task, "failed", task.getProgress(), concise(e)); }
     }
 
