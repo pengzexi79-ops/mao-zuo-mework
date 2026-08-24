@@ -37,6 +37,8 @@ public class AudioContractService {
     public List<String> validate(AudioContract contract, double requiredDuration) {
         List<String> errors = new ArrayList<>();
         if (contract == null) return List.of("AUDIO_CONTRACT_MISSING");
+        if (!contract.isHasAudio()) errors.add("AUDIO_STREAM_MISSING");
+        if (!contract.isReadable()) errors.add("AUDIO_NOT_READABLE");
         if (contract.getOutputDuration() <= 0) errors.add("AUDIO_DURATION_INVALID");
         if (contract.getSampleRate() == null || contract.getSampleRate() <= 0) errors.add("AUDIO_SAMPLE_RATE_INVALID");
         if (contract.getChannels() == null || contract.getChannels() <= 0) errors.add("AUDIO_CHANNELS_INVALID");
