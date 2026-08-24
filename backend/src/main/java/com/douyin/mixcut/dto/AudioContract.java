@@ -6,6 +6,8 @@ import lombok.Data;
 /** Provider-neutral facts measured from one audio-bearing media output. */
 @Data
 public class AudioContract {
+    private boolean readable;
+    private boolean hasAudio;
     private Integer sampleRate;
     private Integer channels;
     private String codec;
@@ -20,7 +22,9 @@ public class AudioContract {
     public static AudioContract from(FfmpegTool.MediaInfo media, FfmpegTool.AudioQuality quality,
                                      double inputDuration, String sourceType) {
         AudioContract contract = new AudioContract();
+        contract.readable = quality != null && quality.isReadable();
         if (media != null) {
+            contract.hasAudio = media.isHasAudio();
             contract.sampleRate = media.getAudioSampleRate();
             contract.channels = media.getAudioChannels();
             contract.codec = media.getAudioCodec();

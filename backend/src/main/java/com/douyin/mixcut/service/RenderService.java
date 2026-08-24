@@ -265,7 +265,7 @@ public class RenderService {
                 step(onStep, "混音中 · " + FfmpegTool.trimNum(silentDuration) + "s");
                 Path withAudio = work.resolve("audio.mp4");
                 String voicePath = plan.getVoicePath();
-                if (!preserveOriginalAudio && plan.getVoiceSegments() != null && plan.getVoiceSegments().size() > 1) {
+                if (!preserveOriginalAudio && shouldUsePlannedVoiceSegments(plan)) {
                     Path scheduledVoice = work.resolve("scheduled-voice.m4a");
                     List<FfmpegTool.AudioSlice> slices = plan.getVoiceSegments().stream()
                             .map(segment -> new FfmpegTool.AudioSlice(segment.getFilePath(), segment.getSourceStart(), segment.getDuration()))
@@ -395,6 +395,12 @@ public class RenderService {
                     + FfmpegTool.trimNum(videoDuration) + "s；已拒绝截断未读完的尾句，请缩短文案后重新生成";
         }
         return null;
+    }
+
+    private boolean shouldUsePlannedVoiceSegments(MixPlanner.Plan plan) {
+        if (plan.getVoiceSegments() == null || plan.getVoiceSegments().size() <= 1) return false;
+        String firstPath = plan.getVoiceSegments().get(0).getFilePath();
+        return !isBlank(firstPath) && firstPath.equals(plan.getVoicePath());
     }
 
     private boolean isBlank(String value) {
