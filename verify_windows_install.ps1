@@ -16,6 +16,8 @@ if ($application -notmatch 'port:\s*\$\{PORT:8760\}') { $errors.Add('application
 $mysql = Get-Content -Raw -LiteralPath (Join-Path $rootPath 'start_mysql.bat')
 if ($mysql -notmatch 'mysqladmin') { $errors.Add('start_mysql.bat lacks protocol ping') }
 if ($mysql -notmatch 'DB_URL') { $errors.Add('start_mysql.bat lacks DB_URL consistency check') }
+if ($mysql -notmatch 'MYSQL_PWD=%DB_PASSWORD%') { $errors.Add('start_mysql.bat does not pass the configured database identity to mysqladmin') }
+if ($mysql -match '--password|DB_PASSWORD%"?\s+ping') { $errors.Add('start_mysql.bat exposes the database password on the mysqladmin command line') }
 $iss = Get-Content -Raw -LiteralPath (Join-Path $rootPath 'installer\Mework.iss')
 $runSection = if ($iss -match '(?s)\[Run\](.*?)(?:\r?\n\[|$)') { $Matches[1] } else { '' }
 if ($runSection -match 'setup_runtime\.bat' -and $runSection -match 'start\.bat') { $errors.Add('installer must not run setup_runtime and start concurrently') }

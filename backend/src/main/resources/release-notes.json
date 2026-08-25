@@ -1,32 +1,58 @@
 {
-  "id": "release-2-2-146",
-  "version": "2.2.146",
+  "id": "release-2-2-147",
+  "version": "2.2.147",
   "releasedAt": "2026-08-25",
   "kind": "当前本机构建",
-  "title": "AI 视频受限流式下载闭环",
-  "summary": "视频内容从 Provider 直接流式写入任务 staging 文件，并补齐大小、MIME、错误码、收费提交阶段、重定向边界和失败恢复门禁。",
+  "title": "MySQL 启动健康检查认证修复",
+  "summary": "修复已有本机 MySQL 监听 3306 时启动器使用匿名 mysqladmin ping 导致 1045 拒绝、后端无法启动和浏览器连接被拒绝的问题。",
   "changes": [
-    "下载先检查 Content-Length，chunked 响应按累计字节限制，使用 networkMaxDownloadBytes 且不把完整视频载入堆；不自动跟随未校验重定向。",
-    "图片、视频和配音提交统一进入 submitting 阶段并记录 attemptCount；任务 API 和 AI 创作页展示 phase、errorCode 与尝试次数。",
-    "启动恢复处理 downloading/validating 任务，仅清理当前任务 staging 根目录内的 .part 文件并标记人工处理。"
+    "start_mysql.bat 使用已加载的 DB_USERNAME 和进程环境 MYSQL_PWD 执行协议 ping，密码不出现在命令行、日志或界面输出。"
   ],
   "fixes": [
-    "修复大视频受 20MB byte[] 通用响应限制、下载或素材登记失败残留文件、轮询和图片异常不持久化错误码的问题。",
-    "修复统一任务中心把没有重试端点的付费 AI 失败任务标成可重试，以及兼容 Provider 返回 application/octet-stream 或空 MIME 时被错误拒绝的问题。"
+    "修复数据库服务实际可用但匿名 ping 被 ODBC/root 用户拒绝，start.bat 因此错误退出并使 127.0.0.1:8760 返回 ERR_CONNECTION_REFUSED 的问题。"
   ],
   "verification": [
-    "DefaultMediaHttpTransportTest、OpenAiCompatibleMediaAdapterTest、MediaGenerationServiceTest、TaskQueryServiceTest 和发行历史定向测试通过。",
-    "完整 Maven 回归、前端 text integrity、Vite production build 和静态资源引用校验通过。"
+    "PowerShell 执行 start_mysql.bat 返回 MySQL 已运行并通过 ping。",
+    "verify_windows_install.ps1 通过；后端启动后 /api/system/env 返回 200。",
+    "真实浏览器根地址进入猫作 · Mework 概览，直接打开 /api/system/env 跳转到环境中心，历史页显示当前 2.2.146 与 8 月 24/25 日记录。"
   ],
-  "compatibility": "保持固定 OpenAI-compatible 与 Ark 路径；DashScope native、Qwen WebSocket TTS 和 Relay 仍返回 MEDIA_PROTOCOL_UNSUPPORTED。",
+  "compatibility": "只改变本机启动器的 MySQL 健康检查认证方式；不修改数据库 schema、用户数据、素材或凭据内容。",
   "evidence": [
-    "backend/src/main/java/com/douyin/mixcut/external/media/DefaultMediaHttpTransport.java",
-    "backend/src/main/java/com/douyin/mixcut/service/MediaGenerationService.java",
-    "backend/src/test/java/com/douyin/mixcut/external/media/DefaultMediaHttpTransportTest.java",
-    "backend/tools/release_notes.py"
+    "start_mysql.bat",
+    "verify_windows_install.ps1",
+    "backend/src/main/java/com/douyin/mixcut/web/SystemController.java",
+    "backend/src/test/java/com/douyin/mixcut/web/SystemControllerNavigationTest.java"
   ],
   "source": "backend/src/main/resources/release-notes.json",
   "history": [
+    {
+      "id": "release-2-2-146",
+      "version": "2.2.146",
+      "releasedAt": "2026-08-25",
+      "kind": "历史开发阶段",
+      "title": "AI 视频受限流式下载闭环",
+      "summary": "视频内容从 Provider 直接流式写入任务 staging 文件，并补齐大小、MIME、错误码、收费提交阶段、重定向边界和失败恢复门禁。",
+      "changes": [
+        "下载先检查 Content-Length，chunked 响应按累计字节限制，使用 networkMaxDownloadBytes 且不把完整视频载入堆；不自动跟随未校验重定向。",
+        "图片、视频和配音提交统一进入 submitting 阶段并记录 attemptCount；任务 API 和 AI 创作页展示 phase、errorCode 与尝试次数。",
+        "启动恢复处理 downloading/validating 任务，仅清理当前任务 staging 根目录内的 .part 文件并标记人工处理。"
+      ],
+      "fixes": [
+        "修复大视频受 20MB byte[] 通用响应限制、下载或素材登记失败残留文件、轮询和图片异常不持久化错误码的问题。",
+        "修复统一任务中心把没有重试端点的付费 AI 失败任务标成可重试，以及兼容 Provider 返回 application/octet-stream 或空 MIME 时被错误拒绝的问题。"
+      ],
+      "verification": [
+        "DefaultMediaHttpTransportTest、OpenAiCompatibleMediaAdapterTest、MediaGenerationServiceTest、TaskQueryServiceTest 和发行历史定向测试通过。",
+        "完整 Maven 回归、前端 text integrity、Vite production build 和静态资源引用校验通过。"
+      ],
+      "compatibility": "保持固定 OpenAI-compatible 与 Ark 路径；DashScope native、Qwen WebSocket TTS 和 Relay 仍返回 MEDIA_PROTOCOL_UNSUPPORTED。",
+      "evidence": [
+        "backend/src/main/java/com/douyin/mixcut/external/media/DefaultMediaHttpTransport.java",
+        "backend/src/main/java/com/douyin/mixcut/service/MediaGenerationService.java",
+        "backend/src/test/java/com/douyin/mixcut/external/media/DefaultMediaHttpTransportTest.java",
+        "backend/tools/release_notes.py"
+      ]
+    },
     {
       "id": "release-2-2-145",
       "version": "2.2.145",
