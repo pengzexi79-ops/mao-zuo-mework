@@ -55,7 +55,7 @@ public class MediaGenerationService {
     public MediaGenerationService(AiProviderRepo providers, CredentialCipher cipher, MaterialService materialService,
                                    MediaProviderCatalog mediaCatalog, AppProps props, ObjectMapper om,
                                    MediaGenerationTaskRepo generationTaskRepo, AudioContractService audioContractService,
-                                   MediaAdapterRegistry mediaAdapterRegistry, Executor executor) {
+                                   MediaAdapterRegistry mediaAdapterRegistry, @Qualifier("mediaExecutor") Executor executor) {
         this.providers = providers;
         this.cipher = cipher;
         this.materialService = materialService;
@@ -71,7 +71,7 @@ public class MediaGenerationService {
     public MediaGenerationService(AiProviderRepo providers, CredentialCipher cipher, MaterialService materialService,
                                    MediaProviderCatalog mediaCatalog, AppProps props, ObjectMapper om,
                                    MediaGenerationTaskRepo generationTaskRepo, AudioContractService audioContractService,
-                                   OpenAiCompatibleMediaAdapter openAiMediaAdapter, Executor executor) {
+                                   OpenAiCompatibleMediaAdapter openAiMediaAdapter, @Qualifier("mediaExecutor") Executor executor) {
         this(providers, cipher, materialService, mediaCatalog, props, om, generationTaskRepo, audioContractService,
                 new MediaAdapterRegistry(openAiMediaAdapter), executor);
     }

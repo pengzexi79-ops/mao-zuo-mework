@@ -1,29 +1,54 @@
 {
-  "id": "release-2-2-149",
-  "version": "2.2.149",
+  "id": "release-2-2-150",
+  "version": "2.2.150",
   "releasedAt": "2026-08-26",
   "kind": "当前本机构建",
-  "title": "全量优化启动验证修复",
-  "summary": "修复全量优化后的 Spring 运行时 adapter registry 注入问题，完成模块化生产链的最终启动验证。",
+  "title": "AI 媒体线程池注入启动修复",
+  "summary": "修复 AI 媒体生成服务线程池注入缺少限定符导致最终 JAR 启动失败的问题。",
   "changes": [
-    "为 MediaAdapterRegistry 多构造器明确 Spring 注入入口，确保 OpenAI-compatible adapter registry 随应用正常启动。"
+    "MediaGenerationService 明确注入 mediaExecutor，避免多个线程池 bean 存在时 Spring 无法选择执行器。"
   ],
   "fixes": [
-    "修复编译和单元测试通过但运行 JAR 因 MediaAdapterRegistry 无默认构造器而启动失败的问题。"
+    "修复编译和全量测试通过但运行 JAR 因存在多个 Executor bean 而启动失败的问题。"
   ],
   "verification": [
-    "完整 Maven 测试通过（438 项，3 项按环境门控跳过）。",
+    "完整 Maven 测试通过。",
     "前端文本完整性、Vite production build 和静态资源引用校验通过。",
-    "修复后 JAR 重新启动验证通过；DashScope native、Qwen WebSocket TTS 和 Relay 仍明确保持未实现。"
+    "修复后 JAR 启动并通过 /api/system/env 健康检查；Studio 页面显示后端已连接。"
   ],
-  "compatibility": "仅修复 Spring bean 注入，不修改 Provider wire contract、数据库 schema、用户素材、FixedOrderPresets 或凭据。",
+  "compatibility": "仅限定现有 AI 媒体任务使用的 mediaExecutor，不修改任务数据、数据库 schema、用户素材、FixedOrderPresets 或凭据。",
   "evidence": [
+    "backend/src/main/java/com/douyin/mixcut/service/MediaGenerationService.java",
     "backend/src/main/java/com/douyin/mixcut/external/media/MediaAdapterRegistry.java",
-    "backend/src/test/java/com/douyin/mixcut/external/media/MediaAdapterRegistryTest.java",
-    "backend/src/main/resources/capabilities.json"
+    "backend/src/test/java/com/douyin/mixcut/service/MediaGenerationServiceTest.java"
   ],
   "source": "backend/src/main/resources/release-notes.json",
   "history": [
+    {
+      "id": "release-2-2-149",
+      "version": "2.2.149",
+      "releasedAt": "2026-08-26",
+      "kind": "历史开发阶段",
+      "title": "全量优化启动验证修复",
+      "summary": "修复全量优化后的 Spring 运行时 adapter registry 注入问题，完成模块化生产链的最终启动验证。",
+      "changes": [
+        "为 MediaAdapterRegistry 多构造器明确 Spring 注入入口，确保 OpenAI-compatible adapter registry 随应用正常启动。"
+      ],
+      "fixes": [
+        "修复编译和单元测试通过但运行 JAR 因 MediaAdapterRegistry 无默认构造器而启动失败的问题。"
+      ],
+      "verification": [
+        "完整 Maven 测试通过（438 项，3 项按环境门控跳过）。",
+        "前端文本完整性、Vite production build 和静态资源引用校验通过。",
+        "修复后 JAR 重新启动验证通过；DashScope native、Qwen WebSocket TTS 和 Relay 仍明确保持未实现。"
+      ],
+      "compatibility": "仅修复 Spring bean 注入，不修改 Provider wire contract、数据库 schema、用户素材、FixedOrderPresets 或凭据。",
+      "evidence": [
+        "backend/src/main/java/com/douyin/mixcut/external/media/MediaAdapterRegistry.java",
+        "backend/src/test/java/com/douyin/mixcut/external/media/MediaAdapterRegistryTest.java",
+        "backend/src/main/resources/capabilities.json"
+      ]
+    },
     {
       "id": "release-2-2-148",
       "version": "2.2.148",
