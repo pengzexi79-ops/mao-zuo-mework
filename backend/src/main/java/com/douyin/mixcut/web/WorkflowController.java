@@ -12,7 +12,11 @@ import com.douyin.mixcut.repository.Repositories.WorkflowRepo;
 import com.douyin.mixcut.service.BootstrapService;
 import com.douyin.mixcut.service.MixPlanner;
 import com.douyin.mixcut.service.PreflightService;
+import com.douyin.mixcut.service.AudioContractService;
 import com.douyin.mixcut.service.SkillEngine;
+import com.douyin.mixcut.external.ProcessRegistry;
+import com.douyin.mixcut.service.RenderAdmissionService;
+import com.douyin.mixcut.dto.EffectiveRenderConfig;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -38,6 +42,8 @@ public class WorkflowController {
     private final ProjectRepo projectRepo;
     private final SkillEngine engine;
     private final PreflightService preflightService;
+    private final AudioContractService audioContractService;
+    private final RenderAdmissionService renderAdmissionService;
     private final BootstrapService bootstrapService;
     private final com.douyin.mixcut.service.AiService aiService;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -495,7 +501,7 @@ public class WorkflowController {
     // ---------------- 干跑预览 ----------------
 
     @Data
-    public static class DryRunReq { private Long workflowId; private Long projectId; private MixParams params; private Integer variant = 0; }
+    public static class DryRunReq { private Long workflowId; private Long projectId; private MixParams params; private Integer variant = 0; private String preparationId; }
 
     @Data
     public static class DryRunResult {
@@ -518,11 +524,19 @@ public class WorkflowController {
         if (def == null) def = engine.defaultWorkflowDef();
         Project project = req.getProjectId() == null ? null : projectRepo.findById(req.getProjectId()).orElse(null);
         MixParams params = req.getParams() == null ? new MixParams() : req.getParams();
-        MixParams normalized = params.normalized();
-        MixPlanner.Plan plan = engine.run(def, project, normalized, req.getVariant() == null ? 0 : req.getVariant(), null, null);
+        EffectiveRenderConfig config = renderAdmissionService.resolve(req.getWorkflowId(), req.getProjectId(), params,
+                req.getVariant(), req.getPreparationId());
+        MixParams normalized = config.getParams();
+        def = config.getWorkflowDef();
+        MixPlanner.Plan plan = engine.run(def, config.getProject(), config.getParams(), config.getVariant(), null, null);
         Map<String, Object> environment = bootstrapService.env();
         boolean ffmpegReady = Boolean.TRUE.equals(environment.get("ffmpeg"));
         boolean ffprobeReady = Boolean.TRUE.equals(environment.get("ffprobe"));
-        return R.ok(new DryRunResult(plan, preflightService.evaluate(plan, normalized, ffmpegReady, ffprobeReady)));
+        var preflight = preflightService.evaluate(plan, normalized, ffmpegReady, ffprobeReady);
+        preflightService.attachAudioContract(preflight, plan, normalized, audioContractService,
+                ProcessRegistry.CancellationContext.none());
+        renderAdmissionService.seal(config.getAdmission(), preflight.getStatus());
+        preflightService.attachAdmission(preflight, config.getAdmission());
+        return R.ok(new DryRunResult(plan, preflight));
     }
 }

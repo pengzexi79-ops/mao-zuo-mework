@@ -3,10 +3,13 @@ package com.douyin.mixcut.service;
 import com.douyin.mixcut.config.AppProps;
 import com.douyin.mixcut.domain.*;
 import com.douyin.mixcut.dto.MixParams;
+import com.douyin.mixcut.dto.AdmissionSnapshot;
+import com.douyin.mixcut.dto.EffectiveRenderConfig;
 import com.douyin.mixcut.external.FfmpegTool;
 import com.douyin.mixcut.external.ProcessRegistry;
 import com.douyin.mixcut.repository.MaterialStore;
 import com.douyin.mixcut.repository.Repositories.*;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -65,6 +68,8 @@ public class JobService {
     private final OutputRepairRepo outputRepairRepo;
     private final AppProps props;
     private final ObjectMapper om = new ObjectMapper();
+    private final RenderConfigResolver renderConfigResolver;
+    private final RenderAdmissionService renderAdmissionService;
 
     @Qualifier("renderExecutor")
     private final Executor renderExecutor;
@@ -88,6 +93,30 @@ public class JobService {
     @Transactional
     public Job submit(Long workflowId, Long projectId, int count, String paramsJson, String name,
                       Integer timeoutSec, Integer staleAfterSec) {
+        return submit(workflowId, projectId, count, paramsJson, name, timeoutSec, staleAfterSec, null);
+    }
+
+    /** Admission-aware submit. Verification and frozen snapshot happen in the same transaction. */
+    @Transactional
+    public Job submit(Long workflowId, Long projectId, int count, String paramsJson, String name,
+                      Integer timeoutSec, Integer staleAfterSec, AdmissionSnapshot admission) {
+        return submit(workflowId, projectId, count, paramsJson, name, timeoutSec, staleAfterSec, admission, 0, null);
+    }
+
+    @Transactional
+    public Job submit(Long workflowId, Long projectId, int count, String paramsJson, String name,
+                      Integer timeoutSec, Integer staleAfterSec, AdmissionSnapshot admission, Integer variant) {
+        return submit(workflowId, projectId, count, paramsJson, name, timeoutSec, staleAfterSec, admission, variant,
+                admission == null ? null : admission.getPreparationId());
+    }
+
+    @Transactional
+    public Job submit(Long workflowId, Long projectId, int count, String paramsJson, String name,
+                      Integer timeoutSec, Integer staleAfterSec, AdmissionSnapshot admission, Integer variant,
+                      String preparationId) {
+        EffectiveRenderConfig effective = renderAdmissionService.resolveJson(workflowId, projectId, paramsJson, variant, preparationId);
+        // Legacy service overloads remain usable for internal historical callers; HTTP callers are gated in JobController.
+        if (admission != null) renderAdmissionService.verify(admission, effective);
         Job job = new Job();
         job.setWorkflowId(workflowId);
         job.setProjectId(projectId);
@@ -99,7 +128,7 @@ public class JobService {
         job.setName(name == null || name.isBlank()
                 ? "批量出片 " + LocalDateTime.now().format(DateTimeFormatter.ofPattern("MM-dd HH:mm"))
                 : name);
-        job.setParams(freezeSubmission(workflowId, projectId, paramsJson));
+        job.setParams(freezeSubmission(workflowId, projectId, paramsJson, effective));
         job.setTimeoutSec(normalizeOptionalSeconds(timeoutSec));
         job.setStaleAfterSec(normalizeOptionalSeconds(staleAfterSec));
         job.setLastActivityAt(LocalDateTime.now());
@@ -122,7 +151,7 @@ public class JobService {
 
     /** 兼容服务层已有调用。 */
     public Job submit(Long workflowId, Long projectId, int count, String paramsJson, String name) {
-        return submit(workflowId, projectId, count, paramsJson, name, null, null);
+        return submit(workflowId, projectId, count, paramsJson, name, null, null, null);
     }
 
     /**
@@ -490,8 +519,9 @@ public class JobService {
         if (job.getProjectId() != null) {
             editorialBriefService.persistForJob(jobId, project);
         }
+        int admissionVariant = jobVariant(job);
         if (continuous) {
-            runContinuous(jobId, job, project, params, def, successful, usedSegments, batchReuseUsage);
+            runContinuous(jobId, job, project, params, def, successful, usedSegments, batchReuseUsage, admissionVariant);
             return;
         }
 
@@ -544,7 +574,7 @@ public class JobService {
                     ctx.setHookText(itemParams.getHookText());
                 }
                 final int displayIdx = idx;
-                RenderAttempt attempt = renderItemWithRetry(project, itemParams, def, idx - 1,
+                RenderAttempt attempt = renderItemWithRetry(project, itemParams, def, admissionVariant + idx - 1,
                         usedSegments, batchReuseUsage, projectFuzzyKeys, jobId, displayIdx, total, ctx, warnings, latest);
                 MixPlanner.Plan plan = attempt.plan;
                 RenderService.RenderResult result = attempt.result;
@@ -1241,14 +1271,11 @@ public class JobService {
         return indexes;
     }
 
-    private String freezeSubmission(Long workflowId, Long projectId, String submittedJson) {
+    private String freezeSubmission(Long workflowId, Long projectId, String submittedJson, EffectiveRenderConfig admissionConfig) {
         try {
             Project project = projectId == null ? null : projectRepo.findById(projectId).orElse(null);
-            MixParams effective = mergeProjectDefaults(submittedJson, project);
-            enrichFolderStepSnapshots(effective);
-            if (effective.getSeed() == null) {
-                effective.setSeed(stableSeed(workflowId, projectId, om.writeValueAsString(effective)));
-            }
+            MixParams effective = admissionConfig == null ? mergeProjectDefaults(submittedJson, project) : admissionConfig.getParams();
+            // Admission resolution already finalized seed and effective parameters. Do not mutate them here.
             com.fasterxml.jackson.databind.node.ObjectNode root = om.createObjectNode();
             root.set("effectiveParams", om.valueToTree(effective));
             root.put("snapshotVersion", 1);
@@ -1264,6 +1291,11 @@ public class JobService {
             if (project != null) {
                 root.put("projectNameSnapshot", project.getName());
                 root.put("projectDefaultParamsSnapshot", project.getDefaultParams() == null ? "" : project.getDefaultParams());
+            }
+            if (admissionConfig != null) {
+                root.set("admissionSnapshot", om.valueToTree(admissionConfig.getAdmission()));
+                root.put("configHash", admissionConfig.getConfigHash());
+                root.put("variant", admissionConfig.getVariant() == null ? 0 : admissionConfig.getVariant());
             }
             return om.writeValueAsString(root);
         } catch (Exception e) {
@@ -1314,7 +1346,8 @@ public class JobService {
 
     /** 持续任务每次只生成一条，成功后即刻继续；连续失败上限防止素材或 ffmpeg 异常时无限空转。 */
     private void runContinuous(Long jobId, Job job, Project project, MixParams params, String def,
-                               Set<Integer> successful, Set<String> usedSegments, Map<String, Integer> batchReuseUsage) {
+                               Set<Integer> successful, Set<String> usedSegments, Map<String, Integer> batchReuseUsage,
+                               int admissionVariant) {
         int consecutiveFailures = 0;
         String lastFailureReason = null;
         Long projectId = job.getProjectId();
@@ -1352,7 +1385,7 @@ public class JobService {
                 }
                 SkillEngine.Ctx ctx = new SkillEngine.Ctx();
                 if (itemParams.getHookText() != null && !itemParams.getHookText().isBlank()) ctx.setHookText(itemParams.getHookText());
-                RenderAttempt attempt = renderItemWithRetry(project, itemParams, def, idx - 1, usedSegments,
+                RenderAttempt attempt = renderItemWithRetry(project, itemParams, def, admissionVariant + idx - 1, usedSegments,
                         batchReuseUsage, projectFuzzyKeys, jobId, idx, Math.max(1, successful.size() + 1), ctx,
                         new ArrayList<>(), latest);
                 MixPlanner.Plan plan = attempt.plan;
@@ -1875,6 +1908,15 @@ public class JobService {
         job.setLastActivityAt(LocalDateTime.now());
     }
 
+    private int jobVariant(Job job) {
+        try {
+            JsonNode root = om.readTree(job.getParams() == null ? "{}" : job.getParams());
+            return Math.max(0, root.path("variant").asInt(0));
+        } catch (Exception ignored) {
+            return 0;
+        }
+    }
+
     private boolean isContinuous(Job job) {
         if (job == null || job.getParams() == null || job.getParams().isBlank()) return false;
         try {
@@ -1958,33 +2000,14 @@ public class JobService {
         }
     }
 
+    private MixParams readParams(String json) {
+        try { return om.readValue(json == null || json.isBlank() ? "{}" : json, MixParams.class); }
+        catch (Exception e) { return new MixParams(); }
+    }
+
     /** 项目默认参数打底；提交 JSON 中实际出现过的键覆盖项目默认值。 */
     MixParams mergeProjectDefaults(String submittedJson, Project project) {
-        MixParams base = new MixParams();
-        try {
-            com.fasterxml.jackson.databind.JsonNode root = om.readTree(submittedJson == null ? "{}" : submittedJson);
-            if (root.has("effectiveParams") && root.path("effectiveParams").isObject()) {
-                return om.treeToValue(root.path("effectiveParams"), MixParams.class).normalized();
-            }
-        } catch (Exception ignored) {
-            // Historical jobs use the compatibility merge below.
-        }
-        if (project != null && project.getDefaultParams() != null && !project.getDefaultParams().isBlank()) {
-            try {
-                base = om.readValue(project.getDefaultParams(), MixParams.class);
-            } catch (Exception e) {
-                log.debug("项目默认参数解析失败: {}", e.toString());
-            }
-        }
-        if (submittedJson != null && !submittedJson.isBlank() && !"{}".equals(submittedJson.trim())) {
-            try {
-                MixParams merged = om.readerForUpdating(base).readValue(submittedJson);
-                return merged.normalized();
-            } catch (Exception e) {
-                log.warn("出片参数解析失败，使用项目默认值: {}", e.toString());
-            }
-        }
-        return base.normalized();
+        return renderConfigResolver.mergeProjectDefaults(submittedJson, project);
     }
 
     // ---------------- 查询 ----------------
