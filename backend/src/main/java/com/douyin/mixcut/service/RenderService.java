@@ -111,6 +111,8 @@ public class RenderService {
 
         Path work = props.slices().resolve(UUID.randomUUID().toString().substring(0, 8));
         Path finalPath = props.output().resolve(outName.endsWith(".mp4") ? outName : outName + ".mp4");
+        Path thumbnail = props.thumbs().resolve(finalPath.getFileName().toString().replace(".mp4", ".jpg"));
+        boolean delivered = false;
         try {
             Files.createDirectories(work);
             step(onStep, "切片 0/" + plan.getSegments().size() + " · 0.0/"
@@ -344,8 +346,8 @@ public class RenderService {
                 return result;
             }
 
-            Path thumbnail = props.thumbs().resolve(finalPath.getFileName().toString().replace(".mp4", ".jpg"));
             Path thumbnailWork = work.resolve("thumbnail.jpg");
+            if (processRegistry != null) processRegistry.registerOutput(renderContext, thumbnail, props.thumbs());
             if (ffmpeg.thumbnail(finalPath.toString(), thumbnailWork,
                     Math.min(1.0, Math.max(0, finalDuration / 3)), renderContext)) {
                 renderContext.throwIfCancelled();
@@ -361,6 +363,11 @@ public class RenderService {
             result.setFilePath(finalPath.toString());
             result.setPublicUrl("/files/output/" + finalPath.getFileName());
             result.setDurationSec(finalDuration);
+            delivered = true;
+            if (processRegistry != null) {
+                processRegistry.forgetOutput(renderContext, finalPath);
+                processRegistry.forgetOutput(renderContext, thumbnail);
+            }
             step(onStep, "完成 · " + FfmpegTool.trimNum(finalDuration) + "s 已通过时长校验");
             return result;
         } catch (CancellationException e) {
@@ -372,6 +379,10 @@ public class RenderService {
             result.setError("渲染异常：" + e.getClass().getSimpleName() + ": " + e.getMessage());
             return result;
         } finally {
+            if (!delivered) {
+                try { Files.deleteIfExists(finalPath); } catch (Exception ignored) { }
+                try { Files.deleteIfExists(thumbnail); } catch (Exception ignored) { }
+            }
             cleanup(work);
         }
     }
@@ -415,6 +426,7 @@ public class RenderService {
                 .toList();
         if (ordered.size() != segments.size()) throw new IllegalStateException("口播时间线包含空片段");
         List<FfmpegTool.AudioSlice> slices = new ArrayList<>();
+        java.util.Map<String, Double> actualAudioDurations = new java.util.HashMap<>();
         double previousEnd = 0;
         for (MixPlanner.Plan.VoiceSegment segment : ordered) {
             context.throwIfCancelled();
@@ -429,6 +441,13 @@ public class RenderService {
                     || segment.getTimelineStart() < previousEnd - 0.05) {
                 throw new IllegalStateException("口播时间线包含不可用、过短、越界或重叠片段");
             }
+            double actualDuration = actualAudioDurations.computeIfAbsent(segment.getFilePath(), path -> {
+                FfmpegTool.MediaInfo info = ffmpeg.probe(path, context);
+                return info != null && info.isHasAudio() ? info.getAudioDuration() : 0;
+            });
+            if (actualDuration + 0.05 < sourceEnd) {
+                throw new IllegalStateException("口播源文件实际时长不足，已拒绝截短时间线片段");
+            }
             slices.add(new FfmpegTool.AudioSlice(segment.getFilePath(), segment.getSourceStart(),
                     segment.getDuration(), segment.getTimelineStart()));
             previousEnd = timelineEnd;
@@ -438,8 +457,12 @@ public class RenderService {
 
     private boolean shouldUsePlannedVoiceSegments(MixPlanner.Plan plan) {
         if (plan.getVoiceSegments() == null || plan.getVoiceSegments().size() <= 1) return false;
-        String firstPath = plan.getVoiceSegments().get(0).getFilePath();
-        return !isBlank(firstPath) && firstPath.equals(plan.getVoicePath());
+        String firstPath = plan.getVoiceSegments().stream()
+                .filter(java.util.Objects::nonNull)
+                .min(java.util.Comparator.comparingDouble(MixPlanner.Plan.VoiceSegment::getTimelineStart))
+                .map(MixPlanner.Plan.VoiceSegment::getFilePath).orElse(null);
+        if (isBlank(firstPath) || isBlank(plan.getVoicePath())) return false;
+        return Path.of(firstPath).toAbsolutePath().normalize().equals(Path.of(plan.getVoicePath()).toAbsolutePath().normalize());
     }
 
     private boolean isBlank(String value) {

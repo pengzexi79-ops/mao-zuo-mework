@@ -7,6 +7,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.concurrent.CancellationException;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -64,6 +65,22 @@ class ProcessRegistryTest {
         registry.cancel(context);
 
         assertFalse(registry.registerOutput(context, output, root));
+        assertFalse(Files.exists(output));
+    }
+
+    @Test
+    void cleanupRetainsMissingOutputRegistrationForLateMove() throws Exception {
+        ProcessRegistry registry = new ProcessRegistry();
+        ProcessRegistry.CancellationContext context = registry.create("task-late-move");
+        Path root = temp.resolve("late-move");
+        Path output = root.resolve("final.mp4");
+        Files.createDirectories(root);
+        assertTrue(registry.registerOutput(context, output, root));
+
+        assertEquals(0, registry.cleanupOutputs(context));
+        Files.writeString(output, "late output");
+
+        assertEquals(1, registry.cleanupOutputs(context));
         assertFalse(Files.exists(output));
     }
 

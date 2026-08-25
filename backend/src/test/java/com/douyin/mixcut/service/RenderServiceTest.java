@@ -11,6 +11,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -114,7 +116,12 @@ class RenderServiceTest {
 
     @Test
     void voiceTimelineSortsSegmentsAndRejectsOutOfBoundsRanges() {
-        RenderService service = new RenderService(null, null, null, null);
+        FfmpegTool ffmpeg = mock(FfmpegTool.class);
+        FfmpegTool.MediaInfo sourceInfo = new FfmpegTool.MediaInfo();
+        sourceInfo.setHasAudio(true);
+        sourceInfo.setAudioDuration(2);
+        when(ffmpeg.probe(anyString(), any(ProcessRegistry.CancellationContext.class))).thenReturn(sourceInfo);
+        RenderService service = new RenderService(null, ffmpeg, null, null);
         MixPlanner.Plan.VoiceSegment later = voiceSegment("C:/fixtures/later.wav", 2, 1, 0, 2);
         MixPlanner.Plan.VoiceSegment first = voiceSegment("C:/fixtures/first.wav", 0, 1, 0, 2);
 
@@ -129,7 +136,7 @@ class RenderServiceTest {
         assertThrows(IllegalStateException.class, () -> org.springframework.test.util.ReflectionTestUtils.invokeMethod(service,
                 "validatedVoiceSlices", List.of(overflow), 4.0, ProcessRegistry.CancellationContext.none()));
 
-        MixPlanner.Plan.VoiceSegment sourceOverflow = voiceSegment("C:/fixtures/source-overflow.wav", 0, 2, 1, 2);
+        MixPlanner.Plan.VoiceSegment sourceOverflow = voiceSegment("C:/fixtures/source-overflow.wav", 0, 1.5, 1, 2);
         assertThrows(IllegalStateException.class, () -> org.springframework.test.util.ReflectionTestUtils.invokeMethod(service,
                 "validatedVoiceSlices", List.of(sourceOverflow), 4.0, ProcessRegistry.CancellationContext.none()));
     }
