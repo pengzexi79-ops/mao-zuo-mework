@@ -2,6 +2,8 @@ package com.douyin.mixcut.service;
 
 import com.douyin.mixcut.domain.Project;
 import com.douyin.mixcut.domain.Workflow;
+import com.douyin.mixcut.domain.Material;
+import com.douyin.mixcut.repository.MaterialStore;
 import com.douyin.mixcut.dto.AdmissionSnapshot;
 import com.douyin.mixcut.dto.PreflightResult;
 import com.douyin.mixcut.external.FfmpegTool;
@@ -26,6 +28,7 @@ class RenderAdmissionServiceTest {
     private SkillEngine skillEngine;
     private PreflightService preflightService;
     private FfmpegTool ffmpeg;
+    private MaterialStore materialStore;
     private Project project;
     private Workflow workflow;
 
@@ -41,6 +44,7 @@ class RenderAdmissionServiceTest {
         skillEngine = mock(SkillEngine.class);
         preflightService = mock(PreflightService.class);
         ffmpeg = mock(FfmpegTool.class);
+        materialStore = mock(MaterialStore.class);
         when(ffmpeg.ffmpegAvailable()).thenReturn(true);
         when(ffmpeg.ffprobeAvailable()).thenReturn(true);
         when(skillEngine.run(anyString(), any(), any(), anyInt(), isNull(), isNull()))
@@ -49,7 +53,7 @@ class RenderAdmissionServiceTest {
         ready.setStatus(PreflightResult.READY);
         when(preflightService.evaluate(any(), any(), eq(true), eq(true))).thenReturn(ready);
         service = new RenderAdmissionService(projectRepo, workflowRepo, new ObjectMapper(), resolver,
-                skillEngine, preflightService, ffmpeg);
+                skillEngine, preflightService, ffmpeg, mock(AudioContractService.class));
     }
 
     @Test
@@ -61,6 +65,28 @@ class RenderAdmissionServiceTest {
         assertNotEquals(first.getConfigHash(), service.resolve(9L, 7L, changed).getConfigHash());
         workflow.setVersion("2");
         assertNotEquals(first.getWorkflowHash(), service.resolve(9L, 7L, new MixParams()).getWorkflowHash());
+    }
+
+    @Test
+    void materialFactsChangeHashWithoutExposingPath() throws Exception {
+        java.nio.file.Path file = java.nio.file.Files.createTempFile("admission-material", ".mp4");
+        java.nio.file.Files.writeString(file, "one");
+        Material material = new Material();
+        material.setId(100L);
+        material.setFilePath(file.toString());
+        material.setDurationSec(3.0);
+        when(materialStore.findAll()).thenReturn(java.util.List.of(material));
+        RenderAdmissionService withStore = new RenderAdmissionService(projectRepo, workflowRepo, new ObjectMapper(),
+                new RenderConfigResolver(new ObjectMapper()), skillEngine, preflightService, ffmpeg,
+                mock(AudioContractService.class), materialStore);
+        MixParams params = new MixParams();
+        params.setMaterialIds(java.util.List.of(100L));
+        EffectiveRenderConfig first = withStore.resolve(9L, 7L, params);
+        java.nio.file.Files.writeString(file, "two-bytes");
+        EffectiveRenderConfig second = withStore.resolve(9L, 7L, params);
+        assertNotEquals(first.getMaterialScopeHash(), second.getMaterialScopeHash());
+        assertNotEquals(first.getConfigHash(), second.getConfigHash());
+        java.nio.file.Files.deleteIfExists(file);
     }
 
     @Test

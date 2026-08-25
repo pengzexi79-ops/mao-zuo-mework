@@ -21,4 +21,11 @@ public interface MediaHttpTransport {
             super("媒体下载超过 " + maxBytes + " 字节限制");
         }
     }
+
+    /** Response body buffered in memory exceeded the bounded transport limit (see DefaultMediaHttpTransport.readLimited). */
+    class ResponseTooLargeException extends IllegalStateException {
+        public ResponseTooLargeException(long maxBytes) {
+            super("媒体 Provider 响应超过 " + maxBytes + " 字节限制");
+        }
+    }
 }

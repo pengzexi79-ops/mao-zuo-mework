@@ -78,6 +78,27 @@ class DefaultMediaHttpTransportTest {
         }
     }
 
+    @Test
+    void executeRejectsResponseBodyExceedingMemoryLimit() throws Exception {
+        long size = 21L * 1024 * 1024;
+        try (TestServer server = new TestServer(exchange -> {
+            exchange.sendResponseHeaders(200, size);
+            byte[] chunk = new byte[1024 * 1024];
+            long remaining = size;
+            while (remaining > 0) {
+                int n = (int) Math.min(chunk.length, remaining);
+                exchange.getResponseBody().write(chunk, 0, n);
+                remaining -= n;
+            }
+            exchange.close();
+        })) {
+            MediaHttpTransport.Request req = new MediaHttpTransport.Request(
+                    "GET", "http://127.0.0.1:" + server.port() + "/video", Map.of(), new byte[0], "");
+            assertThrows(MediaHttpTransport.ResponseTooLargeException.class,
+                    () -> new DefaultMediaHttpTransport().execute(req));
+        }
+    }
+
     private MediaHttpTransport.Request request(TestServer server) {
         return new MediaHttpTransport.Request("GET", "http://127.0.0.1:" + server.port() + "/video", Map.of(), new byte[0], "");
     }

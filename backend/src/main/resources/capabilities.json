@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "manifestVersion": "1.1.0",
+  "manifestVersion": "1.1.1",
   "description": "Mework 能力中心唯一数据源：驱动 BootstrapService 的能力清单、修复安装边界与官方入口。",
   "requirementsFile": "requirements-windows.txt",
   "approvedPip": {
@@ -316,6 +316,17 @@
         "maxLength": 512,
         "restartRequired": true
       }
+    },
+    {
+      "type": "external",
+      "key": "ai-media-generation",
+      "group": "AI 媒体生成",
+      "name": "付费 AI 媒体生成（图片/视频/配音）",
+      "tool": "OpenAI-compatible Provider",
+      "installMode": "authorization",
+      "officialUrl": "https://platform.openai.com/docs/guides/image-generation",
+      "guide": "在「AI 接入」页配置 OpenAI-compatible 供应商（Base URL + API Key）并启用对应模型后，即可在素材库通过付费 AI 生成图片、视频与配音。由 external/media 适配器体系驱动，已纳入统一任务中心与素材入库。",
+      "usedBy": "素材库付费 AI 生成（图片/视频/配音）、出片素材补充"
     }
   ]
 }

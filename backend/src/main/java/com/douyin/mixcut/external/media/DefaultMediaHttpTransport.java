@@ -92,7 +92,7 @@ public class DefaultMediaHttpTransport implements MediaHttpTransport {
             int read;
             while ((read = input.read(buffer)) >= 0) {
                 total += read;
-                if (total > limit) throw new IllegalStateException("媒体 Provider 响应超过 20MB 限制");
+                if (total > limit) throw new ResponseTooLargeException(limit);
                 output.write(buffer, 0, read);
             }
             return output.toByteArray();

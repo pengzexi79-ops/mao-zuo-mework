@@ -1,30 +1,64 @@
 {
-  "id": "release-2-2-147",
-  "version": "2.2.147",
+  "id": "release-2-2-148",
+  "version": "2.2.148",
   "releasedAt": "2026-08-25",
   "kind": "当前本机构建",
-  "title": "MySQL 启动健康检查认证修复",
-  "summary": "修复已有本机 MySQL 监听 3306 时启动器使用匿名 mysqladmin ping 导致 1045 拒绝、后端无法启动和浏览器连接被拒绝的问题。",
+  "title": "全量优化模块收口",
+  "summary": "收口出片台准入、音频合同预检、Provider adapter 注册、批量任务恢复和成片库任务兼容，形成可复核的模块化生产闭环。",
   "changes": [
-    "start_mysql.bat 使用已加载的 DB_USERNAME 和进程环境 MYSQL_PWD 执行协议 ping，密码不出现在命令行、日志或界面输出。"
+    "出片 dry-run 与提交共享有效配置、稳定 seed、variant、preparationId 和准入 hash；HTTP 提交要求有效预检快照并由服务端重新计算状态。",
+    "预检结果增加 material-audio、original、ai-voice、silent 的音频模式和 AudioContract 结果；OpenAI-compatible 媒体协议通过显式 adapter registry 执行。",
+    "批量任务补充租约恢复、线程池拒绝、暂停/恢复/取消/重试和成功检查点测试；成片库兼容 phase-aware 任务列表。"
   ],
   "fixes": [
-    "修复数据库服务实际可用但匿名 ping 被 ODBC/root 用户拒绝，start.bat 因此错误退出并使 127.0.0.1:8760 返回 ERR_CONNECTION_REFUSED 的问题。"
+    "修复 dry-run 与实际提交 seed/variant 不一致、准入状态签名可绕过、素材文件变化未进入 hash、音频合同 blocker 未更新总状态以及任务列表包装破坏成片筛选的问题。",
+    "修复人工修复修改冻结参数后仍保留旧准入快照，以及 Provider 响应过大错误未映射稳定错误码的问题。"
   ],
   "verification": [
-    "PowerShell 执行 start_mysql.bat 返回 MySQL 已运行并通过 ping。",
-    "verify_windows_install.ps1 通过；后端启动后 /api/system/env 返回 200。",
-    "真实浏览器根地址进入猫作 · Mework 概览，直接打开 /api/system/env 跳转到环境中心，历史页显示当前 2.2.146 与 8 月 24/25 日记录。"
+    "完整 Maven 测试通过；线程池拒绝、恢复和 MySQL/外部网络相关日志为既有测试中的预期隔离场景。",
+    "前端文本完整性、Vite production build 和静态资源引用校验通过。",
+    "未实现的 DashScope native、Qwen WebSocket TTS 和 Relay wire contract 继续明确拒绝，未伪称完成。"
   ],
-  "compatibility": "只改变本机启动器的 MySQL 健康检查认证方式；不修改数据库 schema、用户数据、素材或凭据内容。",
+  "compatibility": "不修改生产数据库 schema、用户素材或 FixedOrderPresets；保留旧内部任务提交兼容路径，HTTP 出片接口要求先完成预检；OpenAI-compatible 之外的未定义协议不执行。",
   "evidence": [
-    "start_mysql.bat",
-    "verify_windows_install.ps1",
-    "backend/src/main/java/com/douyin/mixcut/web/SystemController.java",
-    "backend/src/test/java/com/douyin/mixcut/web/SystemControllerNavigationTest.java"
+    "backend/src/main/java/com/douyin/mixcut/service/RenderAdmissionService.java",
+    "backend/src/main/java/com/douyin/mixcut/service/PreflightService.java",
+    "backend/src/main/java/com/douyin/mixcut/external/media/MediaAdapterRegistry.java",
+    "backend/src/main/java/com/douyin/mixcut/service/JobService.java",
+    "frontend/src/views/Studio.vue",
+    "frontend/src/views/Outputs.vue",
+    "backend/src/test/java/com/douyin/mixcut/service/RenderAdmissionServiceTest.java",
+    "backend/src/test/java/com/douyin/mixcut/service/PreflightServiceTest.java",
+    "backend/src/test/java/com/douyin/mixcut/service/JobServiceReliabilityTest.java"
   ],
   "source": "backend/src/main/resources/release-notes.json",
   "history": [
+    {
+      "id": "release-2-2-147",
+      "version": "2.2.147",
+      "releasedAt": "2026-08-25",
+      "kind": "历史开发阶段",
+      "title": "MySQL 启动健康检查认证修复",
+      "summary": "修复已有本机 MySQL 监听 3306 时启动器使用匿名 mysqladmin ping 导致 1045 拒绝、后端无法启动和浏览器连接被拒绝的问题。",
+      "changes": [
+        "start_mysql.bat 使用已加载的 DB_USERNAME 和进程环境 MYSQL_PWD 执行协议 ping，密码不出现在命令行、日志或界面输出。"
+      ],
+      "fixes": [
+        "修复数据库服务实际可用但匿名 ping 被 ODBC/root 用户拒绝，start.bat 因此错误退出并使 127.0.0.1:8760 返回 ERR_CONNECTION_REFUSED 的问题。"
+      ],
+      "verification": [
+        "PowerShell 执行 start_mysql.bat 返回 MySQL 已运行并通过 ping。",
+        "verify_windows_install.ps1 通过；后端启动后 /api/system/env 返回 200。",
+        "真实浏览器根地址进入猫作 · Mework 概览，直接打开 /api/system/env 跳转到环境中心，历史页显示当前 2.2.146 与 8 月 24/25 日记录。"
+      ],
+      "compatibility": "只改变本机启动器的 MySQL 健康检查认证方式；不修改数据库 schema、用户数据、素材或凭据内容。",
+      "evidence": [
+        "start_mysql.bat",
+        "verify_windows_install.ps1",
+        "backend/src/main/java/com/douyin/mixcut/web/SystemController.java",
+        "backend/src/test/java/com/douyin/mixcut/web/SystemControllerNavigationTest.java"
+      ]
+    },
     {
       "id": "release-2-2-146",
       "version": "2.2.146",

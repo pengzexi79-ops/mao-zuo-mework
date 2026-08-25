@@ -4,7 +4,9 @@ import com.douyin.mixcut.config.AppProps;
 import com.douyin.mixcut.domain.Job;
 import com.douyin.mixcut.domain.JobOutput;
 import com.douyin.mixcut.domain.JobStatus;
+import com.douyin.mixcut.dto.MixParams;
 import com.douyin.mixcut.repository.Repositories.JobOutputRepo;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.douyin.mixcut.external.ProcessRegistry;
 import com.douyin.mixcut.repository.Repositories.JobRepo;
 import org.junit.jupiter.api.BeforeEach;
@@ -45,6 +47,26 @@ class JobServiceReliabilityTest {
                 deps.deliveryRepairService(), deps.outputVersionRepo(), deps.outputRepairRepo(), new AppProps(),
                 renderConfigResolver, renderAdmissionService, renderExecutor);
         ReflectionTestUtils.setField(service, "processRegistry", processRegistry);
+    }
+
+    @Test
+    void repairInvalidatesFrozenAdmissionSnapshotButKeepsEffectiveParams() throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        var root = mapper.createObjectNode();
+        MixParams original = new MixParams();
+        root.set("effectiveParams", mapper.valueToTree(original));
+        root.put("snapshotVersion", 1);
+        var admission = mapper.createObjectNode();
+        admission.put("status", "ready");
+        admission.put("statusSignature", "sig");
+        admission.put("configHash", "config");
+        root.set("admissionSnapshot", admission);
+        String updated = ReflectionTestUtils.invokeMethod(service, "updateFrozenParams", root.toString(), new MixParams());
+        var updatedRoot = mapper.readTree(updated);
+        assertEquals("invalidated_by_repair", updatedRoot.path("admissionSnapshot").path("status").asText());
+        assertEquals("effective_params_changed_by_repair", updatedRoot.path("admissionInvalidatedReason").asText());
+        org.junit.jupiter.api.Assertions.assertTrue(updatedRoot.path("effectiveParams").isObject());
+        org.junit.jupiter.api.Assertions.assertTrue(updatedRoot.path("admissionSnapshot").path("statusSignature").isNull());
     }
 
     @Test

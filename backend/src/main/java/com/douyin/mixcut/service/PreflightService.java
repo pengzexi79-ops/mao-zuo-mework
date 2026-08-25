@@ -173,6 +173,9 @@ public class PreflightService {
         } else if (contracts != null && (hasBgm || hasVoice)) {
             if (hasVoice) inspect(audio, true, safePlan.getVoicePath(), safePlan.getVoiceDurationSec(), contracts, context);
             if (hasBgm) inspect(audio, false, safePlan.getBgmPath(), safePlan.getPlannedSec(), contracts, context);
+        } else if (("material-audio".equals(mode) || "ai-voice".equals(mode)) && result.getBlockers().stream().noneMatch(issue -> issue.getCode().startsWith("audio."))) {
+            audio.getBlockers().add(PreflightIssue.blocker("audio.contract_unavailable", "audio",
+                    "当前音频模式没有可执行的音频合同检查，无法安全提交。", "inspect_audio"));
         }
         result.getBlockers().addAll(audio.getBlockers());
         result.getWarnings().addAll(audio.getWarnings());
@@ -182,6 +185,7 @@ public class PreflightService {
                 ? (audio.getWarnings().isEmpty() ? PreflightResult.READY : PreflightResult.WARNING)
                 : PreflightResult.BLOCKED);
         result.setAudio(audio);
+        finish(result);
         return result;
     }
 

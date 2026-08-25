@@ -434,7 +434,7 @@ async function load() {
   try {
     const [outputRows, jobRows, location] = await Promise.all([api.allOutputs(), api.jobs(), api.outputLocation()])
     list.value = outputRows
-    jobs.value = jobRows
+    jobs.value = (Array.isArray(jobRows) ? jobRows : []).map((row) => row?.job || row)
     outputLocation.value.path = location.path || ''
     loadError.value = false
   } catch {
