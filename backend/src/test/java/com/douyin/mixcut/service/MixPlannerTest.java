@@ -695,18 +695,19 @@ class MixPlannerTest {
     void standardDedupeReportsSameSourceOverlap() {
         MixPlanner planner = new MixPlanner();
         MixParams params = new MixParams();
-        params.setMinSec(20);
-        params.setMaxSec(25);
-        params.setTargetDurationSec(22);
-        params.setSliceSec(3.0);
+        params.setMinSec(8);
+        params.setMaxSec(10);
+        params.setTargetDurationSec(9);
+        params.setSliceSec(4.0);
         params.setSliceJitter(0.0);
+        params.setSeed(1L);
         params.setHookSec(0.0);
         params.setProductSlots(0);
         params.setEndcard(false);
 
-        // A single source must be reused across rounds, producing overlapping windows in standard mode.
+        // A short single source must be reused across rounds, producing overlapping windows in standard mode.
         MixPlanner.Plan plan = planner.plan(planner.buildPool(List.of(
-                visual(1L, "single.mp4", 30, MaterialRole.body))), params, 0, "");
+                visual(1L, "single.mp4", 10, MaterialRole.body))), params, 0, "");
 
         assertTrue(plan.isUsable());
         assertTrue(plan.getNotes().stream().anyMatch(n -> n.contains("同源片段时间重叠")),

@@ -629,6 +629,7 @@
             <span>可用画面 {{ Number(preflight.usableVisualSec || 0).toFixed(1) }} 秒</span>
             <span>片段 {{ preflight.visualCount || 0 }} 条</span>
             <span>音频 {{ audioCoverageLabel(preflight.audioCoverageStatus) }}</span>
+            <span v-if="admissionSnapshot">本次准入已绑定<span v-if="admissionCheckedAt"> · 检查于 {{ formatAdmissionTime(admissionCheckedAt) }}</span><span v-if="admissionExpiresAt"> · {{ admissionExpiryText }}</span></span>
           </div>
           <div v-if="preflight.blockers?.length" class="preflight-issues">
             <div v-for="issue in preflight.blockers" :key="issue.code" class="preflight-issue blocker"><el-tag size="small" type="danger">阻断</el-tag><span>{{ issue.message }}</span></div>
@@ -715,7 +716,7 @@
             <el-button v-if="preparing || preparationBackground" size="large" plain type="warning" @click="cancelPrepare">取消准备并继续</el-button>
           </template>
           <template v-else>
-            <span class="batch-status">{{ activeContinuousJob.status === 'paused' ? '已暂停，已生成的成片会保留' : `正在生成 · 已产出 ${jobLive[activeContinuousJob.id]?.completedItems ?? activeContinuousJob.current ?? 0} 条` }}<span v-if="jobLive[activeContinuousJob.id]?.phaseLabel || jobLive[activeContinuousJob.id]?.step"> · {{ jobLive[activeContinuousJob.id]?.phaseLabel || jobLive[activeContinuousJob.id]?.step }}</span></span>
+            <span class="batch-status">{{ activeContinuousJob.status === 'paused' ? '已暂停，已生成的成片会保留' : `正在生成 · 已产出 ${jobLive[activeContinuousJob.id]?.completedItems ?? activeContinuousJob.current ?? 0} 条` }}<span v-if="jobLive[activeContinuousJob.id]?.phaseLabel || jobLive[activeContinuousJob.id]?.phase || jobLive[activeContinuousJob.id]?.step"> · {{ jobLive[activeContinuousJob.id]?.phaseLabel || jobLive[activeContinuousJob.id]?.phase || jobLive[activeContinuousJob.id]?.step }}</span></span>
             <el-button v-if="activeContinuousJob.status === 'paused'" type="primary" size="large" @click="resume(activeContinuousJob)">继续生成</el-button>
             <el-button v-else type="warning" size="large" @click="pause(activeContinuousJob)">暂停并保留</el-button>
             <el-popconfirm title="放弃未完成内容？已生成的成片会保留" @confirm="cancel(activeContinuousJob)"><template #reference><el-button type="danger" plain>放弃当前任务</el-button></template></el-popconfirm>
@@ -758,7 +759,7 @@
                 :status="row.continuous ? undefined : (row.status === 'failed' ? 'exception' : (row.status === 'done' ? 'success' : ''))" />
               <div class="muted">{{ row.continuous ? `连续模式 · 已产出 ${jobLive[row.id]?.completedItems ?? row.current ?? 0} 条` : `${jobLive[row.id]?.completedItems ?? row.current ?? 0} / ${jobLive[row.id]?.totalItems ?? row.total ?? row.count}` }}</div>
               <el-progress v-if="jobLive[row.id]?.currentItemProgress" :percentage="jobLive[row.id].currentItemProgress" :stroke-width="6" :show-text="false" />
-              <div class="muted">{{ translateTechnicalText(jobLive[row.id]?.phaseLabel || jobLive[row.id]?.step || row.summary || '等待调度') }}</div>
+              <div class="muted">{{ translateTechnicalText(jobLive[row.id]?.phaseLabel || jobLive[row.id]?.phase || jobLive[row.id]?.step || row.summary || '等待调度') }}</div>
               <div v-if="jobLive[row.id]" class="muted">已用 {{ formatDuration(jobLive[row.id].elapsedSec) }} · {{ jobLive[row.id].itemsPerMinute || 0 }} 条/分<span v-if="!jobLive[row.id].isContinuous && jobLive[row.id].etaSec"> · 预计 {{ formatDuration(jobLive[row.id].etaSec) }}</span></div>
             </template>
           </el-table-column>
@@ -792,7 +793,7 @@
           <el-descriptions-item label="状">{{ STATUS_LABEL[jobDetail.job.status] }}</el-descriptions-item>
           <el-descriptions-item label="总体进度">{{ jobDetail.isContinuous ? '连续生成' : `${jobDetail.overallProgress || 0}%` }}</el-descriptions-item>
           <el-descriptions-item label="产出">{{ jobDetail.completedItems ?? jobDetail.job.current }} / {{ jobDetail.totalItems ?? jobDetail.job.total }}</el-descriptions-item>
-          <el-descriptions-item label="当前阶段">{{ translateTechnicalText(jobDetail.phaseLabel || jobDetail.step || '-') }}</el-descriptions-item>
+          <el-descriptions-item label="当前阶段">{{ translateTechnicalText(jobDetail.phaseLabel || jobDetail.phase || jobDetail.step || '-') }}</el-descriptions-item>
           <el-descriptions-item label="阶段进度">{{ jobDetail.currentItemProgress ?? jobDetail.phaseProgress ?? 0 }}%</el-descriptions-item>
           <el-descriptions-item label="处理结果" :span="2">
             <div v-if="taskIssueRows(jobDetail.job).length" class="task-issues">
@@ -1098,6 +1099,7 @@ const jobTimeoutMin = ref(0)
 const jobStaleMin = ref(0)
 const plan = ref(null)
 const preflight = ref(null)
+const admissionSnapshot = ref(null)
 const dry = ref(false)
 const preparing = ref(false)
 const prepareCancelled = ref(false)
@@ -1282,6 +1284,19 @@ const preflightAlertType = computed(() => {
 })
 const preflightTagType = computed(() => preflightReady.value ? (preflight.value?.status === 'warning' ? 'warning' : 'success') : 'danger')
 const preflightStatusLabel = computed(() => ({ ready: '通过', warning: '通过但有提示', blocked: '已阻断', needs_user_action: '需要处理' }[preflight.value?.status] || '未预检'))
+const admissionCheckedAt = computed(() => admissionSnapshot.value?.checkedAt || '')
+const admissionExpiresAt = computed(() => admissionSnapshot.value?.expiresAt || '')
+const admissionExpiryText = computed(() => {
+  if (!admissionExpiresAt.value) return ''
+  const timestamp = new Date(admissionExpiresAt.value).getTime()
+  if (!Number.isFinite(timestamp)) return `有效期至 ${admissionExpiresAt.value}`
+  const remaining = Math.ceil((timestamp - Date.now()) / 60000)
+  return remaining > 0 ? `有效期剩余约 ${remaining} 分钟` : '准入已过期'
+})
+function formatAdmissionTime (value) {
+  const timestamp = new Date(value).getTime()
+  return Number.isFinite(timestamp) ? new Date(timestamp).toLocaleString() : value
+}
 function audioCoverageLabel(status) {
   return ({ not_required: '无需外部音频', ready: '已覆盖', missing_source: '缺少音频', insufficient_voice: '口播不足', invalid_mode: '模式无效' }[status] || '待检查')
 }
@@ -1340,7 +1355,7 @@ const activeRenderJob = computed(() => {
 })
 const activeRenderLive = computed(() => activeRenderJob.value || {})
 const activeTaskPhase = computed(() => {
-  const value = String(activeRenderLive.value.phaseLabel || activeRenderLive.value.step || activeRenderLive.value.summary || activeRenderLive.value.status || '').toLowerCase()
+  const value = String(activeRenderLive.value.phaseLabel || activeRenderLive.value.phase || activeRenderLive.value.step || activeRenderLive.value.summary || activeRenderLive.value.status || '').toLowerCase()
   if (activeRenderLive.value.status === 'awaiting_decision' || value.includes('决策')) return 'decision'
   if (activeRenderLive.value.status === 'paused' || value.includes('暂停')) return 'paused'
   if (activeRenderLive.value.status === 'pending' || value.includes('排队') || value.includes('等待资源')) return 'queued'
@@ -1405,7 +1420,7 @@ const liveCurrentItemText = computed(() => {
   const current = Math.min(liveTotalCount.value, liveCompletedCount.value + (activeRenderLive.value.status === 'running' ? 1 : 0))
   return activeRenderLive.value.isContinuous ? `连续生成 · 已产出 ${current} 条` : `已产出 ${current} / ${liveTotalCount.value} 条`
 })
-const livePhaseText = computed(() => translateTechnicalText(activeRenderLive.value.phaseLabel || activeRenderLive.value.step || activeRenderLive.value.summary || '等待调度'))
+const livePhaseText = computed(() => translateTechnicalText(activeRenderLive.value.phaseLabel || activeRenderLive.value.phase || activeRenderLive.value.step || activeRenderLive.value.summary || '等待调度'))
 const liveElapsedText = computed(() => activeRenderLive.value.elapsedSec == null ? '运行时间待同步' : `已运行 ${formatDuration(activeRenderLive.value.elapsedSec)}`)
 const liveEtaText = computed(() => {
   const eta = Number(activeRenderLive.value.etaSec)
@@ -1847,6 +1862,8 @@ function payload() {
   o.materialSourceMode = materialSourceMode.value
   // 冻结本次提交中。AI 生产模式；所有出片相关请求（干跑/缺口/准备/提交）共用此载荷。
   o.autonomyMode = autonomyMode.value
+  // Dry-run and submit must fingerprint the same scheduling mode.
+  o.continuous = continuous.value
   // 自主模式默认开启严格交付；用户显式关闭时尊重选择。
   // 非自主旧流程不携带该字段，保持后端既有默认（不拦截），兼容性不变。
   if (autonomyMode.value === 'autonomous') o.strictDelivery = p.strictDelivery == null ? true : p.strictDelivery
@@ -2027,7 +2044,8 @@ async function doDryRun() {
   try {
     const result = await api.dryRun({
       workflowId: workflowId.value, projectId: projectId.value,
-      params: payload(), variant: variant.value
+      params: payload(), variant: variant.value,
+      preparationId: preparationResult.value?.id || undefined
     })
     if (revision !== dryRunRevision) {
       ElMessage.warning('出片参数已变化，当前预检结果已失效；请检查参数后重新开始。')
@@ -2037,6 +2055,7 @@ async function doDryRun() {
     const dryRunPreflight = result?.preflight || null
     plan.value = dryRunPlan
     preflight.value = dryRunPreflight
+    admissionSnapshot.value = dryRunPreflight?.admission || null
     if (!dryRunPlan?.segments?.length) {
       ElMessage.warning(dryRunPreflight?.blockers?.[0]?.message || '没排出片段，先去素材库导入并打好角色')
       doGapAnalysis({ silent: true })
@@ -2214,7 +2233,9 @@ const preparingSourceIssues = computed(() => sourceIssueRows(preparingSnapshot.v
 const preparationSourceIssueRows = computed(() => sourceIssueRows(preparationResult.value?.autoFill))
 // 轮询期间的当前阶段：优先取最后一个 working 阶段，否则取最后一条阶段记录。
 const preparingStage = computed(() => {
-  const stages = preparingSnapshot.value?.stages || []
+  const snapshot = preparingSnapshot.value
+  if (snapshot?.phaseLabel || snapshot?.phase) return { name: snapshot.phaseLabel || snapshot.phase, message: snapshot.phaseMessage || snapshot.message }
+  const stages = snapshot?.stages || []
   const working = [...stages].reverse().find((stage) => stage?.status === 'working')
   return working || stages[stages.length - 1] || null
 })
@@ -2236,6 +2257,7 @@ function prepareStageType (status) {
 // 阶段、耗时与按来源失败/熔断信息会实时渲染到右侧面板。无论准备结果如何，
 // 后续都会继续执行干跑——公开素材不可用只回退到本地素材，绝不静默中止出片流程。
 async function prepareMaterials () {
+  invalidatePreflight()
   preparing.value = true
   preparationBackground.value = false
   prepareCancelled.value = false
@@ -2344,7 +2366,9 @@ async function submit() {
       count: continuous.value ? 1 : count.value, continuous: continuous.value, name: jobName.value || null,
       timeoutSec: jobTimeoutMin.value > 0 ? jobTimeoutMin.value * 60 : 0,
       staleAfterSec: jobStaleMin.value > 0 ? jobStaleMin.value * 60 : 0,
-      params: payload()
+      params: payload(), variant: variant.value,
+      preparationId: preparationResult.value?.id || null,
+      admission: admissionSnapshot.value
     })
     if (created?.id != null && !jobs.value.some((job) => String(job.id) === String(created.id))) {
       jobs.value.unshift(created)
@@ -2352,7 +2376,13 @@ async function submit() {
     ElMessage.success(continuous.value ? '已开始连续出片，随时可点击暂' : '已提交，正在后台渲染')
     await loadJobs({ silent: true, refresh: true })
   } catch (error) {
-    ElMessage.error(`提交出片任务失败：${error.message || '请检查后端服务后重试'}`)
+    const message = String(error?.message || '')
+    if (/准入快照|重新干跑|过期|不一致/.test(message)) {
+      invalidatePreflight()
+      ElMessage.warning('准入快照已失效（可能已过期或与当前参数不一致），请重新执行干跑后再提交。')
+    } else {
+      ElMessage.error(`提交出片任务失败：${error.message || '请检查后端服务后重试'}`)
+    }
   } finally {
     submitting.value = false
     usePreparedPoolForRun.value = false
@@ -2368,7 +2398,11 @@ async function loadJobs({ silent = false, refresh = false } = {}) {
   jobsLoading.value = !silent
   jobsRequest = api.jobs(silent ? { silent: true } : undefined)
     .then(async (rows) => {
-      const nextRows = Array.isArray(rows) ? rows : []
+      // The API may return a plain Job (legacy clients) or { job, phase } (phase-aware clients).
+      const nextRows = (Array.isArray(rows) ? rows : []).map((row) => {
+        if (row?.job) return { ...row.job, phase: row.phase || row.job.phase }
+        return row
+      })
       const byId = new Map(jobs.value.map((job) => [String(job.id), job]))
       nextRows.forEach((row) => {
         const previous = byId.get(String(row.id))
@@ -2497,11 +2531,18 @@ watch(materialSourceMode, (value) => {
   autoUseCrawled.value = value !== 'local'
   preparationResult.value = null
   usePreparedPoolForRun.value = false
+  invalidateDryRun()
   doGapAnalysis({ silent: true })
 })
 // A dry-run is a contract for one exact parameter set. Any edit invalidates it.
 let invalidateTimer = null
+function invalidatePreflight () {
+  plan.value = null
+  preflight.value = null
+  admissionSnapshot.value = null
+}
 function invalidateDryRun () {
+  invalidatePreflight()
   if (invalidateTimer) clearTimeout(invalidateTimer)
   invalidateTimer = setTimeout(() => {
     dryRunRevision++
@@ -2510,8 +2551,7 @@ function invalidateDryRun () {
       return
     }
     dry.value = false
-    plan.value = null
-    preflight.value = null
+    invalidatePreflight()
     materialGap.value = null
     autoFillResult.value = null
     usePreparedPoolForRun.value = false

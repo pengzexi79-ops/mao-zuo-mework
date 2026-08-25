@@ -8,6 +8,7 @@ import com.douyin.mixcut.repository.Repositories.JobOutputRepo;
 import com.douyin.mixcut.repository.Repositories.JobRepo;
 import com.douyin.mixcut.service.DeliveryRepairService;
 import com.douyin.mixcut.service.JobService;
+import com.douyin.mixcut.dto.AdmissionSnapshot;
 import com.douyin.mixcut.service.OutputEditorService;
 import com.douyin.mixcut.service.RenderPreparationService;
 import com.douyin.mixcut.config.AppProps;
@@ -66,10 +67,14 @@ public class JobController {
         private Boolean continuous = true;
         /** 出片参数，原样透传，未出现的键沿用项目默认值 */
         private JsonNode params;
+        private Integer variant = 0;
+        private String preparationId;
+        private AdmissionSnapshot admission;
     }
 
     @PostMapping
     public R<Job> submit(@RequestBody SubmitReq req) {
+        if (req == null || req.getAdmission() == null) return R.fail("请先执行干跑，再提交出片任务");
         int count = req.getCount() == null ? 1 : req.getCount();
         if (count < 1) return R.fail("数量至少为 1");
         if (count > 200) return R.fail("单次最多 200 条，请分批提交");
@@ -90,8 +95,12 @@ public class JobController {
                 return R.fail("连续出片参数初始化失败");
             }
         }
-        return R.ok(jobService.submit(req.getWorkflowId(), req.getProjectId(), count, json, req.getName(),
-                req.getTimeoutSec(), req.getStaleAfterSec()));
+        try {
+            return R.ok(jobService.submit(req.getWorkflowId(), req.getProjectId(), count, json, req.getName(),
+                    req.getTimeoutSec(), req.getStaleAfterSec(), req.getAdmission(), req.getVariant(), req.getPreparationId()));
+        } catch (IllegalArgumentException e) {
+            return R.fail(e.getMessage() == null ? "出片准入校验失败" : e.getMessage());
+        }
     }
 
     /**
@@ -131,8 +140,13 @@ public class JobController {
     }
 
     @GetMapping
-    public R<List<Job>> list() {
-        return R.ok(jobService.recent());
+    public R<List<Map<String, Object>>> list() {
+        return R.ok(jobService.recent().stream().map(job -> {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("job", job);
+            row.put("phase", phaseOf(job.getStatus()));
+            return row;
+        }).toList());
     }
 
     @GetMapping("/{id:\\d+}")
@@ -141,6 +155,7 @@ public class JobController {
         if (job == null) return R.fail("任务不存在");
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("job", job);
+        m.put("phase", phaseOf(job.getStatus()));
         String step = jobService.currentStep(id);
         m.put("step", step);
         int phaseProgress = jobService.currentPhaseProgress(id);
@@ -168,6 +183,19 @@ public class JobController {
         m.put("lastHeartbeatAt", job.getLastActivityAt());
         m.put("outputs", jobService.outputs(id));
         return R.ok(m);
+    }
+
+    private String phaseOf(String status) {
+        if (status == null) return "queued";
+        return switch (status) {
+            case "pending" -> "queued";
+            case "running" -> "rendering";
+            case "paused" -> "paused";
+            case "done" -> "completed";
+            case "failed" -> "failed";
+            case "cancelled" -> "cancelled";
+            default -> status;
+        };
     }
 
     @PostMapping("/{id}/cancel")

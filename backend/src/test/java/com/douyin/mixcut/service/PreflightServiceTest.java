@@ -1,8 +1,12 @@
 package com.douyin.mixcut.service;
 
 import com.douyin.mixcut.dto.MixParams;
+import com.douyin.mixcut.dto.AudioContract;
 import com.douyin.mixcut.dto.PreflightResult;
+import com.douyin.mixcut.external.ProcessRegistry;
 import org.junit.jupiter.api.Test;
+
+import static org.mockito.Mockito.*;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -10,6 +14,69 @@ class PreflightServiceTest {
     private final PreflightService service = new PreflightService();
 
     @Test
+    void audioModesAreExplicitAndSilentDoesNotRequireExternalAudio() {
+        for (String mode : new String[]{"silent", "original", "material-audio", "ai-voice"}) {
+            MixPlanner.Plan plan = plan(81, 50, 150, true);
+            plan.setRequiresExternalAudio(true);
+            MixParams params = params("standard");
+            params.setAudioMode(mode);
+            PreflightResult result = service.evaluateAudio(plan, params, null, ProcessRegistry.CancellationContext.none());
+            assertEquals(mode, result.getAudio().getMode());
+            if ("silent".equals(mode) || "original".equals(mode)) {
+                assertEquals("not_required", result.getAudio().getCoverageStatus());
+                assertFalse(result.getBlockers().stream().anyMatch(i -> "audio.missing_source".equals(i.getCode())));
+            }
+        }
+    }
+
+    @Test
+    void validMeasuredContractIsReady() {
+        AudioContractService contracts = mock(AudioContractService.class);
+        AudioContract valid = new AudioContract();
+        valid.setReadable(true);
+        valid.setHasAudio(true);
+        valid.setOutputDuration(81);
+        valid.setStartSec(0);
+        valid.setEndSec(81);
+        valid.setSampleRate(48000);
+        valid.setChannels(2);
+        valid.setCodec("aac");
+        when(contracts.inspect(eq("bgm.wav"), anyDouble(), eq("bgm"), any())).thenReturn(valid);
+        when(contracts.validate(eq(valid), anyDouble())).thenReturn(java.util.List.of());
+        MixPlanner.Plan plan = plan(81, 50, 150, true);
+        plan.setRequiresExternalAudio(true);
+        plan.setBgmPath("bgm.wav");
+        MixParams params = params("standard");
+        params.setAudioMode("material-audio");
+        PreflightResult result = service.evaluateAudio(plan, params, contracts, ProcessRegistry.CancellationContext.none());
+        assertEquals(PreflightResult.READY, result.getAudio().getStatus());
+        assertEquals("ready", result.getAudio().getCoverageStatus());
+        assertTrue(result.getAudio().isBgmPresent());
+        assertTrue(result.getAudio().getContractCodes().isEmpty());
+    }
+
+    @Test
+    void invalidMeasuredContractUsesStableCodesAsBlockers() {
+        AudioContractService contracts = mock(AudioContractService.class);
+        AudioContract invalid = new AudioContract();
+        invalid.setReadable(false);
+        invalid.setHasAudio(false);
+        when(contracts.inspect(eq("voice.wav"), anyDouble(), eq("voice"), any())).thenReturn(invalid);
+        when(contracts.validate(eq(invalid), anyDouble())).thenReturn(java.util.List.of("AUDIO_STREAM_MISSING", "AUDIO_NOT_READABLE", "AUDIO_DURATION_MISMATCH"));
+        MixPlanner.Plan plan = plan(81, 50, 150, true);
+        plan.setRequiresExternalAudio(true);
+        plan.setVoicePath("voice.wav");
+        plan.setVoiceDurationSec(81);
+        MixParams params = params("standard");
+        params.setAudioMode("ai-voice");
+        PreflightResult result = service.evaluateAudio(plan, params, contracts, ProcessRegistry.CancellationContext.none());
+        assertEquals(PreflightResult.BLOCKED, result.getStatus());
+        assertTrue(result.getAudio().getContractCodes().contains("AUDIO_STREAM_MISSING"));
+        assertTrue(result.getBlockers().stream().anyMatch(i -> i.getCode().contains("audio.contract.audio_stream_missing")));
+    }
+
+    @Test
+
     void inRangePlanBelowRecommendedTargetIsNotBlocked() {
         MixPlanner.Plan plan = plan(81, 50, 150, true);
         plan.setTargetSec(100);

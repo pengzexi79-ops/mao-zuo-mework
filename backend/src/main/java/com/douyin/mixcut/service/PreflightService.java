@@ -1,11 +1,17 @@
 package com.douyin.mixcut.service;
 
 import com.douyin.mixcut.dto.MixParams;
+import com.douyin.mixcut.dto.AdmissionSnapshot;
 import com.douyin.mixcut.dto.PreflightIssue;
 import com.douyin.mixcut.dto.PreflightResult;
+import com.douyin.mixcut.dto.AudioContract;
+import com.douyin.mixcut.dto.AudioPreflightResult;
+import com.douyin.mixcut.external.ProcessRegistry;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.Locale;
+import java.util.List;
 
 /**
  * Explains whether a planner result can enter the rendering queue.
@@ -14,6 +20,17 @@ import java.util.Locale;
  */
 @Service
 public class PreflightService {
+
+    private final AudioContractService defaultAudioContractService;
+
+    public PreflightService() {
+        this.defaultAudioContractService = null;
+    }
+
+    @Autowired
+    public PreflightService(AudioContractService audioContractService) {
+        this.defaultAudioContractService = audioContractService;
+    }
 
     public PreflightResult evaluate(MixPlanner.Plan plan, MixParams input, boolean ffmpegReady, boolean ffprobeReady) {
         MixParams params = input == null ? new MixParams().normalized() : input.normalized();
@@ -83,7 +100,10 @@ public class PreflightService {
             }
         }
 
-        if (safePlan.isRequiresExternalAudio()) {
+        String audioMode = params.getAudioMode() == null ? "material-audio" : params.getAudioMode();
+        boolean externalAudioRequired = safePlan.isRequiresExternalAudio()
+                && ("material-audio".equalsIgnoreCase(audioMode) || "ai-voice".equalsIgnoreCase(audioMode));
+        if (externalAudioRequired) {
             boolean hasBgm = safePlan.getBgmPath() != null && !safePlan.getBgmPath().isBlank();
             boolean hasVoice = safePlan.getVoicePath() != null && !safePlan.getVoicePath().isBlank();
             if (!hasBgm && !hasVoice) {
@@ -120,6 +140,80 @@ public class PreflightService {
         if (!result.getBlockers().isEmpty()) result.setStatus(PreflightResult.BLOCKED);
         else if (!result.getWarnings().isEmpty()) result.setStatus(PreflightResult.WARNING);
         else result.setStatus(PreflightResult.READY);
+        return result;
+    }
+
+    public PreflightResult evaluateAudio(MixPlanner.Plan plan, MixParams input,
+                                         AudioContractService contracts,
+                                         ProcessRegistry.CancellationContext context) {
+        PreflightResult result = evaluate(plan, input, true, true);
+        attachAudioContract(result, plan, input, contracts, context);
+        finish(result);
+        return result;
+    }
+
+    public PreflightResult attachAudioContract(PreflightResult result, MixPlanner.Plan plan,
+                                               MixParams input,
+                                               AudioContractService contracts,
+                                               ProcessRegistry.CancellationContext context) {
+        if (result == null) return null;
+        MixParams params = input == null ? new MixParams().normalized() : input.normalized();
+        MixPlanner.Plan safePlan = plan == null ? new MixPlanner.Plan() : plan;
+        AudioPreflightResult audio = new AudioPreflightResult();
+        String mode = params.getAudioMode() == null ? "material-audio" : params.getAudioMode().toLowerCase(Locale.ROOT);
+        audio.setMode(mode);
+        boolean hasBgm = has(safePlan.getBgmPath());
+        boolean hasVoice = has(safePlan.getVoicePath());
+        audio.setBgmPresent(hasBgm);
+        audio.setVoicePresent(hasVoice);
+        audio.setOriginalAudioPresent("original".equals(mode));
+        audio.setCoverageStatus(result.getAudioCoverageStatus());
+        if ("silent".equals(mode) || "original".equals(mode)) {
+            audio.setCoverageStatus("not_required");
+        } else if (contracts != null && (hasBgm || hasVoice)) {
+            if (hasVoice) inspect(audio, true, safePlan.getVoicePath(), safePlan.getVoiceDurationSec(), contracts, context);
+            if (hasBgm) inspect(audio, false, safePlan.getBgmPath(), safePlan.getPlannedSec(), contracts, context);
+        }
+        result.getBlockers().addAll(audio.getBlockers());
+        result.getWarnings().addAll(audio.getWarnings());
+        audio.getBlockers().stream().map(PreflightIssue::getAction).filter(this::has).distinct().forEach(result.getActions()::add);
+        audio.getWarnings().stream().map(PreflightIssue::getAction).filter(this::has).distinct().forEach(result.getActions()::add);
+        audio.setStatus(audio.getBlockers().isEmpty()
+                ? (audio.getWarnings().isEmpty() ? PreflightResult.READY : PreflightResult.WARNING)
+                : PreflightResult.BLOCKED);
+        result.setAudio(audio);
+        return result;
+    }
+
+    private void inspect(AudioPreflightResult audio, boolean voice, String path, double required,
+                         AudioContractService contracts, ProcessRegistry.CancellationContext context) {
+        try {
+            AudioContract contract = contracts.inspect(path, required, voice ? "voice" : "bgm",
+                    context == null ? ProcessRegistry.CancellationContext.none() : context);
+            if (voice) audio.setVoiceContract(contract); else audio.setBgmContract(contract);
+            List<String> codes = contracts.validate(contract, required);
+            audio.getContractCodes().addAll(codes);
+            for (String code : codes) {
+                audio.getBlockers().add(PreflightIssue.blocker("audio.contract." + code.toLowerCase(Locale.ROOT),
+                        "audio", code, "choose_bgm"));
+            }
+        } catch (RuntimeException ex) {
+            audio.getContractCodes().add("AUDIO_CONTRACT_INSPECT_FAILED");
+            audio.getBlockers().add(PreflightIssue.blocker("audio.contract_inspect_failed", "audio",
+                    "无法读取" + (voice ? "口播" : "背景音乐") + "音频合同。", "choose_bgm"));
+        }
+    }
+
+    private void finish(PreflightResult result) {
+        if (!result.getBlockers().isEmpty()) result.setStatus(PreflightResult.BLOCKED);
+        else if (!result.getWarnings().isEmpty()) result.setStatus(PreflightResult.WARNING);
+        else result.setStatus(PreflightResult.READY);
+    }
+
+    private boolean has(String value) { return value != null && !value.isBlank(); }
+
+    public PreflightResult attachAdmission(PreflightResult result, AdmissionSnapshot admission) {
+        if (result != null) result.setAdmission(admission);
         return result;
     }
 

@@ -350,6 +350,7 @@ export const api = {
   aiPlan: (body) => http.post('/api/workflows/ai-plan', body),
   aiComic: (body) => http.post('/api/workflows/ai-comic', body),
   fixedOrderSuggestion: (body) => http.post('/api/fixed-order/suggest', body),
+  // OUT-1 admission snapshot/preparationId remain nested in the existing request body.
   dryRun: (body) => http.post('/api/workflows/dry-run', body),
 
   // 素材缺口分析

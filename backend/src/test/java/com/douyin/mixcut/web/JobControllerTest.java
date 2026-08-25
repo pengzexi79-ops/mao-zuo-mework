@@ -2,6 +2,7 @@ package com.douyin.mixcut.web;
 
 import com.douyin.mixcut.config.AppProps;
 import com.douyin.mixcut.domain.Job;
+import com.douyin.mixcut.dto.AdmissionSnapshot;
 import com.douyin.mixcut.external.FfmpegTool;
 import com.douyin.mixcut.repository.Repositories.JobOutputRepo;
 import com.douyin.mixcut.repository.Repositories.JobRepo;
@@ -24,6 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -42,6 +44,36 @@ class JobControllerTest {
     void setUp() {
         controller = new JobController(jobService, preparationService, jobRepo, outputRepo,
                 deliveryRepairService, new AppProps(), ffmpeg);
+    }
+
+    @Test
+    void submitWithoutAdmissionIsRejectedBeforeCreatingJob() {
+        JobController.SubmitReq req = new JobController.SubmitReq();
+        req.setProjectId(7L);
+        R<Job> result = controller.submit(req);
+        assertFalse(result.isOk());
+        assertTrue(result.getMessage().contains("干跑"));
+        verify(jobService, never()).submit(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.anyInt(), org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void submitWithAdmissionCallsServiceIncludingVariant() {
+        JobController.SubmitReq req = new JobController.SubmitReq();
+        req.setAdmission(new AdmissionSnapshot());
+        req.setVariant(4);
+        when(jobService.submit(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.anyInt(), org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.eq(4), org.mockito.ArgumentMatchers.any())).thenReturn(new Job());
+        R<Job> result = controller.submit(req);
+        assertTrue(result.isOk());
+        verify(jobService).submit(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.anyInt(), org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.eq(4), org.mockito.ArgumentMatchers.any());
     }
 
     @Test

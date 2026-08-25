@@ -25,6 +25,8 @@ class JobServiceReliabilityTest {
     @Mock private JobRepo jobRepo;
     @Mock private Executor renderExecutor;
     @Mock private ProcessRegistry processRegistry;
+    @Mock private RenderConfigResolver renderConfigResolver;
+    @Mock private RenderAdmissionService renderAdmissionService;
     private final JobOutputServiceDeps deps = new JobOutputServiceDeps() {};
 
     private JobService service;
@@ -34,7 +36,8 @@ class JobServiceReliabilityTest {
         service = new JobService(jobRepo, deps.outputRepo(), deps.workflowRepo(), deps.projectRepo(), deps.folderRepo(),
                 deps.skillEngine(), deps.renderService(), deps.copyService(), deps.narrationService(),
                 deps.materialDiagnosisService(), deps.materialStore(), deps.editorialBriefService(),
-                deps.deliveryRepairService(), deps.outputVersionRepo(), deps.outputRepairRepo(), new AppProps(), renderExecutor);
+                deps.deliveryRepairService(), deps.outputVersionRepo(), deps.outputRepairRepo(), new AppProps(),
+                renderConfigResolver, renderAdmissionService, renderExecutor);
         ReflectionTestUtils.setField(service, "processRegistry", processRegistry);
     }
 

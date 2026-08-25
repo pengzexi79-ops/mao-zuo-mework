@@ -27,10 +27,12 @@ public class PreflightResult {
     private boolean internallyUnique;
     private boolean requiresExternalAudio;
     private String audioCoverageStatus = "not_required";
+    private AudioPreflightResult audio;
     private List<PreflightIssue> blockers = new ArrayList<>();
     private List<PreflightIssue> warnings = new ArrayList<>();
     private List<String> actions = new ArrayList<>();
     private MixPlanner.Plan plan;
+    private AdmissionSnapshot admission;
 
     public boolean isReady() {
         return READY.equals(status) || WARNING.equals(status);
