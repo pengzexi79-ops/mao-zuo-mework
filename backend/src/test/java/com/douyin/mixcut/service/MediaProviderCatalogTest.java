@@ -55,6 +55,14 @@ class MediaProviderCatalogTest {
     }
 
     @Test
+    void preservesUnregisteredVoiceProtocolForServiceLevelRejection() {
+        AiProvider provider = provider("https://api.openai.com");
+        provider.setModels("{\"media\":{\"voice\":[\"voice-model\"],\"voiceProtocol\":\"dashscope_tts_http\"}}");
+
+        assertEquals("dashscope_tts_http", catalog.read(provider).voiceProtocol());
+    }
+
+    @Test
     void suppliesOfficialOpenAiMediaDefaultsWhenProviderHasNoMediaJson() {
         AiProvider openai = provider("https://api.openai.com");
 
