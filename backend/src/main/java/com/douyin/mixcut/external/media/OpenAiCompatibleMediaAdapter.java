@@ -54,6 +54,36 @@ public class OpenAiCompatibleMediaAdapter {
         return new VideoSubmission(remoteTaskId);
     }
 
+    public VideoPoll pollVideo(ProviderContext provider, String remoteTaskId) throws Exception {
+        String safeId = remoteTaskId(remoteTaskId);
+        MediaHttpTransport.Response response = executeGet(provider, "/v1/videos/" + safeId);
+        JsonNode payload = readSuccess(response, "视频状态查询");
+        String rawStatus = payload.path("status").asText("").toLowerCase(java.util.Locale.ROOT);
+        VideoState state = switch (rawStatus) {
+            case "queued", "pending" -> VideoState.QUEUED;
+            case "running", "processing", "in_progress" -> VideoState.RUNNING;
+            case "completed", "succeeded" -> VideoState.SUCCEEDED;
+            case "failed" -> VideoState.FAILED;
+            case "cancelled", "canceled" -> VideoState.CANCELLED;
+            case "expired" -> VideoState.EXPIRED;
+            default -> VideoState.UNKNOWN;
+        };
+        int progress = Math.max(0, Math.min(100, payload.path("progress").asInt(0)));
+        return new VideoPoll(state, progress, payload.path("error").asText(""));
+    }
+
+    public VideoDownload downloadVideo(ProviderContext provider, String remoteTaskId) throws Exception {
+        MediaHttpTransport.Response response = executeGet(provider, "/v1/videos/" + remoteTaskId(remoteTaskId) + "/content");
+        if (response.status() < 200 || response.status() >= 300) throw failure(response.status(), "视频下载");
+        byte[] bytes = response.body() == null ? new byte[0] : response.body();
+        if (bytes.length < 2048) throw new MediaAdapterException("MEDIA_RESPONSE_INVALID", "供应商返回的视频文件无效");
+        String contentType = header(response, "content-type");
+        if (!contentType.isBlank() && !contentType.toLowerCase(java.util.Locale.ROOT).startsWith("video/")) {
+            throw new MediaAdapterException("DOWNLOAD_CONTENT_TYPE_INVALID", "供应商视频响应类型无效");
+        }
+        return new VideoDownload(bytes, contentType);
+    }
+
     public VoiceSubmission submitVoice(ProviderContext provider, String prompt, String model, String voice, String instructions) throws Exception {
         var body = json.createObjectNode();
         body.put("model", model);
@@ -65,6 +95,13 @@ public class OpenAiCompatibleMediaAdapter {
         if (response.status() < 200 || response.status() >= 300) throw failure(response.status(), "配音生成");
         if (response.body() == null || response.body().length < 1024) throw new MediaAdapterException("MEDIA_RESPONSE_INVALID", "供应商返回的配音文件无效");
         return new VoiceSubmission(response.body(), header(response, "content-type"));
+    }
+
+    private MediaHttpTransport.Response executeGet(ProviderContext provider, String path) throws Exception {
+        String url = endpoint(provider.baseUrl(), path);
+        Map<String, String> headers = new LinkedHashMap<>();
+        headers.put("Authorization", "Bearer " + provider.apiKey());
+        return transport.execute(new MediaHttpTransport.Request("GET", url, headers, new byte[0], ""));
     }
 
     private MediaHttpTransport.Response executeJson(ProviderContext provider, String path, JsonNode body) throws Exception {
@@ -90,6 +127,12 @@ public class OpenAiCompatibleMediaAdapter {
         return UrlGuard.validate(base + path);
     }
 
+    private String remoteTaskId(String raw) {
+        String value = raw == null ? "" : raw.trim();
+        if (!value.matches("[A-Za-z0-9._:-]{1,255}")) throw new MediaAdapterException("MEDIA_RESPONSE_INVALID", "远端视频任务 ID 无效");
+        return value;
+    }
+
     private MediaAdapterException failure(int status, String action) {
         String code = status == 401 || status == 403 ? "AUTH_REQUIRED"
                 : status == 429 ? "RATE_LIMITED"
@@ -109,8 +152,11 @@ public class OpenAiCompatibleMediaAdapter {
             if (!voicePath.startsWith("/v1/")) throw new MediaAdapterException("MEDIA_PROTOCOL_UNSUPPORTED", "OpenAI-compatible 配音 endpoint 无效");
         }
     }
+    public enum VideoState { QUEUED, RUNNING, SUCCEEDED, FAILED, CANCELLED, EXPIRED, UNKNOWN }
     public record ImageSubmission(String base64, String url) {}
     public record VideoSubmission(String remoteTaskId) {}
+    public record VideoPoll(VideoState state, int progress, String error) {}
+    public record VideoDownload(byte[] bytes, String contentType) {}
     public record VoiceSubmission(byte[] bytes, String contentType) {}
 
     public static class MediaAdapterException extends IllegalStateException {

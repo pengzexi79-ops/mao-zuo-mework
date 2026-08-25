@@ -273,6 +273,7 @@ public class MediaGenerationService {
             update(task, "remote_submitted", 25, "视频任务已提交，等待受控轮询 worker");
             pollVideoWorker(task, provider, model, remoteId);
         } catch (Exception e) {
+            persistErrorCode(task.getId(), e);
             update(task, "failed_terminal", task.getProgress(), concise(e));
         }
     }
@@ -283,12 +284,15 @@ public class MediaGenerationService {
             update(task, "polling", Math.max(25, task.getProgress()), "轮询远端视频任务状态");
             for (int i = 0; i < 120; i++) {
                 Thread.sleep(3000);
-                JsonNode poll = getJson(endpoint(provider, "/v1/videos/" + remoteId), secret);
-                String state = poll.path("status").asText("");
-                int progress = poll.path("progress").asInt(Math.min(90, 25 + i / 2));
-                update(task, "polling", Math.max(25, Math.min(90, progress)), "供应商视频状态：" + (state.isBlank() ? "处理中" : state));
-                if ("completed".equalsIgnoreCase(state)) { downloadVideo(task, provider, remoteId); return; }
-                if ("failed".equalsIgnoreCase(state) || "expired".equalsIgnoreCase(state) || "cancelled".equalsIgnoreCase(state)) throw new IllegalStateException("供应商视频任务未完成：" + state);
+                var poll = openAiMediaAdapter.pollVideo(new OpenAiCompatibleMediaAdapter.ProviderContext(
+                        normalizedBase(provider), secret, "/v1/audio/speech"), remoteId);
+                int progress = poll.progress() > 0 ? poll.progress() : Math.min(90, 25 + i / 2);
+                update(task, "polling", Math.max(25, Math.min(90, progress)), "供应商视频状态：" + poll.state().name().toLowerCase(java.util.Locale.ROOT));
+                if (poll.state() == OpenAiCompatibleMediaAdapter.VideoState.SUCCEEDED) { downloadVideo(task, provider, remoteId); return; }
+                if (java.util.Set.of(OpenAiCompatibleMediaAdapter.VideoState.FAILED, OpenAiCompatibleMediaAdapter.VideoState.EXPIRED,
+                        OpenAiCompatibleMediaAdapter.VideoState.CANCELLED).contains(poll.state())) {
+                    throw new IllegalStateException("供应商视频任务未完成：" + poll.state());
+                }
             }
             throw new IllegalStateException("视频生成等待超时，请在供应商控制台查看任务状态");
         } catch (Exception e) {
@@ -297,9 +301,32 @@ public class MediaGenerationService {
     }
 
     private void downloadVideo(Task task, AiProvider provider, String remoteId) throws Exception {
-        update(task, "running", 92, "正在下载并校验生成视频"); HttpURLConnection conn = openGet(endpoint(provider, "/v1/videos/" + remoteId + "/content"), secret(provider), 180000); int status = conn.getResponseCode(); if (status < 200 || status >= 300) throw providerFailure(status, "视频下载");
-        Path dir = props.mediaToolsOutput().resolve("generated-ai-videos"); Files.createDirectories(dir); Path output = dir.resolve("video-" + Instant.now().toEpochMilli() + ".mp4"); try (InputStream in = conn.getInputStream()) { Files.copy(in, output); } finally { conn.disconnect(); }
-        if (!Files.isRegularFile(output) || Files.size(output) < 2048) throw new IllegalStateException("供应商返回的视频文件无效"); Material material = materialService.register(output.toString(), null, false, Material.Source.generated, normalizedBase(provider)); material.setRole(MaterialRole.body); material.setTags("AI生成,视频," + remoteId); material = materialService.save(material); materialService.attachBrowserUrls(material); task.setMaterialId(material.getId()); update(task, "done", 100, "视频生成完成，已作为新素材入库");
+        update(task, "downloading", 92, "正在下载并校验生成视频");
+        var artifact = openAiMediaAdapter.downloadVideo(new OpenAiCompatibleMediaAdapter.ProviderContext(
+                normalizedBase(provider), secret(provider), "/v1/audio/speech"), remoteId);
+        Path dir = props.mediaToolsOutput().resolve("generated-ai-videos");
+        Path stagingDir = dir.resolve(".staging");
+        Files.createDirectories(stagingDir);
+        Path staging = stagingDir.resolve(task.getId() + ".part");
+        generationTaskRepo.findByTaskKey(task.getId()).ifPresent(record -> {
+            record.setStagingFilePath(staging.toString());
+            generationTaskRepo.save(record);
+        });
+        Files.write(staging, artifact.bytes());
+        if (!Files.isRegularFile(staging) || Files.size(staging) < 2048) {
+            Files.deleteIfExists(staging);
+            throw new IllegalStateException("供应商返回的视频文件无效");
+        }
+        Files.createDirectories(dir);
+        Path output = dir.resolve("video-" + task.getId() + ".mp4");
+        Files.move(staging, output, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        update(task, "validating", 95, "正在验证视频并登记素材");
+        Material material = materialService.register(output.toString(), null, false, Material.Source.generated, normalizedBase(provider)); material.setRole(MaterialRole.body); material.setTags("AI生成,视频," + remoteId); material = materialService.save(material); materialService.attachBrowserUrls(material); task.setMaterialId(material.getId());
+        generationTaskRepo.findByTaskKey(task.getId()).ifPresent(record -> {
+            record.setStagingFilePath(null);
+            generationTaskRepo.save(record);
+        });
+        update(task, "done", 100, "视频生成完成，已作为新素材入库");
     }
 
     private void generateVoice(Task task, AiProvider provider, String input, String model, String voice, String instructions) {
