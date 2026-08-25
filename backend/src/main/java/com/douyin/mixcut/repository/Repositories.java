@@ -163,6 +163,7 @@ public interface Repositories {
         List<MediaGenerationTask> findTop50ByOrderByIdDesc();
         List<MediaGenerationTask> findByStatusOrderByIdAsc(String status);
         List<MediaGenerationTask> findByPhaseAndRemoteTaskIdIsNotNullOrderByIdAsc(String phase);
+        List<MediaGenerationTask> findByPhaseInOrderByIdAsc(List<String> phases);
         Optional<MediaGenerationTask> findByIdempotencyKey(String idempotencyKey);
     }
 

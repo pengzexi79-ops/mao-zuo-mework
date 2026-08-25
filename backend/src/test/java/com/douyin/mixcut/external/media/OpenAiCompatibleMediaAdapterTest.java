@@ -2,12 +2,18 @@ package com.douyin.mixcut.external.media;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -64,24 +70,66 @@ class OpenAiCompatibleMediaAdapterTest {
     }
 
     @Test
-    void pollsAndDownloadsVideoUsingFixedRemotePaths() throws Exception {
-        java.util.List<MediaHttpTransport.Request> requests = new java.util.ArrayList<>();
-        OpenAiCompatibleMediaAdapter adapter = new OpenAiCompatibleMediaAdapter(new ObjectMapper(), request -> {
-            requests.add(request);
-            if (request.url().endsWith("/content")) return new MediaHttpTransport.Response(200, Map.of("Content-Type", "video/mp4"), new byte[4096]);
-            return new MediaHttpTransport.Response(200, Map.of(), "{\"status\":\"completed\",\"progress\":100}".getBytes(StandardCharsets.UTF_8));
-        });
+    void pollsAndStreamsVideoUsingFixedRemotePaths(@TempDir Path tempDir) throws Exception {
+        List<MediaHttpTransport.Request> requests = new ArrayList<>();
+        OpenAiCompatibleMediaAdapter adapter = new OpenAiCompatibleMediaAdapter(new ObjectMapper(), new StreamingTransport(requests, 200,
+                Map.of("Content-Type", "video/mp4"), 4096));
         var provider = new OpenAiCompatibleMediaAdapter.ProviderContext("https://api.openai.com", "secret", "");
+        Path staging = tempDir.resolve("video.part");
 
         var poll = adapter.pollVideo(provider, "remote-1");
-        var download = adapter.downloadVideo(provider, "remote-1");
+        var download = adapter.downloadVideo(provider, "remote-1", staging, 10_000);
 
         assertEquals(OpenAiCompatibleMediaAdapter.VideoState.SUCCEEDED, poll.state());
         assertEquals(100, poll.progress());
-        assertEquals(4096, download.bytes().length);
+        assertEquals(4096, download.bytesWritten());
+        assertEquals(4096, Files.size(staging));
         assertEquals("https://api.openai.com/v1/videos/remote-1", requests.get(0).url());
         assertEquals("https://api.openai.com/v1/videos/remote-1/content", requests.get(1).url());
         assertThrows(OpenAiCompatibleMediaAdapter.MediaAdapterException.class, () -> adapter.pollVideo(provider, "../escape"));
+    }
+
+    @Test
+    void acceptsBinaryVideoMimeAndMissingMime(@TempDir Path tempDir) throws Exception {
+        var binary = new OpenAiCompatibleMediaAdapter(new ObjectMapper(), new StreamingTransport(new ArrayList<>(), 200, Map.of("Content-Type", "application/octet-stream"), 4096))
+                .downloadVideo(provider(), "remote-1", tempDir.resolve("binary.part"), 10_000);
+        assertEquals(4096, binary.bytesWritten());
+        var missing = new OpenAiCompatibleMediaAdapter(new ObjectMapper(), new StreamingTransport(new ArrayList<>(), 200, Map.of(), 4096))
+                .downloadVideo(provider(), "remote-1", tempDir.resolve("missing.part"), 10_000);
+        assertEquals(4096, missing.bytesWritten());
+    }
+
+    @Test
+    void downloadMapsHttpFailureAndCleansStaging(@TempDir Path tempDir) throws Exception {
+        Path staging = tempDir.resolve("video.part");
+        OpenAiCompatibleMediaAdapter adapter = new OpenAiCompatibleMediaAdapter(new ObjectMapper(), new StreamingTransport(new ArrayList<>(), 429, Map.of(), 0));
+
+        var error = assertThrows(OpenAiCompatibleMediaAdapter.MediaAdapterException.class, () ->
+                adapter.downloadVideo(provider(), "remote-1", staging, 10_000));
+
+        assertEquals("RATE_LIMITED", error.code());
+        assertFalse(Files.exists(staging));
+    }
+
+    @Test
+    void downloadRejectsInvalidMimeSmallFileAndOversizeWithStableCodes(@TempDir Path tempDir) throws Exception {
+        var invalidMime = assertThrows(OpenAiCompatibleMediaAdapter.MediaAdapterException.class, () ->
+                new OpenAiCompatibleMediaAdapter(new ObjectMapper(), new StreamingTransport(new ArrayList<>(), 200, Map.of("Content-Type", "text/html"), 4096))
+                        .downloadVideo(provider(), "remote-1", tempDir.resolve("mime.part"), 10_000));
+        assertEquals("DOWNLOAD_CONTENT_TYPE_INVALID", invalidMime.code());
+        assertFalse(Files.exists(tempDir.resolve("mime.part")));
+
+        var tooSmall = assertThrows(OpenAiCompatibleMediaAdapter.MediaAdapterException.class, () ->
+                new OpenAiCompatibleMediaAdapter(new ObjectMapper(), new StreamingTransport(new ArrayList<>(), 200, Map.of("Content-Type", "video/mp4"), 1024))
+                        .downloadVideo(provider(), "remote-1", tempDir.resolve("small.part"), 10_000));
+        assertEquals("DOWNLOAD_FILE_TOO_SMALL", tooSmall.code());
+        assertFalse(Files.exists(tempDir.resolve("small.part")));
+
+        var oversized = assertThrows(OpenAiCompatibleMediaAdapter.MediaAdapterException.class, () ->
+                new OpenAiCompatibleMediaAdapter(new ObjectMapper(), new StreamingTransport(new ArrayList<>(), 200, Map.of("Content-Type", "video/mp4"), 4096))
+                        .downloadVideo(provider(), "remote-1", tempDir.resolve("large.part"), 2048));
+        assertEquals("DOWNLOAD_SIZE_EXCEEDED", oversized.code());
+        assertFalse(Files.exists(tempDir.resolve("large.part")));
     }
 
     @Test
@@ -100,5 +148,38 @@ class OpenAiCompatibleMediaAdapterTest {
     void rejectsNonOpenAiCompatibleVoiceEndpointBeforeTransport() {
         assertThrows(OpenAiCompatibleMediaAdapter.MediaAdapterException.class, () ->
                 new OpenAiCompatibleMediaAdapter.ProviderContext("https://api.openai.com", "secret", "/api/tts"));
+    }
+
+    private OpenAiCompatibleMediaAdapter.ProviderContext provider() {
+        return new OpenAiCompatibleMediaAdapter.ProviderContext("https://api.openai.com", "secret", "");
+    }
+
+    private static class StreamingTransport implements MediaHttpTransport {
+        private final List<Request> requests;
+        private final int status;
+        private final Map<String, String> headers;
+        private final int bytes;
+
+        private StreamingTransport(List<Request> requests, int status, Map<String, String> headers, int bytes) {
+            this.requests = requests;
+            this.status = status;
+            this.headers = headers;
+            this.bytes = bytes;
+        }
+
+        @Override
+        public Response execute(Request request) {
+            requests.add(request);
+            return new Response(200, Map.of(), "{\"status\":\"completed\",\"progress\":100}".getBytes(StandardCharsets.UTF_8));
+        }
+
+        @Override
+        public DownloadResponse download(Request request, Path staging, long maxBytes) throws Exception {
+            requests.add(request);
+            if (status < 200 || status >= 300) return new DownloadResponse(status, headers, 0);
+            if (bytes > maxBytes) throw new DownloadLimitExceededException(maxBytes);
+            Files.write(staging, new byte[bytes]);
+            return new DownloadResponse(status, headers, bytes);
+        }
     }
 }

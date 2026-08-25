@@ -1,6 +1,7 @@
 package com.douyin.mixcut.service;
 
 import com.douyin.mixcut.config.AppProps;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
@@ -55,6 +56,40 @@ class LocalReleaseHistoryServiceTest {
         assertEquals(expectedVersion, notes.get("version"));
         @SuppressWarnings("unchecked") List<Map<String, Object>> history = (List<Map<String, Object>>) notes.get("history");
         assertEquals(initialVersion, history.get(0).get("version"));
+    }
+
+    @Test
+    void upgradesOldLocalHistoryToBundledAugustRecordsWithoutDuplicates() throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        AppProps props = new AppProps();
+        Path data = Files.createTempDirectory("mework-release-upgrade-");
+        props.setDataDir(data.toString());
+        Map<String, Object> bundled;
+        try (var input = getClass().getClassLoader().getResourceAsStream("release-notes.json")) {
+            bundled = mapper.readValue(input, new TypeReference<LinkedHashMap<String, Object>>() { });
+        }
+        @SuppressWarnings("unchecked") List<Map<String, Object>> bundledHistory = (List<Map<String, Object>>) bundled.get("history");
+        Map<String, Object> oldCurrent = new LinkedHashMap<>(bundledHistory.stream()
+                .filter(item -> "2.2.126".equals(item.get("version"))).findFirst().orElseThrow());
+        oldCurrent.put("kind", "当前本机构建");
+        oldCurrent.put("history", bundledHistory.stream().filter(item -> {
+            String version = String.valueOf(item.get("version"));
+            return !version.startsWith("2.2.")
+                    || Integer.parseInt(version.substring("2.2.".length())) < 126;
+        }).toList());
+        Path local = data.resolve("release-history/local-release-notes.json");
+        Files.createDirectories(local.getParent());
+        mapper.writerWithDefaultPrettyPrinter().writeValue(local.toFile(), oldCurrent);
+
+        LocalReleaseHistoryService service = new LocalReleaseHistoryService(mapper, props);
+        Map<String, Object> upgraded = service.view(500);
+
+        assertEquals("2.2.146", upgraded.get("version"));
+        @SuppressWarnings("unchecked") List<Map<String, Object>> history = (List<Map<String, Object>>) upgraded.get("history");
+        for (int patch = 127; patch <= 145; patch++) {
+            String version = "2.2." + patch;
+            assertEquals(1, history.stream().filter(item -> version.equals(item.get("version"))).count(), version);
+        }
     }
 
     @Test

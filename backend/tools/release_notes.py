@@ -75,6 +75,29 @@ def validate_pending(pending: Any, current_version: str) -> dict[str, Any]:
     return {**pending, "version": version}
 
 
+def validate_backfill(records: Any, current_version: str, current_released_at: str) -> list[dict[str, Any]]:
+    if not isinstance(records, list) or not records:
+        raise ValueError("历史回填文件必须是非空 JSON 数组")
+    checked: list[dict[str, Any]] = []
+    previous_version = current_version
+    previous_date = date.fromisoformat(current_released_at)
+    today = date.today()
+    for index, raw in enumerate(records, start=1):
+        if not isinstance(raw, dict):
+            raise ValueError(f"第 {index} 条历史回填记录必须是 JSON 对象")
+        record = validate_pending(raw, previous_version)
+        released_at = date.fromisoformat(str(record.get("releasedAt", "")))
+        if released_at > today:
+            raise ValueError(f"第 {index} 条历史回填记录日期不能晚于今天")
+        if previous_date is not None and released_at < previous_date:
+            raise ValueError("历史回填记录必须按日期和版本从旧到新排列")
+        record["releasedAt"] = released_at.isoformat()
+        checked.append(record)
+        previous_version = str(record["version"])
+        previous_date = released_at
+    return checked
+
+
 def read_pending() -> dict[str, Any] | None:
     if not PENDING_PATH.exists():
         return None
@@ -324,6 +347,44 @@ def command_apply(_: argparse.Namespace) -> None:
     print(f"已发布 {new_version}，原版本 {current_version} 已归档。接着运行：cd backend && mvn test")
 
 
+def command_backfill(args: argparse.Namespace) -> None:
+    if read_pending() is not None:
+        raise ValueError("存在待发布记录时不能执行历史回填")
+    notes = load_json(NOTES_PATH)
+    current_version = str(notes.get("version", ""))
+    parse_version(current_version)
+    records = validate_backfill(load_json(Path(args.file).resolve()), current_version, str(notes.get("releasedAt", "")))
+    for record in records:
+        old_current = {key: deepcopy(value) for key, value in notes.items() if key not in {"history", "source"}}
+        old_current["id"] = release_id(current_version)
+        old_current["kind"] = "历史开发阶段"
+        old_history = list(notes.get("history", []))
+        record = deepcopy(record)
+        new_version = str(record.pop("version"))
+        notes.update(record)
+        notes["id"] = release_id(new_version)
+        notes["version"] = new_version
+        notes["kind"] = "当前本机构建"
+        notes["history"] = [old_current, *old_history]
+        current_version = new_version
+
+    # Keep the packaged history and compiled release identity in one recoverable transition.
+    paths = [NOTES_PATH, PENDING_PATH, APP_PROPS_PATH, INSTALLER_PATH, INSTALLER_PATH.parent / "version.iss"]
+    snapshots = {path: path.read_bytes() for path in paths if path.exists()}
+    try:
+        write_json(NOTES_PATH, notes)
+        write_json(PENDING_PATH, {})
+        update_app_version(current_version)
+    except Exception:
+        for path in paths:
+            if path in snapshots:
+                path.write_bytes(snapshots[path])
+            elif path.exists():
+                path.unlink()
+        raise
+    print(f"已按真实日期连续回填 {len(records)} 条记录，当前版本 {current_version}。接着运行：cd backend && mvn test")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="猫作版本更新与纠错记录工具")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -335,6 +396,9 @@ def main() -> None:
     subparsers.add_parser("migrate", help="一次性统一旧版本记录").set_defaults(handler=command_migrate)
     subparsers.add_parser("correct-history", help="一次性按真实日期补齐历史版本").set_defaults(handler=command_correct_history)
     subparsers.add_parser("apply", help="归档当前版本并发布待记录").set_defaults(handler=command_apply)
+    backfill_parser = subparsers.add_parser("backfill", help="从当前版本之后按真实日期从旧到新连续补录经审核的历史记录")
+    backfill_parser.add_argument("--file", required=True, help="包含连续版本记录的 JSON 数组")
+    backfill_parser.set_defaults(handler=command_backfill)
     args = parser.parse_args()
     try:
         args.handler(args)

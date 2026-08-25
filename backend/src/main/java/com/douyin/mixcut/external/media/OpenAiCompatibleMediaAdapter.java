@@ -7,6 +7,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -72,16 +74,31 @@ public class OpenAiCompatibleMediaAdapter {
         return new VideoPoll(state, progress, payload.path("error").asText(""));
     }
 
-    public VideoDownload downloadVideo(ProviderContext provider, String remoteTaskId) throws Exception {
-        MediaHttpTransport.Response response = executeGet(provider, "/v1/videos/" + remoteTaskId(remoteTaskId) + "/content");
-        if (response.status() < 200 || response.status() >= 300) throw failure(response.status(), "视频下载");
-        byte[] bytes = response.body() == null ? new byte[0] : response.body();
-        if (bytes.length < 2048) throw new MediaAdapterException("MEDIA_RESPONSE_INVALID", "供应商返回的视频文件无效");
-        String contentType = header(response, "content-type");
-        if (!contentType.isBlank() && !contentType.toLowerCase(java.util.Locale.ROOT).startsWith("video/")) {
-            throw new MediaAdapterException("DOWNLOAD_CONTENT_TYPE_INVALID", "供应商视频响应类型无效");
+    public VideoDownload downloadVideo(ProviderContext provider, String remoteTaskId, Path staging, long maxBytes) throws Exception {
+        try {
+            String safeId = remoteTaskId(remoteTaskId);
+            String url = endpoint(provider.baseUrl(), "/v1/videos/" + safeId + "/content");
+            Map<String, String> headers = new LinkedHashMap<>();
+            headers.put("Authorization", "Bearer " + provider.apiKey());
+            MediaHttpTransport.DownloadResponse response = transport.download(
+                    new MediaHttpTransport.Request("GET", url, headers, new byte[0], ""), staging, maxBytes);
+            if (response.status() < 200 || response.status() >= 300) throw failure(response.status(), "视频下载");
+            String contentType = header(response.headers(), "content-type");
+            String normalizedType = contentType.toLowerCase(java.util.Locale.ROOT);
+            if (!contentType.isBlank() && !normalizedType.startsWith("video/") && !"application/octet-stream".equals(normalizedType)) {
+                throw new MediaAdapterException("DOWNLOAD_CONTENT_TYPE_INVALID", "供应商视频响应类型无效");
+            }
+            if (response.bytesWritten() < 2048 || !Files.isRegularFile(staging) || Files.size(staging) < 2048) {
+                throw new MediaAdapterException("DOWNLOAD_FILE_TOO_SMALL", "供应商返回的视频文件无效");
+            }
+            return new VideoDownload(response.bytesWritten(), contentType);
+        } catch (MediaHttpTransport.DownloadLimitExceededException error) {
+            deleteStaging(staging);
+            throw new MediaAdapterException("DOWNLOAD_SIZE_EXCEEDED", error.getMessage());
+        } catch (Exception error) {
+            deleteStaging(staging);
+            throw error;
         }
-        return new VideoDownload(bytes, contentType);
     }
 
     public VoiceSubmission submitVoice(ProviderContext provider, String prompt, String model, String voice, String instructions) throws Exception {
@@ -140,10 +157,16 @@ public class OpenAiCompatibleMediaAdapter {
         return new MediaAdapterException(code, action + "失败（HTTP " + status + "）");
     }
 
-    private String header(MediaHttpTransport.Response response, String name) {
-        if (response.headers() == null) return "";
-        return response.headers().entrySet().stream().filter(entry -> name.equalsIgnoreCase(entry.getKey()))
+    private String header(MediaHttpTransport.Response response, String name) { return header(response.headers(), name); }
+
+    private String header(Map<String, String> headers, String name) {
+        if (headers == null) return "";
+        return headers.entrySet().stream().filter(entry -> name.equalsIgnoreCase(entry.getKey()))
                 .map(Map.Entry::getValue).findFirst().orElse("");
+    }
+
+    private void deleteStaging(Path staging) {
+        try { Files.deleteIfExists(staging); } catch (Exception ignored) { }
     }
 
     public record ProviderContext(String baseUrl, String apiKey, String voicePath) {
@@ -156,7 +179,7 @@ public class OpenAiCompatibleMediaAdapter {
     public record ImageSubmission(String base64, String url) {}
     public record VideoSubmission(String remoteTaskId) {}
     public record VideoPoll(VideoState state, int progress, String error) {}
-    public record VideoDownload(byte[] bytes, String contentType) {}
+    public record VideoDownload(long bytesWritten, String contentType) {}
     public record VoiceSubmission(byte[] bytes, String contentType) {}
 
     public static class MediaAdapterException extends IllegalStateException {

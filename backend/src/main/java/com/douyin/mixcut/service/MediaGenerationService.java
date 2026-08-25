@@ -74,8 +74,31 @@ public class MediaGenerationService {
             for (MediaGenerationTask persisted : generationTaskRepo.findByPhaseAndRemoteTaskIdIsNotNullOrderByIdAsc("polling")) {
                 restoreVideoPolling(persisted);
             }
+            recoverInterruptedDownloads();
         } catch (Exception error) {
             // Database may be unavailable during setup mode; the next scheduled pass retries.
+        }
+    }
+
+    private void recoverInterruptedDownloads() {
+        for (MediaGenerationTask persisted : generationTaskRepo.findByPhaseInOrderByIdAsc(List.of("downloading", "validating"))) {
+            String stagingPath = persisted.getStagingFilePath();
+            Path stagingRoot = props.mediaToolsOutput().resolve("generated-ai-videos").resolve(".staging").toAbsolutePath().normalize();
+            if (stagingPath != null && !stagingPath.isBlank()) {
+                Path candidate = Path.of(stagingPath).toAbsolutePath().normalize();
+                Path expected = stagingRoot.resolve(persisted.getTaskKey() + ".part").normalize();
+                if (candidate.startsWith(stagingRoot) && candidate.equals(expected)) {
+                    try { Files.deleteIfExists(candidate); } catch (Exception ignored) { }
+                }
+            }
+            persisted.setStagingFilePath(null);
+            persisted.setStatus("failed_terminal");
+            persisted.setPhase("recovery_failed");
+            persisted.setErrorCode("PROCESS_INTERRUPTED");
+            persisted.setError("进程在视频下载或素材登记期间退出");
+            persisted.setMessage("视频生成未完成，已清理中间文件；请在供应商控制台确认远端任务后人工处理");
+            persisted.setLastActivityAt(java.time.LocalDateTime.now());
+            generationTaskRepo.save(persisted);
         }
     }
 
@@ -106,7 +129,21 @@ public class MediaGenerationService {
         }
     }
 
-    @Data public static class Task { private String id; private String kind; private String status = "pending"; private int progress; private String message; private Long materialId; private String remoteTaskId; private long createdAt = System.currentTimeMillis(); private long updatedAt = createdAt; }
+    @Data public static class Task {
+        private String id;
+        private String kind;
+        private String status = "accepted";
+        private String phase = "accepted";
+        private int progress;
+        private String message;
+        private String errorCode;
+        private Integer attemptCount;
+        private Integer maxAttempts;
+        private Long materialId;
+        private String remoteTaskId;
+        private long createdAt = System.currentTimeMillis();
+        private long updatedAt = createdAt;
+    }
     @Data public static class ImageRequest { private Long providerId; private String prompt; private String model = "gpt-image-1"; private String size = "1024x1024"; private String quality = "medium"; private Boolean confirm = false; }
     @Data public static class VideoRequest { private Long providerId; private String prompt; private String model = "sora-2"; private String size = "1280x720"; private Integer seconds = 4; private Boolean confirm = false; }
     @Data public static class VoiceRequest { private Long providerId; private String input; private String model = "gpt-4o-mini-tts"; private String voice = "coral"; private String instructions = ""; private Boolean confirm = false; }
@@ -233,6 +270,8 @@ public class MediaGenerationService {
         task.setId(UUID.randomUUID().toString());
         task.setKind(kind);
         task.setMessage(message);
+        task.setAttemptCount(0);
+        task.setMaxAttempts(2);
         tasks.put(task.getId(), task);
         MediaGenerationTask persisted = new MediaGenerationTask();
         persisted.setTaskKey(task.getId());
@@ -257,8 +296,8 @@ public class MediaGenerationService {
 
     private Task fromPersisted(MediaGenerationTask persisted) {
         Task task = new Task();
-        task.setId(persisted.getTaskKey()); task.setKind(persisted.getKind()); task.setStatus(persisted.getStatus());
-        task.setProgress(persisted.getProgress() == null ? 0 : persisted.getProgress()); task.setMessage(persisted.getMessage()); task.setRemoteTaskId(persisted.getRemoteTaskId()); task.setMaterialId(persisted.getMaterialId());
+        task.setId(persisted.getTaskKey()); task.setKind(persisted.getKind()); task.setStatus(persisted.getStatus()); task.setPhase(persisted.getPhase());
+        task.setProgress(persisted.getProgress() == null ? 0 : persisted.getProgress()); task.setMessage(persisted.getMessage()); task.setErrorCode(persisted.getErrorCode()); task.setAttemptCount(persisted.getAttemptCount()); task.setMaxAttempts(persisted.getMaxAttempts()); task.setRemoteTaskId(persisted.getRemoteTaskId()); task.setMaterialId(persisted.getMaterialId());
         if (persisted.getCreatedAt() != null) task.setCreatedAt(persisted.getCreatedAt().atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli());
         if (persisted.getUpdatedAt() != null) task.setUpdatedAt(persisted.getUpdatedAt().atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli());
         return task;
@@ -266,7 +305,7 @@ public class MediaGenerationService {
 
     private void generateVideo(Task task, AiProvider provider, String prompt, String model, String size, int seconds) {
         try {
-            update(task, "running", 10, "正在调用 OpenAI-compatible 视频生成接口");
+            beginSubmission(task, 10, "正在调用 OpenAI-compatible 视频生成接口");
             String remoteId = openAiMediaAdapter.submitVideo(new OpenAiCompatibleMediaAdapter.ProviderContext(
                     normalizedBase(provider), secret(provider), "/v1/audio/speech"), prompt, model, size, seconds).remoteTaskId();
             task.setRemoteTaskId(remoteId);
@@ -296,14 +335,13 @@ public class MediaGenerationService {
             }
             throw new IllegalStateException("视频生成等待超时，请在供应商控制台查看任务状态");
         } catch (Exception e) {
+            persistErrorCode(task.getId(), e);
             update(task, "failed_terminal", task.getProgress(), concise(e));
         }
     }
 
     private void downloadVideo(Task task, AiProvider provider, String remoteId) throws Exception {
         update(task, "downloading", 92, "正在下载并校验生成视频");
-        var artifact = openAiMediaAdapter.downloadVideo(new OpenAiCompatibleMediaAdapter.ProviderContext(
-                normalizedBase(provider), secret(provider), "/v1/audio/speech"), remoteId);
         Path dir = props.mediaToolsOutput().resolve("generated-ai-videos");
         Path stagingDir = dir.resolve(".staging");
         Files.createDirectories(stagingDir);
@@ -312,27 +350,38 @@ public class MediaGenerationService {
             record.setStagingFilePath(staging.toString());
             generationTaskRepo.save(record);
         });
-        Files.write(staging, artifact.bytes());
-        if (!Files.isRegularFile(staging) || Files.size(staging) < 2048) {
-            Files.deleteIfExists(staging);
-            throw new IllegalStateException("供应商返回的视频文件无效");
-        }
-        Files.createDirectories(dir);
         Path output = dir.resolve("video-" + task.getId() + ".mp4");
-        Files.move(staging, output, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-        update(task, "validating", 95, "正在验证视频并登记素材");
-        Material material = materialService.register(output.toString(), null, false, Material.Source.generated, normalizedBase(provider)); material.setRole(MaterialRole.body); material.setTags("AI生成,视频," + remoteId); material = materialService.save(material); materialService.attachBrowserUrls(material); task.setMaterialId(material.getId());
-        generationTaskRepo.findByTaskKey(task.getId()).ifPresent(record -> {
+        boolean registered = false;
+        try {
+            openAiMediaAdapter.downloadVideo(new OpenAiCompatibleMediaAdapter.ProviderContext(
+                    normalizedBase(provider), secret(provider), "/v1/audio/speech"), remoteId, staging, props.getNetworkMaxDownloadBytes());
+            Files.createDirectories(dir);
+            Files.move(staging, output, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            update(task, "validating", 95, "正在验证视频并登记素材");
+            Material material = materialService.register(output.toString(), null, false, Material.Source.generated, normalizedBase(provider));
+            registered = true;
+            material.setRole(MaterialRole.body); material.setTags("AI生成,视频," + remoteId); material = materialService.save(material); materialService.attachBrowserUrls(material); task.setMaterialId(material.getId());
+            clearStagingFilePath(task.getId());
+            update(task, "done", 100, "视频生成完成，已作为新素材入库");
+        } catch (Exception error) {
+            try { Files.deleteIfExists(staging); } catch (Exception ignored) { }
+            if (!registered) try { Files.deleteIfExists(output); } catch (Exception ignored) { }
+            clearStagingFilePath(task.getId());
+            throw error;
+        }
+    }
+
+    private void clearStagingFilePath(String taskId) {
+        generationTaskRepo.findByTaskKey(taskId).ifPresent(record -> {
             record.setStagingFilePath(null);
             generationTaskRepo.save(record);
         });
-        update(task, "done", 100, "视频生成完成，已作为新素材入库");
     }
 
     private void generateVoice(Task task, AiProvider provider, String input, String model, String voice, String instructions) {
         Path output = null;
         try {
-            update(task, "running", 15, "正在调用配音接口");
+            beginSubmission(task, 15, "正在调用配音接口");
             MediaProviderCatalog.Capability capability = mediaCapability(provider);
             if (!"openai_audio_speech".equals(capability.voiceProtocol())) {
                 throw new OpenAiCompatibleMediaAdapter.MediaAdapterException("MEDIA_PROTOCOL_UNSUPPORTED",
@@ -368,15 +417,19 @@ public class MediaGenerationService {
 
     private void persistErrorCode(String taskId, Exception error) {
         generationTaskRepo.findByTaskKey(taskId).ifPresent(task -> {
+            String errorCode;
             if (error instanceof OpenAiCompatibleMediaAdapter.MediaAdapterException adapterError) {
-                task.setErrorCode(adapterError.code());
+                errorCode = adapterError.code();
             } else if (error instanceof java.net.SocketTimeoutException) {
-                task.setErrorCode("TIMEOUT");
+                errorCode = "TIMEOUT";
             } else {
-                task.setErrorCode("MEDIA_EXECUTION_FAILED");
+                errorCode = "MEDIA_EXECUTION_FAILED";
             }
+            task.setErrorCode(errorCode);
             task.setError(concise(error));
             generationTaskRepo.save(task);
+            Task active = tasks.get(taskId);
+            if (active != null) active.setErrorCode(errorCode);
         });
     }
 
@@ -397,7 +450,7 @@ public class MediaGenerationService {
 
     private void generateOpenAiImage(Task task, AiProvider provider, String prompt, String model, String size, String quality) {
         try {
-            update(task, "running", 15, "正在调用 OpenAI-compatible 图片生成接口");
+            beginSubmission(task, 15, "正在调用 OpenAI-compatible 图片生成接口");
             var submission = openAiMediaAdapter.submitImage(new OpenAiCompatibleMediaAdapter.ProviderContext(
                     normalizedBase(provider), secret(provider), "/v1/audio/speech"), prompt, model, size, quality);
 
@@ -407,7 +460,10 @@ public class MediaGenerationService {
             if (!Files.isRegularFile(output) || Files.size(output) < 512) throw new IllegalStateException("生成图片无效");
             Material material = materialService.register(output.toString(), null, false, Material.Source.generated, normalizedBase(provider)); material.setRole(MaterialRole.product); material.setTags("AI生成,OpenAI," + model); material = materialService.save(material); materialService.attachBrowserUrls(material);
             task.setMaterialId(material.getId()); update(task, "done", 100, "图片生成完成，已作为新素材入库");
-        } catch (Exception e) { update(task, "failed", task.getProgress(), e.getMessage() == null ? "图片生成失败" : e.getMessage()); }
+        } catch (Exception e) {
+            persistErrorCode(task.getId(), e);
+            update(task, "failed", task.getProgress(), e.getMessage() == null ? "图片生成失败" : e.getMessage());
+        }
     }
 
     private void downloadGeneratedImage(String rawUrl, Path output) throws Exception {
@@ -435,8 +491,19 @@ public class MediaGenerationService {
         }
     }
 
+    private void beginSubmission(Task task, int progress, String message) {
+        MediaGenerationTask persisted = generationTaskRepo.findByTaskKey(task.getId()).orElse(null);
+        int attemptCount = persisted == null || persisted.getAttemptCount() == null ? 1 : persisted.getAttemptCount() + 1;
+        task.setAttemptCount(attemptCount);
+        if (persisted != null) {
+            persisted.setAttemptCount(attemptCount);
+            generationTaskRepo.save(persisted);
+        }
+        update(task, "submitting", progress, message);
+    }
+
     private void update(Task task, String status, int progress, String message) {
-        task.setStatus(status); task.setProgress(Math.max(0, Math.min(100, progress))); task.setMessage(message); task.setUpdatedAt(System.currentTimeMillis());
+        task.setStatus(status); task.setPhase(status); task.setProgress(Math.max(0, Math.min(100, progress))); task.setMessage(message); task.setUpdatedAt(System.currentTimeMillis());
         MediaGenerationTask persisted = generationTaskRepo.findByTaskKey(task.getId()).orElse(null);
         if (persisted != null) {
             persisted.setStatus(status); persisted.setPhase(status); persisted.setProgress(task.getProgress()); persisted.setMessage(message); persisted.setRemoteTaskId(task.getRemoteTaskId()); persisted.setMaterialId(task.getMaterialId()); persisted.setLastActivityAt(java.time.LocalDateTime.now());
