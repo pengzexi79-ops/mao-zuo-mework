@@ -85,6 +85,29 @@ class ProcessRegistryTest {
     }
 
     @Test
+    void cleanupRefusesToFollowSymlinkedOutputParent() throws Exception {
+        ProcessRegistry registry = new ProcessRegistry();
+        ProcessRegistry.CancellationContext context = registry.create("task-symlink-output");
+        Path root = temp.resolve("output-root");
+        Path outside = temp.resolve("outside");
+        Files.createDirectories(root);
+        Files.createDirectories(outside);
+        Path redirected = root.resolve("redirected");
+        try {
+            Files.createSymbolicLink(redirected, outside);
+        } catch (UnsupportedOperationException | java.nio.file.FileSystemException unavailable) {
+            return;
+        }
+        Path external = outside.resolve("result.mp4");
+        Files.writeString(external, "outside");
+        assertTrue(registry.registerOutput(context, redirected.resolve("result.mp4"), root));
+
+        registry.cleanupOutputs(context);
+
+        assertTrue(Files.exists(external));
+    }
+
+    @Test
     void cleanupOnlyDeletesRegisteredDescendantAndKeepsSourceOutsideRoot() throws Exception {
         ProcessRegistry registry = new ProcessRegistry();
         ProcessRegistry.CancellationContext context = registry.create("task-output");

@@ -138,6 +138,10 @@ public class ProcessRegistry {
                 paths.remove(registration);
                 continue;
             }
+            if (!hasSafeOutputParentChain(registration.root(), registration.path())) {
+                paths.remove(registration);
+                continue;
+            }
             if (Files.exists(registration.path(), LinkOption.NOFOLLOW_LINKS)
                     && deleteTree(registration.path())) {
                 paths.remove(registration);
@@ -190,6 +194,16 @@ public class ProcessRegistry {
         active.remove(context);
         outputs.remove(context);
         contexts.remove(context.taskKey(), context);
+    }
+
+    private boolean hasSafeOutputParentChain(Path root, Path path) {
+        Path current = path.getParent();
+        while (current != null && current.startsWith(root)) {
+            if (Files.isSymbolicLink(current)) return false;
+            if (current.equals(root)) return true;
+            current = current.getParent();
+        }
+        return false;
     }
 
     private boolean deleteTree(Path path) {
