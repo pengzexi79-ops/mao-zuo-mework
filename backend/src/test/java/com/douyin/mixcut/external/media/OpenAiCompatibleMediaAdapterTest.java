@@ -64,6 +64,27 @@ class OpenAiCompatibleMediaAdapterTest {
     }
 
     @Test
+    void pollsAndDownloadsVideoUsingFixedRemotePaths() throws Exception {
+        java.util.List<MediaHttpTransport.Request> requests = new java.util.ArrayList<>();
+        OpenAiCompatibleMediaAdapter adapter = new OpenAiCompatibleMediaAdapter(new ObjectMapper(), request -> {
+            requests.add(request);
+            if (request.url().endsWith("/content")) return new MediaHttpTransport.Response(200, Map.of("Content-Type", "video/mp4"), new byte[4096]);
+            return new MediaHttpTransport.Response(200, Map.of(), "{\"status\":\"completed\",\"progress\":100}".getBytes(StandardCharsets.UTF_8));
+        });
+        var provider = new OpenAiCompatibleMediaAdapter.ProviderContext("https://api.openai.com", "secret", "");
+
+        var poll = adapter.pollVideo(provider, "remote-1");
+        var download = adapter.downloadVideo(provider, "remote-1");
+
+        assertEquals(OpenAiCompatibleMediaAdapter.VideoState.SUCCEEDED, poll.state());
+        assertEquals(100, poll.progress());
+        assertEquals(4096, download.bytes().length);
+        assertEquals("https://api.openai.com/v1/videos/remote-1", requests.get(0).url());
+        assertEquals("https://api.openai.com/v1/videos/remote-1/content", requests.get(1).url());
+        assertThrows(OpenAiCompatibleMediaAdapter.MediaAdapterException.class, () -> adapter.pollVideo(provider, "../escape"));
+    }
+
+    @Test
     void voiceMapsRemoteFailuresToStableCode() {
         OpenAiCompatibleMediaAdapter adapter = new OpenAiCompatibleMediaAdapter(new ObjectMapper(), request ->
                 new MediaHttpTransport.Response(429, Map.of(), new byte[0]));
