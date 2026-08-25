@@ -257,7 +257,7 @@ public class JobService {
      * （app.job-watchdog-delay-ms，默认 30s）重试派发，不会遗留永远 pending 的任务。
      * 注意：CallerRunsPolicy 仅用于 crawl 执行器，renderExecutor 不使用它。
      */
-    private void dispatch(Long jobId) {
+    void dispatch(Long jobId) {
         if (jobId == null || !dispatched.add(jobId)) return;
         try {
             renderExecutor.execute(() -> {
@@ -461,6 +461,7 @@ public class JobService {
             job.setError(null);
             heartbeat(job, "修复重试排队");
             jobRepo.save(job);
+            replaceProcessContext(jobId);
             dispatch(jobId);
         });
     }
@@ -1261,7 +1262,7 @@ public class JobService {
     }
 
     /** 每个已持久化的 idx 都是恢复检查点；不要重新渲染或覆盖已有输出。 */
-    private Set<Integer> successfulIndexes(Long jobId, int total) {
+    Set<Integer> successfulIndexes(Long jobId, int total) {
         Set<Integer> indexes = new HashSet<>();
         for (JobOutput output : outputRepo.findByJobIdOrderByIdxAsc(jobId)) {
             Integer idx = output.getIdx();
