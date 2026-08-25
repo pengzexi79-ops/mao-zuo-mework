@@ -826,6 +826,7 @@ public class JobService {
                 plan.setVoiceMaterialId(narration.voice().getId());
                 plan.setVoicePath(narration.voice().getFilePath());
                 plan.setVoiceDurationSec(narration.voice().getDurationSec() == null ? 0 : narration.voice().getDurationSec());
+                plan.setVoiceSegments(List.of());
             }
             attachNarration(plan, narration);
             OutputVersion version = freezeOutputPlan(jobId, idx, attempt + 1, plan, itemParams,

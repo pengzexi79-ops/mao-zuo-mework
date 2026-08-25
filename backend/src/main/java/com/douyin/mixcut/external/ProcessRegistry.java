@@ -138,7 +138,8 @@ public class ProcessRegistry {
                 paths.remove(registration);
                 continue;
             }
-            if (deleteTree(registration.path())) {
+            if (Files.exists(registration.path(), LinkOption.NOFOLLOW_LINKS)
+                    && deleteTree(registration.path())) {
                 paths.remove(registration);
                 cleaned++;
             }
