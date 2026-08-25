@@ -84,9 +84,9 @@ class LocalReleaseHistoryServiceTest {
         LocalReleaseHistoryService service = new LocalReleaseHistoryService(mapper, props);
         Map<String, Object> upgraded = service.view(500);
 
-        assertEquals("2.2.147", upgraded.get("version"));
+        assertEquals("2.2.148", upgraded.get("version"));
         @SuppressWarnings("unchecked") List<Map<String, Object>> history = (List<Map<String, Object>>) upgraded.get("history");
-        for (int patch = 127; patch <= 146; patch++) {
+        for (int patch = 127; patch <= 147; patch++) {
             String version = "2.2." + patch;
             assertEquals(1, history.stream().filter(item -> version.equals(item.get("version"))).count(), version);
         }
