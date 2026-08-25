@@ -1,25 +1,491 @@
 {
-  "id": "release-2-2-126",
-  "version": "2.2.126",
-  "releasedAt": "2026-08-23",
+  "id": "release-2-2-146",
+  "version": "2.2.146",
+  "releasedAt": "2026-08-25",
   "kind": "当前本机构建",
-  "title": "全新安装目录启动门控",
-  "summary": "新增 Setup EXE、独立端口、独立 APP_DATA_DIR、健康检查和进程清理门控。",
+  "title": "AI 视频受限流式下载闭环",
+  "summary": "视频内容从 Provider 直接流式写入任务 staging 文件，并补齐大小、MIME、错误码、收费提交阶段、重定向边界和失败恢复门禁。",
   "changes": [
-    "缺少完整 Setup EXE/release manifest 时明确 skipped，不伪造安装验收通过。"
+    "下载先检查 Content-Length，chunked 响应按累计字节限制，使用 networkMaxDownloadBytes 且不把完整视频载入堆；不自动跟随未校验重定向。",
+    "图片、视频和配音提交统一进入 submitting 阶段并记录 attemptCount；任务 API 和 AI 创作页展示 phase、errorCode 与尝试次数。",
+    "启动恢复处理 downloading/validating 任务，仅清理当前任务 staging 根目录内的 .part 文件并标记人工处理。"
   ],
   "fixes": [
-    "完成提交 test(acceptance): gate fresh install and restart recovery 对应的功能或验收闭环；未记录额外回归修复。"
+    "修复大视频受 20MB byte[] 通用响应限制、下载或素材登记失败残留文件、轮询和图片异常不持久化错误码的问题。",
+    "修复统一任务中心把没有重试端点的付费 AI 失败任务标成可重试，以及兼容 Provider 返回 application/octet-stream 或空 MIME 时被错误拒绝的问题。"
   ],
   "verification": [
-    "FreshInstallContractTest、verify_windows_install.ps1 通过；当前发行包缺 Setup EXE，真实安装未执行"
+    "DefaultMediaHttpTransportTest、OpenAiCompatibleMediaAdapterTest、MediaGenerationServiceTest、TaskQueryServiceTest 和发行历史定向测试通过。",
+    "完整 Maven 回归、前端 text integrity、Vite production build 和静态资源引用校验通过。"
   ],
-  "compatibility": "仅增加可复核的应用功能、验收基座或任务可靠性，不修改用户素材源文件，不读取或提交凭据。",
+  "compatibility": "保持固定 OpenAI-compatible 与 Ark 路径；DashScope native、Qwen WebSocket TTS 和 Relay 仍返回 MEDIA_PROTOCOL_UNSUPPORTED。",
   "evidence": [
-    "verify_fresh_install.ps1",
-    "backend/src/test/java/com/douyin/mixcut/acceptance/FreshInstallContractTest.java"
+    "backend/src/main/java/com/douyin/mixcut/external/media/DefaultMediaHttpTransport.java",
+    "backend/src/main/java/com/douyin/mixcut/service/MediaGenerationService.java",
+    "backend/src/test/java/com/douyin/mixcut/external/media/DefaultMediaHttpTransportTest.java",
+    "backend/tools/release_notes.py"
   ],
+  "source": "backend/src/main/resources/release-notes.json",
   "history": [
+    {
+      "id": "release-2-2-145",
+      "version": "2.2.145",
+      "releasedAt": "2026-08-25",
+      "kind": "历史开发阶段",
+      "title": "环境接口浏览器导航修复",
+      "summary": "浏览器直接打开环境 API 时跳转到应用环境中心，JSON 客户端继续获得原接口数据。",
+      "changes": [
+        "/api/system/env 按 Accept 头进行内容协商：text/html 返回 302，application/json 保持 R<Map>。"
+      ],
+      "fixes": [
+        "修复浏览器文档导航请求 text/html 时出现 406 空白或 Whitelabel 页面的问题。"
+      ],
+      "verification": [
+        "SystemControllerNavigationTest 校验跳转地址，真实浏览器打开接口后到达能力中心环境页。"
+      ],
+      "compatibility": "API JSON 契约不变；只调整浏览器 HTML 导航。",
+      "evidence": [
+        "commit 8466f2e",
+        "backend/src/main/java/com/douyin/mixcut/web/SystemController.java",
+        "backend/src/test/java/com/douyin/mixcut/web/SystemControllerNavigationTest.java"
+      ]
+    },
+    {
+      "id": "release-2-2-144",
+      "version": "2.2.144",
+      "releasedAt": "2026-08-25",
+      "kind": "历史开发阶段",
+      "title": "视频轮询与下载适配器化",
+      "summary": "OpenAI-compatible adapter 接管视频任务状态查询、远端 ID 校验和内容下载协议。",
+      "changes": [
+        "固定使用 /v1/videos/{id} 与 /content，远端 ID 限制为安全字符，任务状态映射为受控枚举。"
+      ],
+      "fixes": [
+        "修复视频轮询和下载仍绕过 adapter、路径拼接缺少远端 ID 白名单的问题。"
+      ],
+      "verification": [
+        "OpenAiCompatibleMediaAdapterTest 覆盖提交、轮询、下载路径和非法远端 ID 拒绝。"
+      ],
+      "compatibility": "不重复提交已获得 remoteTaskId 的付费视频任务；不同供应商的非兼容异步协议仍不开放。",
+      "evidence": [
+        "commit d069ea1",
+        "backend/src/main/java/com/douyin/mixcut/external/media/OpenAiCompatibleMediaAdapter.java",
+        "backend/src/main/java/com/douyin/mixcut/service/MediaGenerationService.java"
+      ]
+    },
+    {
+      "id": "release-2-2-143",
+      "version": "2.2.143",
+      "releasedAt": "2026-08-25",
+      "kind": "历史开发阶段",
+      "title": "OpenAI-Compatible 媒体适配器隔离",
+      "summary": "将固定 OpenAI-compatible 图片、视频和配音请求从任务编排中隔离到可测试 adapter 与受限 transport。",
+      "changes": [
+        "新增固定图片、视频提交和配音协议，支持 Ark /api/v3 路由兼容、20MB 普通响应上限和稳定错误码。"
+      ],
+      "fixes": [
+        "修复媒体请求路径、响应解析和错误映射散落在 MediaGenerationService、难以验证协议边界的问题。"
+      ],
+      "verification": [
+        "OpenAiCompatibleMediaAdapterTest 覆盖路径、请求体、鉴权、Ark 路由和 429 错误映射。"
+      ],
+      "compatibility": "只支持已注册的固定 OpenAI-compatible 协议；DashScope native、Qwen WebSocket 和 Relay 未实现时明确拒绝。",
+      "evidence": [
+        "commit 6d4a898",
+        "backend/src/main/java/com/douyin/mixcut/external/media/OpenAiCompatibleMediaAdapter.java",
+        "backend/src/test/java/com/douyin/mixcut/external/media/OpenAiCompatibleMediaAdapterTest.java"
+      ]
+    },
+    {
+      "id": "release-2-2-142",
+      "version": "2.2.142",
+      "releasedAt": "2026-08-25",
+      "kind": "历史开发阶段",
+      "title": "音频合同 Fixture 与输出清理验收",
+      "summary": "对 BGM 和静音 fixture 执行真实 AudioContract 检查，并扩展输出清理安全测试。",
+      "changes": [
+        "OfflineAudioContractAcceptanceTest 检查可用 BGM 合同与静音拒绝，ProcessRegistryTest 覆盖缺失输出和父目录安全。"
+      ],
+      "fixes": [
+        "修复验收只核对 manifest 而未执行音频合同、以及迟到 move 输出未被清理的测试缺口。"
+      ],
+      "verification": [
+        "OfflineAudioContractAcceptanceTest 在 FFmpeg/FFprobe 可用时执行，相关 ProcessRegistry 单元测试通过。"
+      ],
+      "compatibility": "acceptance 仅使用固定测试 fixture；不使用业务数据库或用户素材。",
+      "evidence": [
+        "commit 05de45c",
+        "backend/src/test/java/com/douyin/mixcut/acceptance/OfflineAudioContractAcceptanceTest.java",
+        "backend/src/test/java/com/douyin/mixcut/external/ProcessRegistryTest.java"
+      ]
+    },
+    {
+      "id": "release-2-2-141",
+      "version": "2.2.141",
+      "releasedAt": "2026-08-25",
+      "kind": "历史开发阶段",
+      "title": "口播与取消竞态闭环",
+      "summary": "AI 口播替换旧分段计划，并补齐最终移动前后的取消和输出登记边界。",
+      "changes": [
+        "AI narration 生成后清空旧 voiceSegments，ProcessRegistry 保留尚未落盘输出登记并拒绝符号链接父目录清理。"
+      ],
+      "fixes": [
+        "修复新 AI 口播仍叠加旧时间线、最终 move 前取消泄漏文件以及清理路径穿越任务根目录的问题。"
+      ],
+      "verification": [
+        "ProcessRegistryTest 与 RenderServiceTest 覆盖迟到输出、符号链接父目录和 narration 计划替换。"
+      ],
+      "compatibility": "只清理当前任务管理根目录下登记输出，不跟随符号链接。",
+      "evidence": [
+        "commit aac519d",
+        "backend/src/main/java/com/douyin/mixcut/external/ProcessRegistry.java",
+        "backend/src/test/java/com/douyin/mixcut/external/ProcessRegistryTest.java"
+      ]
+    },
+    {
+      "id": "release-2-2-140",
+      "version": "2.2.140",
+      "releasedAt": "2026-08-25",
+      "kind": "历史开发阶段",
+      "title": "按声明时间线渲染口播",
+      "summary": "多段口播保留 timelineStart 声明的间隔，FFmpeg 在空隙处插入静音而非直接首尾拼接。",
+      "changes": [
+        "AudioSlice 增加 timelineStart，concatAudioSlices 排序、插入 anullsrc 后统一 loudnorm。"
+      ],
+      "fixes": [
+        "修复多段口播忽略目标起点、时间空隙被压缩导致字幕和画面节奏错位的问题。"
+      ],
+      "verification": [
+        "FfmpegToolTest 验证 0 秒与 3 秒起点的两段口播输出约 4 秒，RenderServiceTest 覆盖排序和边界。"
+      ],
+      "compatibility": "单段连续口播行为保持一致；多段口播开始按声明时间轴对齐。",
+      "evidence": [
+        "commit 4cce56a",
+        "backend/src/main/java/com/douyin/mixcut/external/FfmpegTool.java",
+        "backend/src/test/java/com/douyin/mixcut/external/FfmpegToolTest.java"
+      ]
+    },
+    {
+      "id": "release-2-2-139",
+      "version": "2.2.139",
+      "releasedAt": "2026-08-24",
+      "kind": "历史开发阶段",
+      "title": "BGM 与静音验收 Fixture",
+      "summary": "固定新增两项音频验收输入，并记录大小、SHA256 和 FFprobe 元数据。",
+      "changes": [
+        "fixture manifest 从 6 项扩展到 8 项，素材管线将 BGM 接受、纯静音拒绝作为离线验收场景。"
+      ],
+      "fixes": [
+        "修复音频合同验收只覆盖口播、缺少可用 BGM 和纯静音反例的问题。"
+      ],
+      "verification": [
+        "FixtureManifestTest、OfflineMaterialPipelineAcceptanceTest 和 fixture 校验脚本覆盖新增文件；依赖不可用时 acceptance 会明确跳过。"
+      ],
+      "compatibility": "验收文件仅位于测试资源，不写入业务素材库。",
+      "evidence": [
+        "commit e62b633",
+        "backend/src/test/resources/acceptance/fixture-manifest.json",
+        "backend/tools/verify_acceptance_fixtures.ps1"
+      ]
+    },
+    {
+      "id": "release-2-2-138",
+      "version": "2.2.138",
+      "releasedAt": "2026-08-24",
+      "kind": "历史开发阶段",
+      "title": "口播时间线校验与失败清理",
+      "summary": "拒绝重叠、负值、非有限值和源文件越界的口播片段，并清理准入失败输出。",
+      "changes": [
+        "VoiceTimeline 按片段排序并逐源 probe，校验源时长和目标视频边界。"
+      ],
+      "fixes": [
+        "修复无效时间线晚到 FFmpeg 才失败、TTS 或 Provider 准入失败文件残留的问题。"
+      ],
+      "verification": [
+        "RenderServiceTest 与音频服务回归覆盖时间线越界和失败清理。"
+      ],
+      "compatibility": "合法时间线行为不变；无效计划更早返回稳定错误。",
+      "evidence": [
+        "commit 77b0dea",
+        "backend/src/main/java/com/douyin/mixcut/service/RenderService.java",
+        "backend/src/test/java/com/douyin/mixcut/service/RenderServiceTest.java"
+      ]
+    },
+    {
+      "id": "release-2-2-137",
+      "version": "2.2.137",
+      "releasedAt": "2026-08-24",
+      "kind": "历史开发阶段",
+      "title": "口播选择与解码准入围栏",
+      "summary": "口播素材选择同时校验源类型、实际音轨和可解码状态。",
+      "changes": [
+        "AudioContract 增加 sourceType，RenderService 在进入时间线前检查实际音频能力。"
+      ],
+      "fixes": [
+        "修复错误角色素材或只靠扩展名判断的不可解码音频被选入口播的问题。"
+      ],
+      "verification": [
+        "RenderService 相关测试覆盖 voice 选择和实际 probe 准入。"
+      ],
+      "compatibility": "只收紧新渲染任务的口播准入，不改写已有素材。",
+      "evidence": [
+        "commit 8bbef71",
+        "backend/src/main/java/com/douyin/mixcut/service/RenderService.java",
+        "backend/src/main/java/com/douyin/mixcut/dto/AudioContract.java"
+      ]
+    },
+    {
+      "id": "release-2-2-136",
+      "version": "2.2.136",
+      "releasedAt": "2026-08-24",
+      "kind": "历史开发阶段",
+      "title": "BGM Ducking 频段能量验证",
+      "summary": "以真实 FFmpeg 频段能量测量验证口播出现时 BGM 被压低。",
+      "changes": [
+        "FfmpegToolTest 对 880Hz BGM 频段执行 bandpass 和 volumedetect 比较。"
+      ],
+      "fixes": [
+        "修复只比较全片平均响度、会被最终 loudnorm 掩盖 ducking 效果的测试误判。"
+      ],
+      "verification": [
+        "FfmpegToolTest 在本机 FFmpeg 可用时验证 sidechaincompress 后目标频段能量下降。"
+      ],
+      "compatibility": "仅增强音频混合测试，不改变素材源文件。",
+      "evidence": [
+        "commit ce1177d",
+        "backend/src/test/java/com/douyin/mixcut/external/FfmpegToolTest.java"
+      ]
+    },
+    {
+      "id": "release-2-2-135",
+      "version": "2.2.135",
+      "releasedAt": "2026-08-24",
+      "kind": "历史开发阶段",
+      "title": "本机 TTS 音频合同准入",
+      "summary": "自然语音和 Edge-TTS 输出统一通过 AudioContract 验证。",
+      "changes": [
+        "本机 TTS 在入库前检查实际音轨，主路径准入失败可受控回退到 Edge-TTS。"
+      ],
+      "fixes": [
+        "修复本机 TTS 不同实现使用不一致的音频质量判断和临时文件残留问题。"
+      ],
+      "verification": [
+        "TtsService 相关回归覆盖自然语音、Edge-TTS 和准入失败清理。"
+      ],
+      "compatibility": "保留原有 TTS 回退顺序；只阻止不合格的新输出入库。",
+      "evidence": [
+        "commit 572945c",
+        "backend/src/main/java/com/douyin/mixcut/service/TtsService.java",
+        "backend/src/main/java/com/douyin/mixcut/service/AudioContractService.java"
+      ]
+    },
+    {
+      "id": "release-2-2-134",
+      "version": "2.2.134",
+      "releasedAt": "2026-08-24",
+      "kind": "历史开发阶段",
+      "title": "Provider 配音入库准入",
+      "summary": "AI Provider 返回的配音先经过 AudioContract 检查，合格后才登记素材。",
+      "changes": [
+        "配音下载后测量音轨和质量，失败文件删除且任务不标记完成。"
+      ],
+      "fixes": [
+        "修复过短、不可读或合同不合格的 Provider 音频仍可能进入素材库的问题。"
+      ],
+      "verification": [
+        "MediaGenerationService 相关测试和后端回归覆盖配音准入失败路径。"
+      ],
+      "compatibility": "仅影响新生成的 AI 配音；不修改已有素材。",
+      "evidence": [
+        "commit df852a0",
+        "backend/src/main/java/com/douyin/mixcut/service/MediaGenerationService.java",
+        "backend/src/main/java/com/douyin/mixcut/service/AudioContractService.java"
+      ]
+    },
+    {
+      "id": "release-2-2-133",
+      "version": "2.2.133",
+      "releasedAt": "2026-08-24",
+      "kind": "历史开发阶段",
+      "title": "交付质检启用实测音频合同",
+      "summary": "成片交付质检显式接收并校验实测 AudioContract。",
+      "changes": [
+        "交付 QC 对新合同路径检查音轨可读性、时长、时间线和响度。"
+      ],
+      "fixes": [
+        "修复新音频合同已生成但交付质检仍可能走旧宽松入口的问题。"
+      ],
+      "verification": [
+        "DeliveryQcServiceTest 覆盖显式合同门禁和旧重载兼容。"
+      ],
+      "compatibility": "不改变历史测试夹具的旧兼容入口，新成片使用更严格的实测门禁。",
+      "evidence": [
+        "commit dddfb25",
+        "backend/src/main/java/com/douyin/mixcut/service/DeliveryQcService.java",
+        "backend/src/test/java/com/douyin/mixcut/service/DeliveryQcServiceTest.java"
+      ]
+    },
+    {
+      "id": "release-2-2-132",
+      "version": "2.2.132",
+      "releasedAt": "2026-08-24",
+      "kind": "历史开发阶段",
+      "title": "实测音频合同与响度质检",
+      "summary": "新增基于 FFprobe 和音频质量分析的 AudioContract，统一描述编码、采样率、声道、时长、响度和静音比例。",
+      "changes": [
+        "渲染与交付质检可使用实际测量的 AudioContract 执行稳定错误码门禁。"
+      ],
+      "fixes": [
+        "修复仅依赖声明时长、无法识别无音轨、不可解码、过静音或时间线无效音频的问题。"
+      ],
+      "verification": [
+        "AudioContractTest 与 DeliveryQcServiceTest 覆盖字段映射、错误码和低响度检查。"
+      ],
+      "compatibility": "旧兼容质检入口保留；新渲染链才强制完整实测合同。",
+      "evidence": [
+        "commit 961d714",
+        "backend/src/main/java/com/douyin/mixcut/dto/AudioContract.java",
+        "backend/src/test/java/com/douyin/mixcut/dto/AudioContractTest.java"
+      ]
+    },
+    {
+      "id": "release-2-2-131",
+      "version": "2.2.131",
+      "releasedAt": "2026-08-24",
+      "kind": "历史开发阶段",
+      "title": "多段口播覆盖修复",
+      "summary": "保留多段口播计划的总覆盖时长，避免只按单段或素材数量判断音频覆盖。",
+      "changes": [
+        "渲染计划使用多段口播声明的累计覆盖时长参与音频预检和交付判断。"
+      ],
+      "fixes": [
+        "修复多段口播覆盖不足或时长计算偏小导致合法计划被错误拒绝、或覆盖事实未被准确记录的问题。"
+      ],
+      "verification": [
+        "RenderServiceTest 覆盖多段口播 coverage sum；未将未执行的真实 Provider 验收写成已完成。"
+      ],
+      "compatibility": "只影响多段口播计划的覆盖计算，不修改用户素材源文件。",
+      "evidence": [
+        "commit 821b66e",
+        "backend/src/main/java/com/douyin/mixcut/service/RenderService.java",
+        "backend/src/test/java/com/douyin/mixcut/service/RenderServiceTest.java"
+      ]
+    },
+    {
+      "id": "release-2-2-130",
+      "version": "2.2.130",
+      "releasedAt": "2026-08-24",
+      "kind": "历史开发阶段",
+      "title": "媒体任务恢复代际与重试围栏",
+      "summary": "为恢复 worker 增加 generation fencing，并收紧重试次数和状态迁移。",
+      "changes": [
+        "恢复任务按代际领取执行权，重试只允许合法失败终态且达到上限后关闭入口。"
+      ],
+      "fixes": [
+        "修复旧恢复 worker 晚到更新覆盖新代际、重复恢复和 retryCount 达上限仍可重试的问题。"
+      ],
+      "verification": [
+        "TaskQueryServiceTest 和 MediaToolsService 相关回归覆盖代际与重试上限。"
+      ],
+      "compatibility": "任务状态字段向后兼容；不会自动重试未知付费提交。",
+      "evidence": [
+        "commit 4bdd060",
+        "backend/src/main/java/com/douyin/mixcut/service/MediaToolsService.java",
+        "backend/src/test/java/com/douyin/mixcut/service/TaskQueryServiceTest.java"
+      ]
+    },
+    {
+      "id": "release-2-2-129",
+      "version": "2.2.129",
+      "releasedAt": "2026-08-24",
+      "kind": "历史开发阶段",
+      "title": "媒体任务生命周期诊断与恢复",
+      "summary": "统一媒体工具任务的阶段、错误码、心跳、超时、过期和恢复状态。",
+      "changes": [
+        "MediaTask、统一任务 DTO、数据库迁移和 MediaTools 页面增加 phase、errorCode、recoveryState、retryCount 等诊断字段。"
+      ],
+      "fixes": [
+        "修复失败任务缺少可追踪原因、旧安装缺诊断列以及过期任务无法受控恢复的问题。"
+      ],
+      "verification": [
+        "MediaToolsServiceTest、TaskQueryServiceTest 和前端构建覆盖状态映射与恢复入口。"
+      ],
+      "compatibility": "旧安装通过幂等补列兼容；不连接或修改 acceptance 之外的测试数据库。",
+      "evidence": [
+        "commit 7bbd9e4",
+        "backend/src/main/java/com/douyin/mixcut/service/MediaToolsService.java",
+        "frontend/src/views/MediaTools.vue"
+      ]
+    },
+    {
+      "id": "release-2-2-128",
+      "version": "2.2.128",
+      "releasedAt": "2026-08-24",
+      "kind": "历史开发阶段",
+      "title": "取消代际清理闭环",
+      "summary": "补齐恢复任务切换代际后的进程上下文和输出清理边界。",
+      "changes": [
+        "恢复和重派 worker 时保留代际所有权，只有当前 worker 可清理自己的 future、context 和输出。"
+      ],
+      "fixes": [
+        "修复取消与恢复交错时旧 worker 清理新任务资源、最终 move 前取消泄漏输出的问题。"
+      ],
+      "verification": [
+        "ProcessRegistryTest 与 JobServiceReliabilityTest 增加代际清理回归用例。"
+      ],
+      "compatibility": "不改变任务输入、素材文件或已有输出记录，只加固并发清理语义。",
+      "evidence": [
+        "commit 8619868",
+        "backend/src/main/java/com/douyin/mixcut/service/JobService.java",
+        "backend/src/test/java/com/douyin/mixcut/external/ProcessRegistryTest.java"
+      ]
+    },
+    {
+      "id": "release-2-2-127",
+      "version": "2.2.127",
+      "releasedAt": "2026-08-24",
+      "kind": "历史开发阶段",
+      "title": "渲染取消上下文与输出隔离",
+      "summary": "为渲染 worker 分配独立取消上下文，并按任务代际登记和清理受控输出。",
+      "changes": [
+        "CancellationContext、ProcessRegistry 与 FFmpeg 执行链按任务绑定，最终输出、缩略图和质检候选纳入受控登记。"
+      ],
+      "fixes": [
+        "修复旧 worker 复用新任务上下文、取消后残留输出或误清理其他任务文件的问题。"
+      ],
+      "verification": [
+        "ProcessRegistryTest、JobServiceReliabilityTest 和 RenderServiceTest 覆盖上下文隔离、取消和输出清理。"
+      ],
+      "compatibility": "仅清理应用管理根目录内登记的任务输出，不删除素材源文件。",
+      "evidence": [
+        "commit ec7eb29",
+        "backend/src/main/java/com/douyin/mixcut/external/ProcessRegistry.java",
+        "backend/src/test/java/com/douyin/mixcut/service/JobServiceReliabilityTest.java"
+      ]
+    },
+    {
+      "id": "release-2-2-126",
+      "version": "2.2.126",
+      "releasedAt": "2026-08-23",
+      "kind": "历史开发阶段",
+      "title": "全新安装目录启动门控",
+      "summary": "新增 Setup EXE、独立端口、独立 APP_DATA_DIR、健康检查和进程清理门控。",
+      "changes": [
+        "缺少完整 Setup EXE/release manifest 时明确 skipped，不伪造安装验收通过。"
+      ],
+      "fixes": [
+        "完成提交 test(acceptance): gate fresh install and restart recovery 对应的功能或验收闭环；未记录额外回归修复。"
+      ],
+      "verification": [
+        "FreshInstallContractTest、verify_windows_install.ps1 通过；当前发行包缺 Setup EXE，真实安装未执行"
+      ],
+      "compatibility": "仅增加可复核的应用功能、验收基座或任务可靠性，不修改用户素材源文件，不读取或提交凭据。",
+      "evidence": [
+        "verify_fresh_install.ps1",
+        "backend/src/test/java/com/douyin/mixcut/acceptance/FreshInstallContractTest.java"
+      ],
+      "source": "backend/src/main/resources/release-notes.json"
+    },
     {
       "id": "release-2-2-125",
       "version": "2.2.125",
@@ -4137,6 +4603,5 @@
         "douyin-mixcut/workflows/*.json"
       ]
     }
-  ],
-  "source": "backend/src/main/resources/release-notes.json"
+  ]
 }

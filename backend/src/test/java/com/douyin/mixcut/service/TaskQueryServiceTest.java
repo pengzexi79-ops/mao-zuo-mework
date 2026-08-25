@@ -1,5 +1,6 @@
 package com.douyin.mixcut.service;
 
+import com.douyin.mixcut.domain.MediaGenerationTask;
 import com.douyin.mixcut.domain.MediaTask;
 import com.douyin.mixcut.repository.Repositories.*;
 import org.junit.jupiter.api.Test;
@@ -28,6 +29,29 @@ class TaskQueryServiceTest {
         assertEquals("finished", result.get(0).getPhase());
         assertEquals("MEDIA_EXECUTION_FAILED", result.get(0).getErrorCode());
         assertEquals(2, result.get(0).getRetryCount());
+    }
+
+    @Test
+    void mapsAiGenerationDiagnosticsWithoutAdvertisingUnsupportedRetry() {
+        MediaGenerationTaskRepo ai = mock(MediaGenerationTaskRepo.class);
+        MediaGenerationTask task = new MediaGenerationTask();
+        task.setTaskKey("ai-1");
+        task.setKind("ai-video");
+        task.setStatus("failed_terminal");
+        task.setPhase("polling");
+        task.setProgress(50);
+        task.setErrorCode("RATE_LIMITED");
+        task.setAttemptCount(1);
+        task.setLastActivityAt(LocalDateTime.now());
+        when(ai.findTop50ByOrderByIdDesc()).thenReturn(List.of(task));
+        TaskQueryService service = new TaskQueryService(mock(MediaTaskRepo.class), ai, mock(CrawlJobRepo.class), mock(PreparationTaskRepo.class), mock(JobRepo.class));
+
+        var result = service.list(10, "ai-generation", null).get(0);
+
+        assertEquals("polling", result.getPhase());
+        assertEquals("RATE_LIMITED", result.getErrorCode());
+        assertEquals(1, result.getRetryCount());
+        assertEquals(false, result.isCanRetry());
     }
 
     @Test

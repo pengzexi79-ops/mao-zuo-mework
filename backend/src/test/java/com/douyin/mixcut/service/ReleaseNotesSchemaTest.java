@@ -42,6 +42,12 @@ class ReleaseNotesSchemaTest {
         }
         assertTrue(history.stream().anyMatch(item -> "2.2.23".equals(item.get("version"))));
         assertTrue(history.stream().anyMatch(item -> "2.2.22".equals(item.get("version"))));
+        for (int expectedPatch = 127; expectedPatch <= 146; expectedPatch++) {
+            String expectedVersion = "2.2." + expectedPatch;
+            assertTrue(expectedVersion.equals(notes.get("version"))
+                    || history.stream().anyMatch(item -> expectedVersion.equals(item.get("version"))),
+                    () -> "缺少 2026-08-24 至 2026-08-25 的连续记录：" + expectedVersion);
+        }
     }
 
     @Test

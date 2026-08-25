@@ -47,7 +47,12 @@ public class TaskQueryService {
         return result;
     }
     private UnifiedTask generation(MediaGenerationTask item) {
-        return task(item.getTaskKey(), "ai-generation", item.getKind(), item.getStatus(), item.getProgress(), item.getModel(), first(item.getMessage(), item.getError()), item.getCreatedAt(), item.getUpdatedAt(), false, "failed".equals(item.getStatus()) || "manual_review".equals(item.getStatus()));
+        UnifiedTask result = task(item.getTaskKey(), "ai-generation", item.getKind(), item.getStatus(), item.getProgress(), item.getModel(), first(item.getMessage(), item.getError()), item.getCreatedAt(), item.getUpdatedAt(), false, false);
+        result.setPhase(item.getPhase());
+        result.setHeartbeatAt(item.getLastActivityAt() == null ? null : item.getLastActivityAt().toString());
+        result.setErrorCode(item.getErrorCode());
+        result.setRetryCount(item.getAttemptCount());
+        return result;
     }
     private UnifiedTask crawl(CrawlJob item) {
         return task("crawl-" + item.getId(), "crawl", item.getMode(), item.getStatus(), item.getProgress(), item.getName(), first(item.getSummary(), item.getError()), item.getCreatedAt(), item.getUpdatedAt(), "running".equals(item.getStatus()) || "pending".equals(item.getStatus()), "failed".equals(item.getStatus()));
