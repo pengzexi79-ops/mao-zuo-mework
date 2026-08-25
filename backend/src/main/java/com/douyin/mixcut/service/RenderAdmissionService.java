@@ -5,8 +5,10 @@ import com.douyin.mixcut.domain.Workflow;
 import com.douyin.mixcut.dto.AdmissionSnapshot;
 import com.douyin.mixcut.dto.EffectiveRenderConfig;
 import com.douyin.mixcut.dto.MixParams;
+import com.douyin.mixcut.dto.PreflightResult;
 import com.douyin.mixcut.repository.Repositories.ProjectRepo;
 import com.douyin.mixcut.repository.Repositories.WorkflowRepo;
+import com.douyin.mixcut.external.FfmpegTool;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
@@ -25,13 +27,19 @@ public class RenderAdmissionService {
     private final ObjectMapper om;
     private final RenderConfigResolver configResolver;
     private final SkillEngine skillEngine;
+    private final PreflightService preflightService;
+    private final FfmpegTool ffmpeg;
 
-    public RenderAdmissionService(ProjectRepo projectRepo, WorkflowRepo workflowRepo, ObjectMapper om, RenderConfigResolver configResolver, SkillEngine skillEngine) {
+    public RenderAdmissionService(ProjectRepo projectRepo, WorkflowRepo workflowRepo, ObjectMapper om,
+                                  RenderConfigResolver configResolver, SkillEngine skillEngine,
+                                  PreflightService preflightService, FfmpegTool ffmpeg) {
         this.projectRepo = projectRepo;
         this.workflowRepo = workflowRepo;
         this.om = om;
         this.configResolver = configResolver;
         this.skillEngine = skillEngine;
+        this.preflightService = preflightService;
+        this.ffmpeg = ffmpeg;
     }
 
     public EffectiveRenderConfig resolve(Long workflowId, Long projectId, MixParams submitted) {
@@ -116,8 +124,6 @@ public class RenderAdmissionService {
 
     public void verify(AdmissionSnapshot supplied, EffectiveRenderConfig actual) {
         if (supplied == null) throw new IllegalArgumentException("请先执行干跑，再提交出片任务");
-        if ("blocked".equalsIgnoreCase(supplied.getStatus()) || "needs_user_action".equalsIgnoreCase(supplied.getStatus()))
-            throw new IllegalArgumentException("出片准入状态不允许提交: " + supplied.getStatus());
         if (supplied.getStatusSignature() == null || !Objects.equals(supplied.getStatusSignature(), signature(supplied)))
             throw new IllegalArgumentException("出片准入状态签名无效，请重新干跑");
         if (supplied.getExpiresAt() == null || supplied.getExpiresAt().isBefore(LocalDateTime.now()))
@@ -128,6 +134,16 @@ public class RenderAdmissionService {
                 || !Objects.equals(supplied.getVariant(), actual.getVariant())
                 || !Objects.equals(blankToNull(supplied.getPreparationId()), actual.getPreparationId()))
             throw new IllegalArgumentException("出片准入快照与当前工作流、项目、变体、准备任务或素材范围不一致，请重新干跑");
+
+        MixPlanner.Plan plan = skillEngine.run(actual.getWorkflowDef(), actual.getProject(), actual.getParams(),
+                actual.getVariant() == null ? 0 : actual.getVariant(), null, null);
+        PreflightResult preflight = preflightService.evaluate(plan, actual.getParams(),
+                ffmpeg.ffmpegAvailable(), ffmpeg.ffprobeAvailable());
+        String expected = preflight.getStatus();
+        if (PreflightResult.BLOCKED.equals(expected) || PreflightResult.NEEDS_USER_ACTION.equals(expected)
+                || !Objects.equals(expected, supplied.getStatus())) {
+            throw new IllegalArgumentException("当前出片准入状态不可提交，请重新干跑: " + expected);
+        }
     }
 
     private Map<String, Object> materialScope(MixParams p) {

@@ -3,6 +3,8 @@ package com.douyin.mixcut.service;
 import com.douyin.mixcut.domain.Project;
 import com.douyin.mixcut.domain.Workflow;
 import com.douyin.mixcut.dto.AdmissionSnapshot;
+import com.douyin.mixcut.dto.PreflightResult;
+import com.douyin.mixcut.external.FfmpegTool;
 import com.douyin.mixcut.dto.EffectiveRenderConfig;
 import com.douyin.mixcut.dto.MixParams;
 import com.douyin.mixcut.repository.Repositories.ProjectRepo;
@@ -21,6 +23,9 @@ class RenderAdmissionServiceTest {
     private ProjectRepo projectRepo;
     private WorkflowRepo workflowRepo;
     private RenderAdmissionService service;
+    private SkillEngine skillEngine;
+    private PreflightService preflightService;
+    private FfmpegTool ffmpeg;
     private Project project;
     private Workflow workflow;
 
@@ -33,7 +38,18 @@ class RenderAdmissionServiceTest {
         when(projectRepo.findById(7L)).thenReturn(Optional.of(project));
         when(workflowRepo.findById(9L)).thenReturn(Optional.of(workflow));
         RenderConfigResolver resolver = new RenderConfigResolver(new ObjectMapper());
-        service = new RenderAdmissionService(projectRepo, workflowRepo, new ObjectMapper(), resolver, mock(SkillEngine.class));
+        skillEngine = mock(SkillEngine.class);
+        preflightService = mock(PreflightService.class);
+        ffmpeg = mock(FfmpegTool.class);
+        when(ffmpeg.ffmpegAvailable()).thenReturn(true);
+        when(ffmpeg.ffprobeAvailable()).thenReturn(true);
+        when(skillEngine.run(anyString(), any(), any(), anyInt(), isNull(), isNull()))
+                .thenReturn(new MixPlanner.Plan());
+        PreflightResult ready = new PreflightResult();
+        ready.setStatus(PreflightResult.READY);
+        when(preflightService.evaluate(any(), any(), eq(true), eq(true))).thenReturn(ready);
+        service = new RenderAdmissionService(projectRepo, workflowRepo, new ObjectMapper(), resolver,
+                skillEngine, preflightService, ffmpeg);
     }
 
     @Test
@@ -64,6 +80,42 @@ class RenderAdmissionServiceTest {
         assertEquals(first.getConfigHash(), second.getConfigHash());
         assertNotEquals(first.getConfigHash(), service.resolve(9L, 7L, new MixParams(), 4, "prep-1").getConfigHash());
         assertNotEquals(first.getConfigHash(), service.resolve(9L, 7L, new MixParams(), 3, "prep-2").getConfigHash());
+    }
+
+    @Test
+    void blockedClientStatusChangedToReadyIsRejected() {
+        EffectiveRenderConfig actual = service.resolve(9L, 7L, new MixParams());
+        AdmissionSnapshot supplied = actual.getAdmission();
+        supplied.setStatus("ready");
+        service.seal(supplied, "ready");
+        PreflightResult blocked = new PreflightResult();
+        blocked.setStatus(PreflightResult.BLOCKED);
+        when(preflightService.evaluate(any(), any(), eq(true), eq(true))).thenReturn(blocked);
+        assertThrows(IllegalArgumentException.class, () -> service.verify(supplied, actual));
+    }
+
+    @Test
+    void currentConfigurationBlockerIsRejectedEvenWithMatchingSignature() {
+        EffectiveRenderConfig actual = service.resolve(9L, 7L, new MixParams());
+        AdmissionSnapshot supplied = actual.getAdmission();
+        service.seal(supplied, PreflightResult.READY);
+        PreflightResult blocked = new PreflightResult();
+        blocked.setStatus(PreflightResult.BLOCKED);
+        when(preflightService.evaluate(any(), any(), eq(true), eq(true))).thenReturn(blocked);
+        assertThrows(IllegalArgumentException.class, () -> service.verify(supplied, actual));
+    }
+
+    @Test
+    void readyAndWarningStatusesPassServerRecomputation() {
+        EffectiveRenderConfig actual = service.resolve(9L, 7L, new MixParams());
+        AdmissionSnapshot supplied = actual.getAdmission();
+        service.seal(supplied, PreflightResult.READY);
+        service.verify(supplied, actual);
+        service.seal(supplied, PreflightResult.WARNING);
+        PreflightResult warning = new PreflightResult();
+        warning.setStatus(PreflightResult.WARNING);
+        when(preflightService.evaluate(any(), any(), eq(true), eq(true))).thenReturn(warning);
+        service.verify(supplied, actual);
     }
 
     @Test
