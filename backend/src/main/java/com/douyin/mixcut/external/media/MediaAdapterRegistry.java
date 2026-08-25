@@ -2,6 +2,7 @@ package com.douyin.mixcut.external.media;
 
 import com.douyin.mixcut.domain.AiProvider;
 import com.douyin.mixcut.service.MediaProviderCatalog;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -16,6 +17,7 @@ public class MediaAdapterRegistry {
 
     private final List<MediaAdapter> adapters;
 
+    @Autowired
     public MediaAdapterRegistry(OpenAiCompatibleMediaAdapter openAiAdapter) {
         this(List.of(openAiAdapter));
     }

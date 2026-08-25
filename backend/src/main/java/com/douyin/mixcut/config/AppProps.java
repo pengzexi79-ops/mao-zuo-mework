@@ -18,7 +18,7 @@ import java.util.List;
 public class AppProps {
 
     /** Release identity is compiled into the application and must never be environment-overridable. */
-    private static final String RELEASE_VERSION = "2.2.148";
+    private static final String RELEASE_VERSION = "2.2.149";
 
     private String dataDir = "./data";
     private String ffmpeg = "ffmpeg";
