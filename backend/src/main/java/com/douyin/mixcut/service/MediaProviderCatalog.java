@@ -20,7 +20,7 @@ public class MediaProviderCatalog {
             List.of("gpt-image-1", "gpt-image-1-mini"),
             List.of("sora-2", "sora-2-pro"),
             List.of("gpt-4o-mini-tts", "tts-1", "tts-1-hd"),
-            List.of(), "", "openai_audio_speech",
+            List.of(), "", "openai_image_generation", "openai_video_generation", "openai_audio_speech",
             "https://platform.openai.com/api-keys",
             "https://platform.openai.com/settings/organization/billing/overview"
     );
@@ -28,10 +28,18 @@ public class MediaProviderCatalog {
     private final ObjectMapper om;
 
     public record Capability(List<String> imageModels, List<String> videoModels, List<String> voiceModels,
-                             List<String> visionModels, String voiceEndpoint, String voiceProtocol,
-                             String setupUrl, String billingUrl) {
+                             List<String> visionModels, String voiceEndpoint, String imageProtocol,
+                             String videoProtocol, String voiceProtocol, String setupUrl, String billingUrl) {
+        public String protocol(String operation) {
+            return switch (operation) {
+                case "image" -> imageProtocol;
+                case "video" -> videoProtocol;
+                case "voice" -> voiceProtocol;
+                default -> "";
+            };
+        }
         public static Capability empty() {
-            return new Capability(List.of(), List.of(), List.of(), List.of(), "", "openai_audio_speech", "", "");
+            return new Capability(List.of(), List.of(), List.of(), List.of(), "", "", "", "openai_audio_speech", "", "");
         }
 
         public boolean supports(String operation, String model) {
@@ -59,6 +67,8 @@ public class MediaProviderCatalog {
             value.put("visionModels", visionModels);
             value.put("imageGenerationModels", imageModels);
             value.put("voiceEndpoint", voiceEndpoint);
+            value.put("imageProtocol", imageProtocol);
+            value.put("videoProtocol", videoProtocol);
             value.put("voiceProtocol", voiceProtocol);
             value.put("setupUrl", setupUrl);
             value.put("billingUrl", billingUrl);
@@ -72,18 +82,19 @@ public class MediaProviderCatalog {
             JsonNode media = root != null && root.isObject() ? root.path("media") : null;
             if (media == null || !media.isObject()) {
                 return officialOpenAi(provider) ? mergeOfficialDefaults(provider, Capability.empty())
-                        : new Capability(List.of(), List.of(), List.of(), List.of(), "", "openai_audio_speech", officialSetup(provider), officialBilling(provider));
+                        : new Capability(List.of(), List.of(), List.of(), List.of(), "", "", "", "openai_audio_speech", officialSetup(provider), officialBilling(provider));
             }
             String setup = safeExternalUrl(media.path("setupUrl").asText(""));
             String billing = safeExternalUrl(media.path("billingUrl").asText(""));
             Capability existing = new Capability(models(media.path("image")), models(media.path("video")), models(media.path("voice")), models(media.path("vision")),
-                    safeEndpoint(media.path("voiceEndpoint").asText("")), safeProtocol(media.path("voiceProtocol").asText("openai_audio_speech")),
+                    safeEndpoint(media.path("voiceEndpoint").asText("")), safeProtocol(media.path("imageProtocol").asText(""), ""),
+                    safeProtocol(media.path("videoProtocol").asText(""), ""), safeProtocol(media.path("voiceProtocol").asText(""), ""),
                     setup.isBlank() ? officialSetup(provider) : setup,
                     billing.isBlank() ? officialBilling(provider) : billing);
             return officialOpenAi(provider) ? mergeOfficialDefaults(provider, existing) : existing;
         } catch (Exception ignored) {
             return officialOpenAi(provider) ? mergeOfficialDefaults(provider, Capability.empty())
-                    : new Capability(List.of(), List.of(), List.of(), List.of(), "", "openai_audio_speech", officialSetup(provider), officialBilling(provider));
+                    : new Capability(List.of(), List.of(), List.of(), List.of(), "", "", "", "openai_audio_speech", officialSetup(provider), officialBilling(provider));
         }
     }
 
@@ -128,10 +139,14 @@ public class MediaProviderCatalog {
             media.set("video", om.valueToTree(models(input.path("video"))));
             media.set("voice", om.valueToTree(models(input.path("voice"))));
             media.set("vision", om.valueToTree(models(input.path("vision"))));
+            String imageProtocol = safeProtocol(input.path("imageProtocol").asText(""), "");
+            String videoProtocol = safeProtocol(input.path("videoProtocol").asText(""), "");
             String voiceEndpoint = safeEndpoint(input.path("voiceEndpoint").asText(""));
-            String voiceProtocol = safeProtocol(input.path("voiceProtocol").asText("openai_audio_speech"));
+            String voiceProtocol = safeProtocol(input.path("voiceProtocol").asText(""), "");
             if (!voiceEndpoint.isBlank()) media.put("voiceEndpoint", voiceEndpoint);
-            media.put("voiceProtocol", voiceProtocol);
+            if (!imageProtocol.isBlank()) media.put("imageProtocol", imageProtocol);
+            if (!videoProtocol.isBlank()) media.put("videoProtocol", videoProtocol);
+            if (!voiceProtocol.isBlank()) media.put("voiceProtocol", voiceProtocol);
             String setup = safeExternalUrl(input.path("setupUrl").asText(""));
             String billing = safeExternalUrl(input.path("billingUrl").asText(""));
             if (!setup.isBlank()) media.put("setupUrl", setup);
@@ -150,7 +165,10 @@ public class MediaProviderCatalog {
         List<String> voice = merge(existing.voiceModels(), OPENAI_OFFICIAL_DEFAULTS.voiceModels());
         String setup = existing.setupUrl() == null || existing.setupUrl().isBlank() ? officialSetup(provider) : existing.setupUrl();
         String billing = existing.billingUrl() == null || existing.billingUrl().isBlank() ? officialBilling(provider) : existing.billingUrl();
-        return new Capability(image, video, voice, existing.visionModels(), existing.voiceEndpoint(), existing.voiceProtocol(), setup, billing);
+        return new Capability(image, video, voice, existing.visionModels(), existing.voiceEndpoint(),
+                existing.imageProtocol().isBlank() ? OPENAI_OFFICIAL_DEFAULTS.imageProtocol() : existing.imageProtocol(),
+                existing.videoProtocol().isBlank() ? OPENAI_OFFICIAL_DEFAULTS.videoProtocol() : existing.videoProtocol(),
+                existing.voiceProtocol(), setup, billing);
     }
 
     private List<String> merge(List<String> primary, List<String> fallback) {
@@ -165,9 +183,10 @@ public class MediaProviderCatalog {
         return url;
     }
 
-    private String safeProtocol(String raw) {
-        String value = raw == null || raw.isBlank() ? "openai_audio_speech" : raw.trim().toLowerCase(java.util.Locale.ROOT);
-        if (!List.of("openai_audio_speech", "dashscope_tts_http", "dashscope_tts_websocket").contains(value)) throw new IllegalArgumentException("不支持的配音协议");
+    private String safeProtocol(String raw, String defaultValue) {
+        String value = raw == null || raw.isBlank() ? defaultValue : raw.trim().toLowerCase(java.util.Locale.ROOT);
+        if (value.isBlank()) return "";
+        if (!List.of("openai_image_generation", "openai_video_generation", "openai_audio_speech", "dashscope_tts_http", "dashscope_tts_websocket").contains(value)) throw new IllegalArgumentException("不支持的媒体协议");
         return value;
     }
 
