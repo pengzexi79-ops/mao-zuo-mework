@@ -10,6 +10,7 @@ import com.douyin.mixcut.repository.Repositories.MediaGenerationTaskRepo;
 import com.douyin.mixcut.security.CredentialCipher;
 import com.douyin.mixcut.security.UrlGuard;
 import com.douyin.mixcut.external.media.MediaAdapterRegistry;
+import com.douyin.mixcut.external.media.MediaHttpTransport;
 import com.douyin.mixcut.external.media.OpenAiCompatibleMediaAdapter;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -441,6 +442,8 @@ public class MediaGenerationService {
             String errorCode;
             if (error instanceof OpenAiCompatibleMediaAdapter.MediaAdapterException adapterError) {
                 errorCode = adapterError.code();
+            } else if (error instanceof MediaHttpTransport.ResponseTooLargeException) {
+                errorCode = "RESPONSE_SIZE_EXCEEDED";
             } else if (error instanceof java.net.SocketTimeoutException) {
                 errorCode = "TIMEOUT";
             } else {
@@ -496,18 +499,24 @@ public class MediaGenerationService {
         conn.setConnectTimeout(20000);
         conn.setReadTimeout(180000);
         conn.setRequestProperty("Accept", "image/png,image/jpeg,image/webp,*/*");
-        int status = conn.getResponseCode();
-        if (status < 200 || status >= 300) throw new IllegalStateException("生成图片下载失败（HTTP " + status + "）");
-        long max = 20L * 1024 * 1024;
-        long written = 0;
-        try (InputStream in = conn.getInputStream(); var out = Files.newOutputStream(output)) {
-            byte[] buf = new byte[8192];
-            int n;
-            while ((n = in.read(buf)) >= 0) {
-                written += n;
-                if (written > max) throw new IllegalStateException("生成图片超过 20MB 限制");
-                out.write(buf, 0, n);
+        long max = props.getNetworkMaxDownloadBytes();
+        try {
+            int status = conn.getResponseCode();
+            if (status < 200 || status >= 300) throw new IllegalStateException("生成图片下载失败（HTTP " + status + "）");
+            long written = 0;
+            try (InputStream in = conn.getInputStream(); var out = Files.newOutputStream(output)) {
+                byte[] buf = new byte[8192];
+                int n;
+                while ((n = in.read(buf)) >= 0) {
+                    written += n;
+                    if (written > max) throw new MediaHttpTransport.ResponseTooLargeException(max);
+                    out.write(buf, 0, n);
+                }
             }
+        } catch (Exception error) {
+            // 任何失败都清掉可能已写入部分内容的成品文件，避免磁盘残留孤立 PNG。
+            try { Files.deleteIfExists(output); } catch (Exception ignored) { }
+            throw error;
         } finally {
             conn.disconnect();
         }

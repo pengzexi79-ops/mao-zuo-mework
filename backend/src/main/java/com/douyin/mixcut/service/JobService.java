@@ -1315,7 +1315,21 @@ public class JobService {
         com.fasterxml.jackson.databind.JsonNode parsed = om.readTree(existingJson == null ? "{}" : existingJson);
         if (parsed instanceof com.fasterxml.jackson.databind.node.ObjectNode root && root.has("effectiveParams")) {
             root.set("effectiveParams", om.valueToTree(params));
-            root.put("repairedAt", LocalDateTime.now().toString());
+            LocalDateTime invalidatedAt = LocalDateTime.now();
+            root.put("repairedAt", invalidatedAt.toString());
+            if (root.path("admissionSnapshot").isObject()) {
+                com.fasterxml.jackson.databind.node.ObjectNode admission =
+                        (com.fasterxml.jackson.databind.node.ObjectNode) root.path("admissionSnapshot");
+                admission.put("status", "invalidated_by_repair");
+                admission.putNull("statusSignature");
+                admission.putNull("configHash");
+                admission.putNull("materialScopeHash");
+                admission.putNull("workflowHash");
+                admission.put("invalidatedAt", invalidatedAt.toString());
+                admission.put("admissionInvalidatedReason", "effective_params_changed_by_repair");
+            }
+            root.put("admissionInvalidatedReason", "effective_params_changed_by_repair");
+            root.put("admissionInvalidatedAt", invalidatedAt.toString());
             return om.writeValueAsString(root);
         }
         return om.writeValueAsString(params);

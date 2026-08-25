@@ -8,12 +8,17 @@ import com.douyin.mixcut.dto.MixParams;
 import com.douyin.mixcut.dto.PreflightResult;
 import com.douyin.mixcut.repository.Repositories.ProjectRepo;
 import com.douyin.mixcut.repository.Repositories.WorkflowRepo;
+import com.douyin.mixcut.repository.MaterialStore;
+import com.douyin.mixcut.domain.Material;
 import com.douyin.mixcut.external.FfmpegTool;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -29,10 +34,22 @@ public class RenderAdmissionService {
     private final SkillEngine skillEngine;
     private final PreflightService preflightService;
     private final FfmpegTool ffmpeg;
+    private final AudioContractService audioContractService;
+    private final MaterialStore materialStore;
 
     public RenderAdmissionService(ProjectRepo projectRepo, WorkflowRepo workflowRepo, ObjectMapper om,
                                   RenderConfigResolver configResolver, SkillEngine skillEngine,
-                                  PreflightService preflightService, FfmpegTool ffmpeg) {
+                                  PreflightService preflightService, FfmpegTool ffmpeg,
+                                  AudioContractService audioContractService) {
+        this(projectRepo, workflowRepo, om, configResolver, skillEngine, preflightService, ffmpeg,
+                audioContractService, null);
+    }
+
+    @Autowired
+    public RenderAdmissionService(ProjectRepo projectRepo, WorkflowRepo workflowRepo, ObjectMapper om,
+                                  RenderConfigResolver configResolver, SkillEngine skillEngine,
+                                  PreflightService preflightService, FfmpegTool ffmpeg,
+                                  AudioContractService audioContractService, MaterialStore materialStore) {
         this.projectRepo = projectRepo;
         this.workflowRepo = workflowRepo;
         this.om = om;
@@ -40,6 +57,8 @@ public class RenderAdmissionService {
         this.skillEngine = skillEngine;
         this.preflightService = preflightService;
         this.ffmpeg = ffmpeg;
+        this.audioContractService = audioContractService;
+        this.materialStore = materialStore;
     }
 
     public EffectiveRenderConfig resolve(Long workflowId, Long projectId, MixParams submitted) {
@@ -139,6 +158,8 @@ public class RenderAdmissionService {
                 actual.getVariant() == null ? 0 : actual.getVariant(), null, null);
         PreflightResult preflight = preflightService.evaluate(plan, actual.getParams(),
                 ffmpeg.ffmpegAvailable(), ffmpeg.ffprobeAvailable());
+        preflightService.attachAudioContract(preflight, plan, actual.getParams(),
+                audioContractService, com.douyin.mixcut.external.ProcessRegistry.CancellationContext.none());
         String expected = preflight.getStatus();
         if (PreflightResult.BLOCKED.equals(expected) || PreflightResult.NEEDS_USER_ACTION.equals(expected)
                 || !Objects.equals(expected, supplied.getStatus())) {
@@ -148,10 +169,79 @@ public class RenderAdmissionService {
 
     private Map<String, Object> materialScope(MixParams p) {
         Map<String, Object> scope = new LinkedHashMap<>();
-        scope.put("materialIds", sorted(p.getMaterialIds()));
-        scope.put("folderIds", sorted(p.getFolderIds()));
+        List<Long> materialIds = sorted(p.getMaterialIds());
+        List<Long> folderIds = materialFolderIds(p);
+        scope.put("materialIds", materialIds);
+        scope.put("folderIds", folderIds);
         scope.put("folderReadSteps", p.getFolderReadSteps());
+        if (materialStore != null) scope.put("materialFacts", materialFacts(materialIds, folderIds));
         return scope;
+    }
+
+    private List<Map<String, Object>> materialFacts(List<Long> materialIds, List<Long> folderIds) {
+        Set<Long> selected = new HashSet<>(materialIds);
+        Set<Long> folders = new HashSet<>(folderIds);
+        List<Material> materials = materialStore.findAll();
+        List<Map<String, Object>> facts = materials.stream()
+                .filter(material -> material != null && material.getId() != null
+                        && (selected.contains(material.getId()) || folders.contains(material.getFolderId())))
+                .sorted(Comparator.comparing(Material::getId))
+                .map(this::materialFact)
+                .collect(java.util.stream.Collectors.toCollection(ArrayList::new));
+        Set<Long> found = materials.stream().filter(Objects::nonNull).map(Material::getId)
+                .filter(Objects::nonNull).collect(java.util.stream.Collectors.toSet());
+        selected.stream().filter(id -> !found.contains(id)).sorted().forEach(id -> {
+            Map<String, Object> missing = new LinkedHashMap<>();
+            missing.put("id", id);
+            missing.put("missing", "missing");
+            facts.add(missing);
+        });
+        facts.sort(Comparator.comparing(fact -> ((Number) fact.get("id")).longValue()));
+        return facts;
+    }
+
+    private Map<String, Object> materialFact(Material material) {
+        Map<String, Object> fact = new LinkedHashMap<>();
+        fact.put("id", material.getId());
+        fact.put("filePathHash", material.getFilePath() == null ? null : sha256(material.getFilePath()));
+        fact.put("fileSize", null);
+        fact.put("lastModified", null);
+        PathFact pathFact = fileFact(material.getFilePath());
+        if (pathFact.readable()) {
+            fact.put("fileSize", pathFact.size());
+            fact.put("lastModified", pathFact.lastModified());
+        } else {
+            fact.put("missing", "missing");
+        }
+        fact.put("durationSec", material.getDurationSec());
+        fact.put("status", material.getStatus());
+        fact.put("role", material.getRole());
+        return fact;
+    }
+
+    private PathFact fileFact(String filePath) {
+        if (filePath == null || filePath.isBlank()) return new PathFact(false, null, null);
+        try {
+            Path path = Path.of(filePath);
+            if (!Files.isReadable(path)) return new PathFact(false, null, null);
+            return new PathFact(true, Files.size(path), Files.getLastModifiedTime(path).toMillis());
+        } catch (Exception ignored) {
+            return new PathFact(false, null, null);
+        }
+    }
+
+    private record PathFact(boolean readable, Long size, Long lastModified) {}
+
+    private List<Long> materialFolderIds(MixParams p) {
+        Set<Long> ids = new HashSet<>(sorted(p.getFolderIds()));
+        if (p.getFolderReadSteps() != null) {
+            for (MixParams.FolderReadStep step : p.getFolderReadSteps()) {
+                if (step == null) continue;
+                if (step.getFolderId() != null) ids.add(step.getFolderId());
+                if (step.getFallbackFolderId() != null) ids.add(step.getFallbackFolderId());
+            }
+        }
+        return ids.stream().filter(Objects::nonNull).sorted().toList();
     }
 
     private List<Long> sorted(List<Long> values) {

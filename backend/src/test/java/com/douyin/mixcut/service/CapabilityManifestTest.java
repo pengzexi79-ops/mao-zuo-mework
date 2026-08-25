@@ -32,7 +32,7 @@ class CapabilityManifestTest {
             "video-render", "database", "video-download", "video-download-2", "asr", "asr-local",
             "ocr", "tts", "chattts", "loudness", "vocals", "matting", "auto-editor", "opencv",
             "magick", "image-gallery", "whisper-model", "nvenc", "pixabay-video", "pexels-video",
-            "freesound");
+            "freesound", "ai-media-generation");
 
     private static final Pattern PINNED = Pattern.compile("^([A-Za-z0-9_.-]+)==(\\S+)$");
 
