@@ -169,6 +169,31 @@ class FfmpegToolTest {
     }
 
     @Test
+    void concatAudioSlicesPreservesTimelineGap() throws Exception {
+        AppProps props = new AppProps();
+        ProcRunner runner = new ProcRunner();
+        assumeTrue(runner.available(props.getFfmpeg(), "-version"), "ffmpeg unavailable; integration test skipped");
+        Path work = Files.createTempDirectory("mixcut-voice-timeline-test-");
+        Path first = work.resolve("first.wav");
+        Path second = work.resolve("second.wav");
+        Path output = work.resolve("scheduled.m4a");
+        assertTrue(runner.run(List.of(props.getFfmpeg(), "-y", "-f", "lavfi", "-i",
+                "sine=frequency=440:sample_rate=44100:duration=1", first.toString()), 120).ok());
+        assertTrue(runner.run(List.of(props.getFfmpeg(), "-y", "-f", "lavfi", "-i",
+                "sine=frequency=880:sample_rate=44100:duration=1", second.toString()), 120).ok());
+
+        FfmpegTool tool = new FfmpegTool(props, runner);
+        assertTrue(tool.concatAudioSlices(List.of(
+                new FfmpegTool.AudioSlice(second.toString(), 0, 1, 3),
+                new FfmpegTool.AudioSlice(first.toString(), 0, 1, 0)), output));
+
+        FfmpegTool.MediaInfo info = tool.probe(output.toString());
+        assertTrue(info.isHasAudio());
+        assertTrue(info.getAudioDuration() > 3.7 && info.getAudioDuration() < 4.3,
+                "timeline gap must remain in scheduled voice, duration=" + info.getAudioDuration());
+    }
+
+    @Test
     void originalAudioMixKeepsSourceAudioAndVideoDuration() throws Exception {
         AppProps props = new AppProps();
         ProcRunner runner = new ProcRunner();
