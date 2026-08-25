@@ -2,7 +2,9 @@ package com.douyin.mixcut.service;
 
 import com.douyin.mixcut.config.AppProps;
 import com.douyin.mixcut.domain.Job;
+import com.douyin.mixcut.domain.JobOutput;
 import com.douyin.mixcut.domain.JobStatus;
+import com.douyin.mixcut.repository.Repositories.JobOutputRepo;
 import com.douyin.mixcut.external.ProcessRegistry;
 import com.douyin.mixcut.repository.Repositories.JobRepo;
 import org.junit.jupiter.api.BeforeEach;
@@ -16,29 +18,60 @@ import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.Executor;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
+import org.mockito.ArgumentCaptor;
 import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
 class JobServiceReliabilityTest {
     @Mock private JobRepo jobRepo;
+    @Mock private JobOutputRepo outputRepo;
     @Mock private Executor renderExecutor;
     @Mock private ProcessRegistry processRegistry;
     @Mock private RenderConfigResolver renderConfigResolver;
     @Mock private RenderAdmissionService renderAdmissionService;
-    private final JobOutputServiceDeps deps = new JobOutputServiceDeps() {};
+    private JobOutputServiceDeps deps;
 
     private JobService service;
 
     @BeforeEach
     void setUp() {
-        service = new JobService(jobRepo, deps.outputRepo(), deps.workflowRepo(), deps.projectRepo(), deps.folderRepo(),
+        deps = new JobOutputServiceDeps() {};
+        service = new JobService(jobRepo, outputRepo, deps.workflowRepo(), deps.projectRepo(), deps.folderRepo(),
                 deps.skillEngine(), deps.renderService(), deps.copyService(), deps.narrationService(),
                 deps.materialDiagnosisService(), deps.materialStore(), deps.editorialBriefService(),
                 deps.deliveryRepairService(), deps.outputVersionRepo(), deps.outputRepairRepo(), new AppProps(),
                 renderConfigResolver, renderAdmissionService, renderExecutor);
         ReflectionTestUtils.setField(service, "processRegistry", processRegistry);
+    }
+
+    @Test
+    void claimLeaseDoesNotClaimNonPendingJob() {
+        Job running = runningJob(6L, 900, 7200);
+        when(jobRepo.findById(6L)).thenReturn(Optional.of(running));
+
+        service.dispatch(6L);
+        ArgumentCaptor<Runnable> task = ArgumentCaptor.forClass(Runnable.class);
+        verify(renderExecutor).execute(task.capture());
+        task.getValue().run();
+
+        verify(jobRepo, never()).claimPendingJob(anyLong(), anyString(), any(), any());
+    }
+
+    @Test
+    void dispatchRejectKeepsPendingAndRecordsRetryableFailure() {
+        Job pending = pendingJob(13L, 2);
+        when(jobRepo.findById(13L)).thenReturn(Optional.of(pending));
+        doThrow(new java.util.concurrent.RejectedExecutionException("full"))
+                .when(renderExecutor).execute(any(Runnable.class));
+
+        service.dispatch(13L);
+
+        assertEquals(JobStatus.pending.name(), pending.getStatus());
+        verify(jobRepo).save(pending);
+        verify(renderExecutor).execute(any(Runnable.class));
     }
 
     @Test
@@ -110,6 +143,86 @@ class JobServiceReliabilityTest {
     }
 
     @Test
+    void recoveryRequeuesStaleRunningJobAtSuccessfulCheckpoint() {
+        Job stale = runningJob(14L, 60, 7200);
+        stale.setTotal(2);
+        stale.setCount(2);
+        stale.setLastActivityAt(LocalDateTime.now().minusSeconds(120));
+        JobOutput first = new JobOutput();
+        first.setJobId(14L);
+        first.setIdx(1);
+        first.setQcStatus("pass");
+        first.setFilePath("/tmp/one.mp4");
+        when(jobRepo.findByStatusOrderByIdAsc(JobStatus.pending.name())).thenReturn(List.of());
+        when(jobRepo.findByStatusOrderByIdAsc(JobStatus.running.name())).thenReturn(List.of(stale));
+        when(jobRepo.findById(14L)).thenReturn(Optional.of(stale));
+        when(outputRepo.findByJobIdOrderByIdxAsc(14L)).thenReturn(List.of(first));
+        when(jobRepo.invalidateLease(eq(14L), anyList())).thenReturn(1);
+        doAnswer(invocation -> null).when(renderExecutor).execute(any(Runnable.class));
+
+        service.recoverInterruptedJobs();
+
+        assertEquals(JobStatus.pending.name(), stale.getStatus());
+        assertEquals(1, stale.getCurrent());
+        assertEquals(50, stale.getProgress());
+        verify(jobRepo).invalidateLease(eq(14L), eq(List.of(JobStatus.running.name())));
+        verify(jobRepo).save(stale);
+        verify(renderExecutor).execute(any(Runnable.class));
+    }
+
+    @Test
+    void retryFailedItemsRejectsRunningJobWithoutChangingState() {
+        Job running = runningJob(15L, 900, 7200);
+        when(jobRepo.findById(15L)).thenReturn(Optional.of(running));
+
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+                () -> service.retryFailedItems(15L));
+
+        verify(jobRepo, never()).save(any(Job.class));
+        verify(renderExecutor, never()).execute(any(Runnable.class));
+    }
+
+    @Test
+    void retryFailedItemsReplacesCancelledProcessContextBeforeDispatch() {
+        Job failed = pendingJob(17L, 2);
+        failed.setStatus(JobStatus.failed.name());
+        when(jobRepo.findById(17L)).thenReturn(Optional.of(failed));
+        when(outputRepo.findByJobIdOrderByIdxAsc(17L)).thenReturn(List.of());
+        ProcessRegistry.CancellationContext cancelledContext = new ProcessRegistry().create("job:17");
+        ProcessRegistry.CancellationContext freshContext = new ProcessRegistry().create("job:17-fresh");
+        when(processRegistry.replace("job:17")).thenReturn(freshContext);
+        ReflectionTestUtils.setField(service, "renderContexts",
+                new java.util.concurrent.ConcurrentHashMap<>(java.util.Map.of(17L, cancelledContext)));
+
+        service.retryFailedItems(17L);
+
+        verify(processRegistry).replace("job:17");
+        verify(jobRepo).save(failed);
+        verify(renderExecutor).execute(any(Runnable.class));
+    }
+
+    @Test
+    void fixedBatchCheckpointContractCountsOnlySuccessfulOutputsWithinTotal() {
+        JobOutput valid = new JobOutput();
+        valid.setIdx(1);
+        valid.setQcStatus("pass");
+        valid.setFilePath("/tmp/one.mp4");
+        JobOutput qcFailed = new JobOutput();
+        qcFailed.setIdx(2);
+        qcFailed.setQcStatus("fail");
+        qcFailed.setFilePath("/tmp/two.mp4");
+        JobOutput outsideBatch = new JobOutput();
+        outsideBatch.setIdx(4);
+        outsideBatch.setQcStatus("pass");
+        outsideBatch.setFilePath("/tmp/four.mp4");
+        when(outputRepo.findByJobIdOrderByIdxAsc(16L)).thenReturn(List.of(valid, qcFailed, outsideBatch));
+
+        java.util.Set<Integer> checkpoints = service.successfulIndexes(16L, 3);
+
+        assertEquals(java.util.Set.of(1), checkpoints);
+    }
+
+    @Test
     void watchdogDistinguishesTotalTimeout() {
         Job job = runningJob(9L, 7200, 60);
         job.setCreatedAt(LocalDateTime.now().minusSeconds(120));
@@ -120,6 +233,17 @@ class JobServiceReliabilityTest {
         service.markStaleJobs();
 
         verify(jobRepo).failTimedOutRunningJob(eq(9L), eq("任务总时限超时"), contains("job_timeout"), any(), any());
+    }
+
+    private Job pendingJob(Long id, int total) {
+        Job job = new Job();
+        job.setId(id);
+        job.setStatus(JobStatus.pending.name());
+        job.setTotal(total);
+        job.setCount(total);
+        job.setStaleAfterSec(900);
+        job.setTimeoutSec(7200);
+        return job;
     }
 
     private Job runningJob(Long id, int stale, int timeout) {

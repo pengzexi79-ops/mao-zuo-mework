@@ -28,6 +28,7 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.doThrow;
 
 @ExtendWith(MockitoExtension.class)
 class JobControllerTest {
@@ -111,6 +112,39 @@ class JobControllerTest {
         List<?> skipped = (List<?>) result.getData().get("skipped");
         assertEquals(1, skipped.size());
         assertFalse(skipped.isEmpty());
+    }
+
+    @Test
+    void jobOperationEndpointsDelegateAndReturnOk() {
+        assertTrue(controller.cancel(21L).isOk());
+        assertTrue(controller.pause(21L).isOk());
+        assertTrue(controller.resume(21L).isOk());
+        assertTrue(controller.retryFailed(21L).isOk());
+
+        verify(jobService).cancel(21L);
+        verify(jobService).pause(21L);
+        verify(jobService).resume(21L);
+        verify(jobService).retryFailedItems(21L);
+    }
+
+    @Test
+    void retryFailedEndpointPropagatesServiceBoundaryErrorAsException() {
+        doThrow(new IllegalArgumentException("任务正在执行"))
+                .when(jobService).retryFailedItems(22L);
+
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+                () -> controller.retryFailed(22L));
+    }
+
+    @Test
+    void pauseAndResumeEndpointPropagateInvalidStateErrors() {
+        doThrow(new IllegalArgumentException("已结束的任务不能暂停")).when(jobService).pause(23L);
+        doThrow(new IllegalArgumentException("只有已暂停的任务可以继续")).when(jobService).resume(24L);
+
+        assertEquals("已结束的任务不能暂停", org.junit.jupiter.api.Assertions.assertThrows(
+                IllegalArgumentException.class, () -> controller.pause(23L)).getMessage());
+        assertEquals("只有已暂停的任务可以继续", org.junit.jupiter.api.Assertions.assertThrows(
+                IllegalArgumentException.class, () -> controller.resume(24L)).getMessage());
     }
 
     @Test
