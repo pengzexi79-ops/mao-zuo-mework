@@ -717,11 +717,17 @@ public class FfmpegTool {
         private String filePath;
         private double sourceStart;
         private double duration;
+        private double timelineStart;
 
         public AudioSlice(String filePath, double sourceStart, double duration) {
+            this(filePath, sourceStart, duration, 0);
+        }
+
+        public AudioSlice(String filePath, double sourceStart, double duration, double timelineStart) {
             this.filePath = filePath;
             this.sourceStart = sourceStart;
             this.duration = duration;
+            this.timelineStart = timelineStart;
         }
     }
 
@@ -733,22 +739,36 @@ public class FfmpegTool {
     public boolean concatAudioSlices(List<AudioSlice> slices, Path dst, ProcessRegistry.CancellationContext context) {
         context.throwIfCancelled();
         if (slices == null || slices.isEmpty()) return false;
+        List<AudioSlice> ordered = slices.stream()
+                .filter(slice -> slice != null && slice.getFilePath() != null && !slice.getFilePath().isBlank()
+                        && Double.isFinite(slice.getDuration()) && slice.getDuration() >= 0.8
+                        && Double.isFinite(slice.getSourceStart()) && slice.getSourceStart() >= 0
+                        && Double.isFinite(slice.getTimelineStart()) && slice.getTimelineStart() >= 0)
+                .sorted(java.util.Comparator.comparingDouble(AudioSlice::getTimelineStart))
+                .toList();
+        if (ordered.isEmpty()) return false;
         List<String> cmd = new ArrayList<>(List.of(props.getFfmpeg(), "-y"));
         List<String> filters = new ArrayList<>();
         int index = 0;
-        int usable = 0;
-        for (AudioSlice slice : slices) {
-            if (slice == null || slice.getFilePath() == null || slice.getFilePath().isBlank() || slice.getDuration() < 0.8) continue;
+        int outputIndex = 0;
+        double previousEnd = 0;
+        for (AudioSlice slice : ordered) {
+            double gap = slice.getTimelineStart() - previousEnd;
+            if (gap < -0.05) return false;
+            if (gap > 0.05) {
+                filters.add(String.format(java.util.Locale.US,
+                        "anullsrc=channel_layout=stereo:sample_rate=44100,atrim=0:%s,asetpts=PTS-STARTPTS[a%d]",
+                        trimNum(gap), outputIndex++));
+            }
             cmd.addAll(List.of("-i", slice.getFilePath()));
             filters.add(String.format(java.util.Locale.US,
                     "[%d:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,atrim=start=%s:duration=%s,asetpts=PTS-STARTPTS[a%d]",
-                    index++, trimNum(Math.max(0, slice.getSourceStart())), trimNum(slice.getDuration()), usable));
-            usable++;
+                    index++, trimNum(slice.getSourceStart()), trimNum(slice.getDuration()), outputIndex++));
+            previousEnd = slice.getTimelineStart() + slice.getDuration();
         }
-        if (usable == 0) return false;
         StringBuilder concat = new StringBuilder();
-        for (int i = 0; i < usable; i++) concat.append("[a").append(i).append("]");
-        concat.append("concat=n=").append(usable).append(":v=0:a=1,loudnorm=I=-16:TP=-1.5:LRA=11[aout]");
+        for (int i = 0; i < outputIndex; i++) concat.append("[a").append(i).append("]");
+        concat.append("concat=n=").append(outputIndex).append(":v=0:a=1,loudnorm=I=-16:TP=-1.5:LRA=11[aout]");
         filters.add(concat.toString());
         cmd.addAll(List.of("-filter_complex", String.join(";", filters), "-map", "[aout]", "-c:a", "aac", "-b:a", "192k", dst.toString()));
         ProcRunner.Result result = runTask(cmd, 900, context);

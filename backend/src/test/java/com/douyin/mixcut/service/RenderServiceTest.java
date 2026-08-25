@@ -10,6 +10,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -109,6 +110,39 @@ class RenderServiceTest {
 
         assertEquals(null, error);
         verify(ffmpeg, never()).probe("C:/fixtures/voice-first.wav", ProcessRegistry.CancellationContext.none());
+    }
+
+    @Test
+    void voiceTimelineSortsSegmentsAndRejectsOutOfBoundsRanges() {
+        RenderService service = new RenderService(null, null, null, null);
+        MixPlanner.Plan.VoiceSegment later = voiceSegment("C:/fixtures/later.wav", 2, 1, 0, 2);
+        MixPlanner.Plan.VoiceSegment first = voiceSegment("C:/fixtures/first.wav", 0, 1, 0, 2);
+
+        @SuppressWarnings("unchecked")
+        List<FfmpegTool.AudioSlice> slices = org.springframework.test.util.ReflectionTestUtils.invokeMethod(service,
+                "validatedVoiceSlices", List.of(later, first), 4.0, ProcessRegistry.CancellationContext.none());
+
+        assertEquals(0, slices.get(0).getTimelineStart(), 0.001);
+        assertEquals(2, slices.get(1).getTimelineStart(), 0.001);
+
+        MixPlanner.Plan.VoiceSegment overflow = voiceSegment("C:/fixtures/overflow.wav", 3.5, 1, 0, 2);
+        assertThrows(IllegalStateException.class, () -> org.springframework.test.util.ReflectionTestUtils.invokeMethod(service,
+                "validatedVoiceSlices", List.of(overflow), 4.0, ProcessRegistry.CancellationContext.none()));
+
+        MixPlanner.Plan.VoiceSegment sourceOverflow = voiceSegment("C:/fixtures/source-overflow.wav", 0, 2, 1, 2);
+        assertThrows(IllegalStateException.class, () -> org.springframework.test.util.ReflectionTestUtils.invokeMethod(service,
+                "validatedVoiceSlices", List.of(sourceOverflow), 4.0, ProcessRegistry.CancellationContext.none()));
+    }
+
+    private MixPlanner.Plan.VoiceSegment voiceSegment(String path, double timelineStart, double duration,
+                                                       double sourceStart, double sourceDuration) {
+        MixPlanner.Plan.VoiceSegment segment = new MixPlanner.Plan.VoiceSegment();
+        segment.setFilePath(path);
+        segment.setTimelineStart(timelineStart);
+        segment.setDuration(duration);
+        segment.setSourceStart(sourceStart);
+        segment.setSourceDuration(sourceDuration);
+        return segment;
     }
 
     @Test

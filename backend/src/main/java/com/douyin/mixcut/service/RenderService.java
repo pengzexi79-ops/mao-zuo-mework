@@ -265,11 +265,21 @@ public class RenderService {
                 step(onStep, "混音中 · " + FfmpegTool.trimNum(silentDuration) + "s");
                 Path withAudio = work.resolve("audio.mp4");
                 String voicePath = plan.getVoicePath();
-                if (!preserveOriginalAudio && shouldUsePlannedVoiceSegments(plan)) {
+                if (!preserveOriginalAudio && plan.getVoiceSegments() != null && plan.getVoiceSegments().size() > 1) {
+                    if (!shouldUsePlannedVoiceSegments(plan)) {
+                        result.setError("音频阶段失败：多段口播计划与当前选定口播不一致，已拒绝回退为单段音频");
+                        return result;
+                    }
                     Path scheduledVoice = work.resolve("scheduled-voice.m4a");
-                    List<FfmpegTool.AudioSlice> slices = validatedVoiceSlices(plan.getVoiceSegments(), renderContext);
+                    List<FfmpegTool.AudioSlice> slices = validatedVoiceSlices(plan.getVoiceSegments(), silentDuration, renderContext);
                     if (!ffmpeg.concatAudioSlices(slices, scheduledVoice, renderContext)) {
                         result.setError("音频阶段失败：多段口播无法按时间线拼接，已拒绝回退为单段循环");
+                        return result;
+                    }
+                    double scheduledDuration = ffmpeg.probe(scheduledVoice.toString(), renderContext).getAudioDuration();
+                    double timelineEnd = slices.stream().mapToDouble(slice -> slice.getTimelineStart() + slice.getDuration()).max().orElse(0);
+                    if (scheduledDuration + 0.15 < timelineEnd) {
+                        result.setError("音频阶段失败：多段口播实际时长不足，已拒绝进入混音");
                         return result;
                     }
                     voicePath = scheduledVoice.toString();
@@ -396,20 +406,32 @@ public class RenderService {
     }
 
     private List<FfmpegTool.AudioSlice> validatedVoiceSlices(List<MixPlanner.Plan.VoiceSegment> segments,
+                                                               double videoDuration,
                                                                ProcessRegistry.CancellationContext context) {
         if (segments == null || segments.isEmpty()) throw new IllegalStateException("口播时间线为空");
+        List<MixPlanner.Plan.VoiceSegment> ordered = segments.stream()
+                .filter(java.util.Objects::nonNull)
+                .sorted(java.util.Comparator.comparingDouble(MixPlanner.Plan.VoiceSegment::getTimelineStart))
+                .toList();
+        if (ordered.size() != segments.size()) throw new IllegalStateException("口播时间线包含空片段");
         List<FfmpegTool.AudioSlice> slices = new ArrayList<>();
         double previousEnd = 0;
-        for (MixPlanner.Plan.VoiceSegment segment : segments) {
+        for (MixPlanner.Plan.VoiceSegment segment : ordered) {
             context.throwIfCancelled();
-            if (segment == null || isBlank(segment.getFilePath()) || !Double.isFinite(segment.getDuration())
-                    || segment.getDuration() < 0.8 || !Double.isFinite(segment.getSourceStart())
-                    || segment.getSourceStart() < 0 || !Double.isFinite(segment.getTimelineStart())
+            double timelineEnd = segment.getTimelineStart() + segment.getDuration();
+            double sourceEnd = segment.getSourceStart() + segment.getDuration();
+            if (isBlank(segment.getFilePath()) || !Double.isFinite(segment.getDuration()) || segment.getDuration() < 0.8
+                    || !Double.isFinite(segment.getSourceStart()) || segment.getSourceStart() < 0
+                    || !Double.isFinite(segment.getSourceDuration()) || segment.getSourceDuration() <= 0
+                    || !Double.isFinite(segment.getTimelineStart()) || segment.getTimelineStart() < 0
+                    || !Double.isFinite(timelineEnd) || timelineEnd > videoDuration + 0.05
+                    || sourceEnd > segment.getSourceDuration() + 0.05
                     || segment.getTimelineStart() < previousEnd - 0.05) {
-                throw new IllegalStateException("口播时间线包含不可用、过短或重叠片段");
+                throw new IllegalStateException("口播时间线包含不可用、过短、越界或重叠片段");
             }
-            slices.add(new FfmpegTool.AudioSlice(segment.getFilePath(), segment.getSourceStart(), segment.getDuration()));
-            previousEnd = segment.getTimelineStart() + segment.getDuration();
+            slices.add(new FfmpegTool.AudioSlice(segment.getFilePath(), segment.getSourceStart(),
+                    segment.getDuration(), segment.getTimelineStart()));
+            previousEnd = timelineEnd;
         }
         return slices;
     }
