@@ -14,8 +14,15 @@ import java.util.Map;
 
 /** Fixed OpenAI-compatible media request contracts, isolated from task orchestration and material import. */
 @Component
-public class OpenAiCompatibleMediaAdapter {
+public class OpenAiCompatibleMediaAdapter implements MediaAdapter {
     private final ObjectMapper json;
+
+    @Override
+    public boolean supportsProtocol(String protocol) {
+        return MediaAdapterRegistry.OPENAI_IMAGE_GENERATION.equals(protocol)
+                || MediaAdapterRegistry.OPENAI_VIDEO_GENERATION.equals(protocol)
+                || MediaAdapterRegistry.OPENAI_AUDIO_SPEECH.equals(protocol);
+    }
     private final MediaHttpTransport transport;
 
     public OpenAiCompatibleMediaAdapter(ObjectMapper json, MediaHttpTransport transport) {
