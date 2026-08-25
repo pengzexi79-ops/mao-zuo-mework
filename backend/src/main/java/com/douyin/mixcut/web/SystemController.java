@@ -37,7 +37,13 @@ public class SystemController {
     @Qualifier("renderExecutor") private final ThreadPoolTaskExecutor renderExecutor;
     private final ConnectivityService connectivityService;
 
-    @GetMapping("/env")
+    @GetMapping(value = "/env", produces = "text/html")
+    public org.springframework.http.ResponseEntity<Void> envPage() {
+        return org.springframework.http.ResponseEntity.status(org.springframework.http.HttpStatus.FOUND)
+                .location(java.net.URI.create("/#/capabilities?view=environment")).build();
+    }
+
+    @GetMapping(value = "/env", produces = "application/json")
     public R<Map<String, Object>> env(
             @org.springframework.web.bind.annotation.RequestParam(defaultValue = "false") boolean refresh) {
         return R.ok(bootstrap.env(refresh));
