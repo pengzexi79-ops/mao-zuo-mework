@@ -31,9 +31,9 @@ for /f "tokens=5" %%P in ('netstat -ano -p TCP ^| findstr /R /C:":%MYSQL_PORT% .
 if defined MYSQL_UP (
   set "MYSQLADMIN=%APP_DIR%portable\mysql\bin\mysqladmin.exe"
   if not exist "%MYSQLADMIN%" set "MYSQLADMIN=mysqladmin"
-  "%MYSQLADMIN%" --protocol=TCP -h 127.0.0.1 -P %MYSQL_PORT% ping >nul 2>&1
+  call :mysql_ping
   if errorlevel 1 (
-    echo [需处理] 127.0.0.1:%MYSQL_PORT% 已被占用，但未通过 MySQL ping；请修改 MYSQL_PORT/DB_URL 或停止占用程序。
+    echo [需处理] 127.0.0.1:%MYSQL_PORT% 已被占用，但未通过当前本机数据库账号的 MySQL ping；请检查数据库服务身份或本机配置。
     exit /b 1
   )
   echo [已就绪] MySQL 已在 127.0.0.1:%MYSQL_PORT% 运行并通过 ping
@@ -78,10 +78,18 @@ exit /b 1
 :mysql_ready
 set "MYSQLADMIN=%APP_DIR%portable\mysql\bin\mysqladmin.exe"
 if not exist "%MYSQLADMIN%" set "MYSQLADMIN=mysqladmin"
-"%MYSQLADMIN%" --protocol=TCP -h 127.0.0.1 -P %MYSQL_PORT% ping >nul 2>&1
+call :mysql_ping
 if errorlevel 1 (
-  echo [需处理] 端口已监听但 MySQL 协议 ping 未通过，详见 data\logs\mysql.log
+  echo [需处理] 端口已监听但当前本机数据库账号的 MySQL 协议 ping 未通过，详见 data\logs\mysql.log
   exit /b 1
 )
 echo [已就绪] 便携 MySQL 已在 127.0.0.1:%MYSQL_PORT% 运行并通过 ping
 exit /b 0
+
+:mysql_ping
+if not defined DB_USERNAME exit /b 1
+set "MYSQL_PWD=%DB_PASSWORD%"
+"%MYSQLADMIN%" --protocol=TCP -h 127.0.0.1 -P %MYSQL_PORT% -u "%DB_USERNAME%" ping >nul 2>&1
+set "PING_EXIT=%ERRORLEVEL%"
+set "MYSQL_PWD="
+exit /b %PING_EXIT%
