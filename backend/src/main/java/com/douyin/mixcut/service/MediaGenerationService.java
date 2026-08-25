@@ -10,6 +10,7 @@ import com.douyin.mixcut.repository.Repositories.AiProviderRepo;
 import com.douyin.mixcut.repository.Repositories.MediaGenerationTaskRepo;
 import com.douyin.mixcut.security.CredentialCipher;
 import com.douyin.mixcut.security.UrlGuard;
+import com.douyin.mixcut.external.media.OpenAiCompatibleMediaAdapter;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.Data;
@@ -47,6 +48,7 @@ public class MediaGenerationService {
     private final ObjectMapper om;
     private final MediaGenerationTaskRepo generationTaskRepo;
     private final AudioContractService audioContractService;
+    private final OpenAiCompatibleMediaAdapter openAiMediaAdapter;
     @Qualifier("mediaExecutor") private final Executor executor;
     private final Map<String, Task> tasks = new ConcurrentHashMap<>();
     private final java.util.Set<String> activePollingTasks = ConcurrentHashMap.newKeySet();
@@ -183,6 +185,11 @@ public class MediaGenerationService {
         String input = request.getInput() == null ? "" : request.getInput().trim();
         if (input.length() < 2 || input.length() > 6000) throw new IllegalArgumentException("配音文本长度必须在 2 到 6000 个字符之间");
         AiProvider provider = supportedProvider(request.getProviderId());
+        MediaProviderCatalog.Capability capability = mediaCapability(provider);
+        if (!"openai_audio_speech".equals(capability.voiceProtocol())) {
+            throw new OpenAiCompatibleMediaAdapter.MediaAdapterException("MEDIA_PROTOCOL_UNSUPPORTED",
+                    "该供应商配音协议尚未注册 OpenAI-compatible adapter，已拒绝伪装调用");
+        }
         String model = requiredModel(provider, "voice", request.getModel());
         String voice = normalizeVoice(provider, model, request.getVoice());
         Task task = newTask("ai-voice", "已确认官方计费，正在生成配音", provider, model,
@@ -259,17 +266,9 @@ public class MediaGenerationService {
 
     private void generateVideo(Task task, AiProvider provider, String prompt, String model, String size, int seconds) {
         try {
-            update(task, "running", 10, "正在调用官方兼容视频生成接口");
-            String secret = secret(provider); String boundary = "----mework" + UUID.randomUUID();
-            String fields = "--" + boundary + "\r\nContent-Disposition: form-data; name=\"prompt\"\r\n\r\n" + prompt + "\r\n"
-                    + "--" + boundary + "\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\n" + model + "\r\n"
-                    + "--" + boundary + "\r\nContent-Disposition: form-data; name=\"size\"\r\n\r\n" + size + "\r\n"
-                    + "--" + boundary + "\r\nContent-Disposition: form-data; name=\"seconds\"\r\n\r\n" + seconds + "\r\n--" + boundary + "--\r\n";
-            HttpURLConnection conn = openPost(endpoint(provider, "/v1/videos"), secret, "multipart/form-data; boundary=" + boundary, fields.getBytes(java.nio.charset.StandardCharsets.UTF_8), 120000);
-            int status = conn.getResponseCode(); if (status < 200 || status >= 300) throw providerFailure(status, "视频生成");
-            JsonNode result; try (InputStream in = conn.getInputStream()) { result = om.readTree(in); } finally { conn.disconnect(); }
-            String remoteId = result.path("id").asText("");
-            if (remoteId.isBlank()) throw new IllegalStateException("供应商未返回视频任务 ID");
+            update(task, "running", 10, "正在调用 OpenAI-compatible 视频生成接口");
+            String remoteId = openAiMediaAdapter.submitVideo(new OpenAiCompatibleMediaAdapter.ProviderContext(
+                    normalizedBase(provider), secret(provider), "/v1/audio/speech"), prompt, model, size, seconds).remoteTaskId();
             task.setRemoteTaskId(remoteId);
             update(task, "remote_submitted", 25, "视频任务已提交，等待受控轮询 worker");
             pollVideoWorker(task, provider, model, remoteId);
@@ -306,12 +305,23 @@ public class MediaGenerationService {
     private void generateVoice(Task task, AiProvider provider, String input, String model, String voice, String instructions) {
         Path output = null;
         try {
-            update(task, "running", 15, "正在调用配音接口"); var payload = om.createObjectNode(); payload.put("model", model); payload.put("input", input); payload.put("voice", voice); payload.put("response_format", "mp3"); if (instructions != null && !instructions.isBlank()) payload.put("instructions", instructions.substring(0, Math.min(1000, instructions.length())));
+            update(task, "running", 15, "正在调用配音接口");
             MediaProviderCatalog.Capability capability = mediaCapability(provider);
-            if ("dashscope_tts_websocket".equals(capability.voiceProtocol())) throw new IllegalStateException("该千问 TTS 仅提供 WebSocket 协议，当前 HTTP 生成入口不会伪装调用；请配置支持 /v1/audio/speech 的中转 endpoint");
+            if (!"openai_audio_speech".equals(capability.voiceProtocol())) {
+                throw new OpenAiCompatibleMediaAdapter.MediaAdapterException("MEDIA_PROTOCOL_UNSUPPORTED",
+                        "该供应商配音协议尚未注册 OpenAI-compatible adapter，已拒绝伪装调用");
+            }
             String voicePath = capability.voiceEndpoint() == null || capability.voiceEndpoint().isBlank() ? "/v1/audio/speech" : capability.voiceEndpoint();
-            HttpURLConnection conn = openPost(voicePath.startsWith("https://") ? voicePath : endpoint(provider, voicePath), secret(provider), "application/json", om.writeValueAsBytes(payload), 180000); int status = conn.getResponseCode(); if (status < 200 || status >= 300) throw providerFailure(status, "配音生成");
-            Path dir = props.mediaToolsOutput().resolve("generated-ai-audio"); Files.createDirectories(dir); output = dir.resolve("voice-" + Instant.now().toEpochMilli() + ".mp3"); try (InputStream in = conn.getInputStream()) { Files.copy(in, output); } finally { conn.disconnect(); }
+            if (voicePath.startsWith("https://")) {
+                throw new OpenAiCompatibleMediaAdapter.MediaAdapterException("MEDIA_PROTOCOL_UNSUPPORTED",
+                        "自定义绝对配音 endpoint 需要专用 adapter，当前 OpenAI-compatible adapter 仅支持固定 /v1 路径");
+            }
+            var artifact = openAiMediaAdapter.submitVoice(new OpenAiCompatibleMediaAdapter.ProviderContext(
+                    normalizedBase(provider), secret(provider), voicePath), input, model, voice, instructions);
+            Path dir = props.mediaToolsOutput().resolve("generated-ai-audio");
+            Files.createDirectories(dir);
+            output = dir.resolve("voice-" + Instant.now().toEpochMilli() + ".mp3");
+            Files.write(output, artifact.bytes());
             if (!Files.isRegularFile(output) || Files.size(output) < 1024) throw new IllegalStateException("供应商返回的配音文件无效");
             var contract = audioContractService.inspect(output.toString(), 0, "ai-voice", com.douyin.mixcut.external.ProcessRegistry.CancellationContext.none());
             var validation = audioContractService.validate(contract, 0);
@@ -324,8 +334,23 @@ public class MediaGenerationService {
             if (output != null) {
                 try { Files.deleteIfExists(output); } catch (Exception cleanup) { }
             }
+            persistErrorCode(task.getId(), e);
             update(task, "failed", task.getProgress(), concise(e));
         }
+    }
+
+    private void persistErrorCode(String taskId, Exception error) {
+        generationTaskRepo.findByTaskKey(taskId).ifPresent(task -> {
+            if (error instanceof OpenAiCompatibleMediaAdapter.MediaAdapterException adapterError) {
+                task.setErrorCode(adapterError.code());
+            } else if (error instanceof java.net.SocketTimeoutException) {
+                task.setErrorCode("TIMEOUT");
+            } else {
+                task.setErrorCode("MEDIA_EXECUTION_FAILED");
+            }
+            task.setError(concise(error));
+            generationTaskRepo.save(task);
+        });
     }
 
     private String secret(AiProvider provider) { String value = cipher.decrypt(provider.getApiKey()); if (value == null || value.isBlank()) throw new IllegalStateException("供应商密钥不可用，请在 AI 接入页重新配置"); return value.trim(); }
@@ -345,20 +370,13 @@ public class MediaGenerationService {
 
     private void generateOpenAiImage(Task task, AiProvider provider, String prompt, String model, String size, String quality) {
         try {
-            update(task, "running", 15, "正在调用 OpenAI 官方图片生成接口");
-            String secret = cipher.decrypt(provider.getApiKey()); if (secret == null || secret.isBlank()) throw new IllegalStateException("供应商密钥不可用，请在 AI 接入页重新配置");
-            String endpoint = endpoint(provider, "/v1/images/generations");
-            var payload = om.createObjectNode(); payload.put("model", model); payload.put("prompt", prompt); payload.put("size", size); payload.put("quality", quality); payload.put("n", 1); payload.put("output_format", "png");
-            HttpURLConnection conn = (HttpURLConnection) new URL(endpoint).openConnection();
-            conn.setRequestMethod("POST"); conn.setDoOutput(true); conn.setConnectTimeout(20000); conn.setReadTimeout(180000); conn.setRequestProperty("Content-Type", "application/json"); conn.setRequestProperty("Authorization", "Bearer " + secret);
-            byte[] body = om.writeValueAsBytes(payload); conn.setFixedLengthStreamingMode(body.length); try (var out = conn.getOutputStream()) { out.write(body); }
-            int status = conn.getResponseCode(); if (status < 200 || status >= 300) throw new IllegalStateException(status == 401 || status == 403 ? "官方服务拒绝认证，请检查 API Key、项目权限和账单状态" : status == 429 ? "官方服务限流或额度不足，请检查额度后重试" : "官方图片生成失败（HTTP " + status + "）");
-            JsonNode json; try (var in = conn.getInputStream()) { json = om.readTree(in); } finally { conn.disconnect(); }
-            JsonNode data = json.path("data").path(0);
+            update(task, "running", 15, "正在调用 OpenAI-compatible 图片生成接口");
+            var submission = openAiMediaAdapter.submitImage(new OpenAiCompatibleMediaAdapter.ProviderContext(
+                    normalizedBase(provider), secret(provider), "/v1/audio/speech"), prompt, model, size, quality);
+
             update(task, "running", 75, "正在校验并登记生成图片"); Path dir = props.mediaToolsOutput().resolve("generated-ai-images"); Files.createDirectories(dir); Path output = dir.resolve("openai-" + Instant.now().toEpochMilli() + ".png");
-            String b64 = data.path("b64_json").asText("");
-            if (!b64.isBlank()) Files.write(output, Base64.getDecoder().decode(b64));
-            else downloadGeneratedImage(data.path("url").asText(""), output);
+            if (!submission.base64().isBlank()) Files.write(output, Base64.getDecoder().decode(submission.base64()));
+            else downloadGeneratedImage(submission.url(), output);
             if (!Files.isRegularFile(output) || Files.size(output) < 512) throw new IllegalStateException("生成图片无效");
             Material material = materialService.register(output.toString(), null, false, Material.Source.generated, normalizedBase(provider)); material.setRole(MaterialRole.product); material.setTags("AI生成,OpenAI," + model); material = materialService.save(material); materialService.attachBrowserUrls(material);
             task.setMaterialId(material.getId()); update(task, "done", 100, "图片生成完成，已作为新素材入库");
