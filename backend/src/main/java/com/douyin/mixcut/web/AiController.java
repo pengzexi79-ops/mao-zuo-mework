@@ -79,7 +79,7 @@ public class AiController {
             AiProvider saved = providerRepo.save(p);
             discoverAndPersist(saved);
             return R.ok(providerView(providerRepo.findById(saved.getId()).orElse(saved)));
-        } catch (IllegalStateException e) {
+        } catch (IllegalArgumentException | IllegalStateException e) {
             return R.fail(e.getMessage());
         }
     }
@@ -180,10 +180,8 @@ public class AiController {
         }
         try {
             provider.setModels(mergeDiscoveredModels(provider.getModels(), discovery));
-            if (provider.getDefaultModel() == null || provider.getDefaultModel().isBlank()
-                    || !discovery.textModels().contains(provider.getDefaultModel())) {
-                String defaultText = discovery.textModels().isEmpty() ? provider.getDefaultModel() : discovery.textModels().get(0);
-                provider.setDefaultModel(defaultText);
+            if (provider.getDefaultModel() == null || provider.getDefaultModel().isBlank()) {
+                if (!discovery.textModels().isEmpty()) provider.setDefaultModel(discovery.textModels().get(0));
             }
             AiProvider saved = providerRepo.save(provider);
             result.put("providerView", providerView(saved));
@@ -408,13 +406,28 @@ public class AiController {
             com.fasterxml.jackson.databind.node.ObjectNode normalized = root != null && root.isObject()
                     ? ((com.fasterxml.jackson.databind.node.ObjectNode) root).deepCopy()
                     : objectMapper.createObjectNode();
-            normalized.set("text", objectMapper.valueToTree(discovery.textModels()));
+            List<String> configuredText = new ArrayList<>();
+            JsonNode existingText = normalized.path("text");
+            if (existingText.isArray()) {
+                for (JsonNode value : existingText) {
+                    String model = value.asText("").trim();
+                    if (!model.isBlank() && !configuredText.contains(model)) configuredText.add(model);
+                }
+            } else if (root != null && root.isArray()) {
+                for (JsonNode value : root) {
+                    String model = value.asText("").trim();
+                    if (!model.isBlank() && !configuredText.contains(model)) configuredText.add(model);
+                }
+            }
+            for (String model : discovery.textModels()) if (!configuredText.contains(model)) configuredText.add(model);
+            normalized.set("text", objectMapper.valueToTree(configuredText));
             normalized.set("vision", objectMapper.valueToTree(discovery.visionModels()));
             com.fasterxml.jackson.databind.node.ObjectNode media = normalized.with("media");
             media.set("vision", objectMapper.valueToTree(discovery.visionModels()));
             // Discovery is advisory. Keep paid media execution allowlists under media unchanged.
             // Users must explicitly confirm image/video/voice models through the provider editor.
             com.fasterxml.jackson.databind.node.ObjectNode observed = normalized.putObject("observed");
+            observed.set("text", objectMapper.valueToTree(discovery.textModels()));
             observed.set("image", objectMapper.valueToTree(discovery.imageModels()));
             observed.set("video", objectMapper.valueToTree(discovery.videoModels()));
             observed.set("voice", objectMapper.valueToTree(discovery.voiceModels()));

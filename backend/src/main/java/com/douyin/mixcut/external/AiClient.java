@@ -4,7 +4,6 @@ import com.douyin.mixcut.domain.AiProvider;
 import com.douyin.mixcut.domain.ProviderKind;
 import com.douyin.mixcut.security.CredentialCipher;
 import com.douyin.mixcut.security.UrlGuard;
-import com.douyin.mixcut.service.MediaProviderCatalog;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -45,13 +44,19 @@ public class AiClient {
         private boolean ok;
         private String text;
         private String error;
+        private String errorCode;
         private int promptTokens;
         private int completionTokens;
         private long latencyMs;
 
         public static ChatResult fail(String err) {
+            return fail("AI_REQUEST_FAILED", err);
+        }
+
+        public static ChatResult fail(String code, String err) {
             ChatResult r = new ChatResult();
             r.ok = false;
+            r.errorCode = code;
             r.error = err;
             return r;
         }
@@ -67,12 +72,16 @@ public class AiClient {
             };
             r.setLatencyMs(System.currentTimeMillis() - t0);
             return r;
+        } catch (IllegalStateException e) {
+            ChatResult r = ChatResult.fail("AI_CONFIG_INVALID", "AI 配置不可用: " + safeUrlError(e));
+            r.setLatencyMs(System.currentTimeMillis() - t0);
+            return r;
         } catch (IllegalArgumentException e) {
-            ChatResult r = ChatResult.fail("AI 服务 URL 格式错误或目标地址不允许访问: " + safeUrlError(e));
+            ChatResult r = ChatResult.fail("AI_URL_INVALID", "AI 服务 URL 格式错误或目标地址不允许访问: " + safeUrlError(e));
             r.setLatencyMs(System.currentTimeMillis() - t0);
             return r;
         } catch (Exception e) {
-            ChatResult r = ChatResult.fail("AI 服务请求失败: " + safeUrlError(e));
+            ChatResult r = ChatResult.fail("AI_NETWORK_ERROR", "AI 服务请求失败: " + safeUrlError(e));
             r.setLatencyMs(System.currentTimeMillis() - t0);
             return r;
         }
@@ -126,15 +135,6 @@ public class AiClient {
                 if (isVoice) addUnique(voice, id);
                 if (isVision) addUnique(vision, id);
             }
-            if (MediaProviderCatalog.officialOpenAi(provider)) {
-                addIfMissing(image, "gpt-image-1");
-                addIfMissing(image, "gpt-image-1-mini");
-                addIfMissing(video, "sora-2");
-                addIfMissing(video, "sora-2-pro");
-                addIfMissing(voice, "gpt-4o-mini-tts");
-                addIfMissing(voice, "tts-1");
-                addIfMissing(voice, "tts-1-hd");
-            }
             if (text.isEmpty() && image.isEmpty() && video.isEmpty() && voice.isEmpty() && vision.isEmpty()) {
                 return ModelDiscovery.fail("Provider 返回了空模型列表");
             }
@@ -173,10 +173,6 @@ public class AiClient {
     }
 
     private void addUnique(List<String> values, String value) {
-        if (!values.contains(value)) values.add(value);
-    }
-
-    private void addIfMissing(List<String> values, String value) {
         if (!values.contains(value)) values.add(value);
     }
 
@@ -225,15 +221,15 @@ public class AiClient {
         h.set("Authorization", "Bearer " + secret(p));
 
         JsonNode resp = post(url, body, h);
-        if (resp == null) return ChatResult.fail("空响应");
-        if (resp.has("error")) return ChatResult.fail("AI 服务返回错误");
+        if (resp == null) return ChatResult.fail("AI_EMPTY_RESPONSE", "空响应");
+        if (resp.has("errorCode")) return failedResponse(resp);
 
         ChatResult r = new ChatResult();
         r.setOk(true);
         r.setText(resp.path("choices").path(0).path("message").path("content").asText(""));
         r.setPromptTokens(resp.path("usage").path("prompt_tokens").asInt(0));
         r.setCompletionTokens(resp.path("usage").path("completion_tokens").asInt(0));
-        if (r.getText().isBlank()) return ChatResult.fail("返回内容为空: " + redact(shorten(resp.toString())));
+        if (r.getText().isBlank()) return ChatResult.fail("AI_RESPONSE_INVALID", "返回内容为空: " + redact(shorten(resp.toString())));
         return r;
     }
 
@@ -262,8 +258,8 @@ public class AiClient {
         h.set("anthropic-version", "2023-06-01");
 
         JsonNode resp = post(url, body, h);
-        if (resp == null) return ChatResult.fail("空响应");
-        if (resp.has("error")) return ChatResult.fail("AI 服务返回错误");
+        if (resp == null) return ChatResult.fail("AI_EMPTY_RESPONSE", "空响应");
+        if (resp.has("errorCode")) return failedResponse(resp);
 
         StringBuilder sb = new StringBuilder();
         for (JsonNode block : resp.path("content")) {
@@ -274,7 +270,7 @@ public class AiClient {
         r.setText(sb.toString());
         r.setPromptTokens(resp.path("usage").path("input_tokens").asInt(0));
         r.setCompletionTokens(resp.path("usage").path("output_tokens").asInt(0));
-        if (r.getText().isBlank()) return ChatResult.fail("返回内容为空: " + redact(shorten(resp.toString())));
+        if (r.getText().isBlank()) return ChatResult.fail("AI_RESPONSE_INVALID", "返回内容为空: " + redact(shorten(resp.toString())));
         return r;
     }
 
@@ -301,8 +297,8 @@ public class AiClient {
         h.set("x-goog-api-key", secret(p));
 
         JsonNode resp = post(url, body, h);
-        if (resp == null) return ChatResult.fail("空响应");
-        if (resp.has("error")) return ChatResult.fail("AI 服务返回错误");
+        if (resp == null) return ChatResult.fail("AI_EMPTY_RESPONSE", "空响应");
+        if (resp.has("errorCode")) return failedResponse(resp);
 
         StringBuilder sb = new StringBuilder();
         for (JsonNode pt : resp.path("candidates").path(0).path("content").path("parts")) {
@@ -313,7 +309,7 @@ public class AiClient {
         r.setText(sb.toString());
         r.setPromptTokens(resp.path("usageMetadata").path("promptTokenCount").asInt(0));
         r.setCompletionTokens(resp.path("usageMetadata").path("candidatesTokenCount").asInt(0));
-        if (r.getText().isBlank()) return ChatResult.fail("返回内容为空: " + redact(shorten(resp.toString())));
+        if (r.getText().isBlank()) return ChatResult.fail("AI_RESPONSE_INVALID", "返回内容为空: " + redact(shorten(resp.toString())));
         return r;
     }
 
@@ -345,7 +341,7 @@ public class AiClient {
             int status = conn.getResponseCode();
             if (status >= 300 && status < 400) throw new IllegalArgumentException("模型探测不接受跨域重定向");
             String response = readResponse(conn, status);
-            if (status >= 400) throw new IllegalStateException("Provider 返回 HTTP " + status);
+            if (status >= 400) throw new IllegalStateException(discoveryHttpError(status));
             if (response == null || response.isBlank()) throw new IllegalStateException("Provider 返回空模型列表");
             return om.readTree(response);
         } finally {
@@ -360,7 +356,7 @@ public class AiClient {
         try {
             payload = om.writeValueAsBytes(body);
         } catch (Exception e) {
-            return errorNode("无法序列化 AI 请求");
+            return errorNode("AI_REQUEST_INVALID", "无法序列化 AI 请求");
         }
 
         for (int attempt = 0; attempt < 3; attempt++) {
@@ -387,7 +383,7 @@ public class AiClient {
                         String next = redirectTarget(current, conn.getHeaderField("Location"));
                         conn.disconnect();
                         conn = null;
-                        if (next == null) return errorNode("AI 服务重定向地址不允许访问");
+                        if (next == null) return errorNode("AI_REDIRECT_INVALID", "AI 服务重定向地址不允许访问");
                         current = next;
                         continue;
                     }
@@ -400,31 +396,31 @@ public class AiClient {
                     }
                     if (status >= 400) {
                         // Do not surface provider error bodies: proxies may echo credentials in diagnostics.
-                        return errorNode("AI 服务返回 HTTP " + status);
+                        return errorNode(classifyHttpStatus(status), "AI 服务返回 HTTP " + status);
                     }
                     if (response == null || response.isBlank()) return null;
                     try {
                         return om.readTree(response);
                     } catch (Exception ignored) {
-                        return errorNode("AI 服务返回了无效响应");
+                        return errorNode("AI_RESPONSE_INVALID", "AI 服务返回了无效响应");
                     }
                 }
                 if (retryRequested) {
                     backoff(attempt);
                     continue;
                 }
-                return errorNode("AI 服务重定向次数过多");
+                return errorNode("AI_REDIRECT_INVALID", "AI 服务重定向次数过多");
             } catch (Exception e) {
                 if (attempt < 2) {
                     backoff(attempt);
                     continue;
                 }
-                return errorNode("AI 服务网络访问失败");
+                return errorNode("AI_NETWORK_ERROR", "AI 服务网络访问失败");
             } finally {
                 if (conn != null) conn.disconnect();
             }
         }
-        return errorNode("AI 服务请求失败");
+        return errorNode("AI_NETWORK_ERROR", "AI 服务请求失败");
     }
 
     private String readResponse(HttpURLConnection conn, int status) throws Exception {
@@ -466,10 +462,31 @@ public class AiClient {
                 || status == 307 || status == 308;
     }
 
-    private ObjectNode errorNode(String message) {
+    private ChatResult failedResponse(JsonNode response) {
+        String code = response.path("errorCode").asText("AI_REMOTE_ERROR");
+        String message = response.path("error").asText("AI 服务返回错误");
+        return ChatResult.fail(code, message);
+    }
+
+    private ObjectNode errorNode(String code, String message) {
         ObjectNode n = om.createObjectNode();
+        n.put("errorCode", code);
         n.put("error", shorten(message));
         return n;
+    }
+
+    static String classifyHttpStatus(int status) {
+        if (status == 401 || status == 403) return "AI_AUTH_REQUIRED";
+        if (status == 408 || status == 504) return "AI_TIMEOUT";
+        if (status == 404 || status == 405) return "AI_ENDPOINT_UNSUPPORTED";
+        if (status == 429) return "AI_RATE_LIMITED";
+        if (status >= 500) return "AI_REMOTE_SERVER_ERROR";
+        if (status >= 400) return "AI_REQUEST_REJECTED";
+        return "AI_HTTP_ERROR";
+    }
+
+    private String discoveryHttpError(int status) {
+        return classifyHttpStatus(status) + ": Provider 返回 HTTP " + status;
     }
 
     private void backoff(int attempt) {

@@ -34,7 +34,8 @@ public class AiService {
 
     /** 是否已经配置了至少一个可用供应商 */
     public boolean ready() {
-        return !providerRepo.findByEnabledTrueOrderByPriorityAsc().isEmpty();
+        return providerRepo.findByEnabledTrueOrderByPriorityAsc().stream()
+                .anyMatch(this::hasConfiguredTextModel);
     }
 
     /**
@@ -54,7 +55,8 @@ public class AiService {
                 return new Answer(true, r.getText().trim(), null, c.provider.getName(), c.model);
             }
             errs.append("[").append(c.provider.getName()).append("/").append(c.model).append("] ")
-                    .append(r.getError()).append("; ");
+                    .append(r.getErrorCode() == null ? "AI_REQUEST_FAILED" : r.getErrorCode())
+                    .append(": ").append(r.getError()).append("; ");
             log.warn("AI provider {} failed for {}: {}", c.provider.getName(), useCase, r.getError());
         }
         return new Answer(false, null, "全部供应商均失败: " + errs, null, null);
@@ -129,7 +131,9 @@ public class AiService {
     private List<Cand> buildChain(UseCase useCase, String routeOverridesJson) {
         List<Cand> chain = new ArrayList<>();
         Map<Long, AiProvider> all = new LinkedHashMap<>();
-        for (AiProvider p : providerRepo.findByEnabledTrueOrderByPriorityAsc()) all.put(p.getId(), p);
+        for (AiProvider p : providerRepo.findByEnabledTrueOrderByPriorityAsc()) {
+            if (hasUsableCredential(p)) all.put(p.getId(), p);
+        }
         if (all.isEmpty()) return chain;
 
         // 1) 项目级覆盖
@@ -193,8 +197,15 @@ public class AiService {
             } catch (Exception ignore) {
             }
         }
-        List<String> d = AiClient.defaultModels(p.getKind() == null ? ProviderKind.openai : p.getKind());
-        return d.isEmpty() ? null : d.get(0);
+        return null;
+    }
+
+    private boolean hasConfiguredTextModel(AiProvider provider) {
+        return hasUsableCredential(provider) && pickModel(provider, null) != null;
+    }
+
+    private boolean hasUsableCredential(AiProvider provider) {
+        return provider != null && provider.getApiKey() != null && !provider.getApiKey().isBlank();
     }
 
     private void writeLog(Cand c, UseCase useCase, AiClient.ChatResult r) {

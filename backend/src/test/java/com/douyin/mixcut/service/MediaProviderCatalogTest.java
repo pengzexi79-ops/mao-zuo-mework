@@ -63,14 +63,17 @@ class MediaProviderCatalogTest {
     }
 
     @Test
-    void suppliesOfficialOpenAiMediaDefaultsWhenProviderHasNoMediaJson() {
+    void doesNotEnablePaidMediaUntilOfficialModelsAreExplicitlyConfigured() {
         AiProvider openai = provider("https://api.openai.com");
 
         var capability = catalog.read(openai);
 
-        assertTrue(capability.imageModels().contains("gpt-image-1"));
-        assertTrue(capability.videoModels().contains("sora-2"));
-        assertTrue(capability.voiceModels().contains("gpt-4o-mini-tts"));
+        assertTrue(capability.imageModels().isEmpty());
+        assertTrue(capability.videoModels().isEmpty());
+        assertTrue(capability.voiceModels().isEmpty());
+        assertTrue(capability.imageProtocol().isBlank());
+        assertTrue(capability.videoProtocol().isBlank());
+        assertTrue(capability.voiceProtocol().isBlank());
         assertEquals("https://platform.openai.com/api-keys", capability.setupUrl());
     }
 

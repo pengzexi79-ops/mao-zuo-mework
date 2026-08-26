@@ -31,4 +31,13 @@ class AiClientTest {
         assertTrue(models.contains("qwen-plus"));
         assertTrue(models.contains("gpt-4o-mini"));
     }
+
+    @Test
+    void classifiesProviderHttpFailuresWithoutCollapsingTheirMeaning() {
+        assertEquals("AI_AUTH_REQUIRED", AiClient.classifyHttpStatus(401));
+        assertEquals("AI_ENDPOINT_UNSUPPORTED", AiClient.classifyHttpStatus(404));
+        assertEquals("AI_RATE_LIMITED", AiClient.classifyHttpStatus(429));
+        assertEquals("AI_REMOTE_SERVER_ERROR", AiClient.classifyHttpStatus(503));
+        assertEquals("AI_REQUEST_REJECTED", AiClient.classifyHttpStatus(400));
+    }
 }
