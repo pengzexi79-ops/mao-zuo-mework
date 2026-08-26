@@ -51,7 +51,7 @@ public class WorkflowController {
     @GetMapping("/workflows")
     public R<List<Workflow>> list() { return R.ok(workflowRepo.findAllByOrderByIdAsc()); }
 
-    @GetMapping("/workflows/{id}")
+    @GetMapping("/workflows/{id:\\d+}")
     public R<Workflow> get(@PathVariable Long id) { return workflowRepo.findById(id).map(R::ok).orElseGet(() -> R.fail("工作流不存在")); }
 
     @PostMapping("/workflows")
@@ -68,7 +68,7 @@ public class WorkflowController {
         }
     }
 
-    @PutMapping("/workflows/{id}")
+    @PutMapping("/workflows/{id:\\d+}")
     public R<Workflow> update(@PathVariable Long id, @RequestBody Workflow input) {
         Workflow workflow = workflowRepo.findById(id).orElse(null);
         if (workflow == null) return R.fail("工作流不存在");
@@ -87,7 +87,7 @@ public class WorkflowController {
         }
     }
 
-    @GetMapping("/workflows/{id}/export")
+    @GetMapping("/workflows/{id:\\d+}/export")
     public R<Map<String, Object>> exportWorkflow(@PathVariable Long id) {
         Workflow workflow = workflowRepo.findById(id).orElse(null);
         if (workflow == null) return R.fail("工作流不存在");
@@ -122,7 +122,7 @@ public class WorkflowController {
         } catch (Exception e) { return R.fail("工作流导入失败，请检查 JSON 包格式"); }
     }
 
-    @PostMapping("/workflows/{id}/duplicate")
+    @PostMapping("/workflows/{id:\\d+}/duplicate")
     public R<Workflow> duplicate(@PathVariable Long id) {
         Workflow source = workflowRepo.findById(id).orElse(null);
         if (source == null) return R.fail("工作流不存在");
@@ -501,7 +501,14 @@ public class WorkflowController {
     // ---------------- 干跑预览 ----------------
 
     @Data
-    public static class DryRunReq { private Long workflowId; private Long projectId; private MixParams params; private Integer variant = 0; private String preparationId; }
+    public static class DryRunReq {
+        private Long workflowId;
+        private Long projectId;
+        /** Keep JSON field presence so project defaults merge identically to /api/jobs submit. */
+        private JsonNode params;
+        private Integer variant = 0;
+        private String preparationId;
+    }
 
     @Data
     public static class DryRunResult {
@@ -523,8 +530,10 @@ public class WorkflowController {
         }
         if (def == null) def = engine.defaultWorkflowDef();
         Project project = req.getProjectId() == null ? null : projectRepo.findById(req.getProjectId()).orElse(null);
-        MixParams params = req.getParams() == null ? new MixParams() : req.getParams();
-        EffectiveRenderConfig config = renderAdmissionService.resolve(req.getWorkflowId(), req.getProjectId(), params,
+        String submittedJson;
+        try { submittedJson = req.getParams() == null || req.getParams().isNull() ? "{}" : objectMapper.writeValueAsString(req.getParams()); }
+        catch (Exception e) { return R.fail("干跑参数格式无效"); }
+        EffectiveRenderConfig config = renderAdmissionService.resolveJson(req.getWorkflowId(), req.getProjectId(), submittedJson,
                 req.getVariant(), req.getPreparationId());
         MixParams normalized = config.getParams();
         def = config.getWorkflowDef();

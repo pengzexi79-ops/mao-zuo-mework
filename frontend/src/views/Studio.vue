@@ -632,11 +632,21 @@
             <span v-if="admissionSnapshot">本次准入已绑定<span v-if="admissionCheckedAt"> · 检查于 {{ formatAdmissionTime(admissionCheckedAt) }}</span><span v-if="admissionExpiresAt"> · {{ admissionExpiryText }}</span></span>
           </div>
           <div v-if="preflight.blockers?.length" class="preflight-issues">
-            <div v-for="issue in preflight.blockers" :key="issue.code" class="preflight-issue blocker"><el-tag size="small" type="danger">阻断</el-tag><span>{{ issue.message }}</span></div>
+            <div v-for="issue in preflight.blockers" :key="issue.code" class="preflight-issue blocker">
+              <el-tag size="small" type="danger">阻断</el-tag>
+              <div class="preflight-issue-body"><div>{{ issue.message }}</div><small>{{ preflightIssueNextStep(issue) }}</small></div>
+              <div class="preflight-issue-actions"><el-button v-if="preflightActionLabel(issue.action)" link type="primary" size="small" @click="handlePreflightAction(issue)">{{ preflightActionLabel(issue.action) }}</el-button><el-button v-if="canAnalyzeGap(issue)" link type="primary" size="small" @click="doGapAnalysis">分析素材缺口</el-button><el-button v-if="canAutoFillGap(issue)" link type="success" size="small" @click="doAutoFill">执行公开补齐</el-button><el-button v-if="canAutoFillGap(issue)" link type="primary" size="small" @click="goToCrawlWithProject">前往素材抓取</el-button></div>
+            </div>
           </div>
           <div v-if="preflight.warnings?.length" class="preflight-issues">
-            <div v-for="issue in preflight.warnings" :key="issue.code" class="preflight-issue warning"><el-tag size="small" type="warning">提示</el-tag><span>{{ issue.message }}</span></div>
+            <div v-for="issue in preflight.warnings" :key="issue.code" class="preflight-issue warning">
+              <el-tag size="small" type="warning">提示</el-tag>
+              <div class="preflight-issue-body"><div>{{ issue.message }}</div><small>{{ preflightIssueNextStep(issue) }}</small></div>
+              <div class="preflight-issue-actions"><el-button v-if="preflightActionLabel(issue.action)" link type="primary" size="small" @click="handlePreflightAction(issue)">{{ preflightActionLabel(issue.action) }}</el-button><el-button v-if="canAnalyzeGap(issue)" link type="primary" size="small" @click="doGapAnalysis">分析素材缺口</el-button><el-button v-if="canAutoFillGap(issue)" link type="success" size="small" @click="doAutoFill">执行公开补齐</el-button><el-button v-if="canAutoFillGap(issue)" link type="primary" size="small" @click="goToCrawlWithProject">前往素材抓取</el-button></div>
+            </div>
           </div>
+          <el-alert v-if="preflightBlocked" type="warning" :closable="false" show-icon title="当前需要你的选择才能继续" description="处理上面的原因后重新预检；系统不会跳过安全校验直接出片。" />
+          <el-alert v-else-if="preflight?.status === 'warning'" type="info" :closable="false" show-icon title="当前可以继续" description="这些提示不会自动阻止出片；你可以重新预检后继续，或先处理提示项。" />
         </div>
         <div v-if="preparationPanelActive || dry || submitting || activeRenderJob" class="batch-live-panel"
           :class="activeRenderJob ? [`batch-live-${activeRenderJob.status}`, { 'batch-live-stuck': heartbeatState === 'stale' || heartbeatState === 'delayed' }] : 'batch-live-working'">
@@ -998,9 +1008,12 @@
 .preflight-summary-head { margin-bottom:8px; }
 .preflight-summary-metrics { color:#606266; font-size:12px; gap:16px; }
 .preflight-issues { margin-top:8px; display:grid; gap:5px; }
-.preflight-issue { font-size:12px; line-height:1.5; }
+.preflight-issue { display:flex; align-items:flex-start; gap:7px; font-size:12px; line-height:1.5; }
 .preflight-issue.blocker { color:#b42318; }
 .preflight-issue.warning { color:#8a5a00; }
+.preflight-issue-body { flex:1; min-width:0; }
+.preflight-issue-body small { display:block; margin-top:2px; color:#7a858f; }
+.preflight-issue-actions { display:flex; gap:4px; flex-wrap:wrap; justify-content:flex-end; }
 .batch-preflight-state { display:flex; align-items:center; gap:12px; margin-top:14px; padding:16px; border:1px dashed #e6a23c; border-radius:6px; color:#6b4b13; background:#fffdf5; }
 .batch-preflight-state b { display:block; color:#8a5a00; margin-bottom:4px; }
 .batch-preflight-state div:last-child { color:#8b7a5a; font-size:12px; line-height:1.6; }
@@ -1284,6 +1297,59 @@ const preflightAlertType = computed(() => {
 })
 const preflightTagType = computed(() => preflightReady.value ? (preflight.value?.status === 'warning' ? 'warning' : 'success') : 'danger')
 const preflightStatusLabel = computed(() => ({ ready: '通过', warning: '通过但有提示', blocked: '已阻断', needs_user_action: '需要处理' }[preflight.value?.status] || '未预检'))
+const PREFLIGHT_ACTIONS = Object.freeze({
+  import_material: { label: '去补素材', next: '补充可读画面或绑定正确的素材范围；公开来源需要在素材抓取页配置后导入。' },
+  choose_bgm: { label: '处理音频素材', next: '选择可解码的 BGM/口播，或切换到原声、静音模式。' },
+  relax_dedupe: { label: '放宽去重', next: '仅在你确认允许素材重复时使用，然后重新预检。' },
+  rerun_preview: { label: '重新预检', next: '参数或素材已变化，需要重新生成当前计划。' },
+  inspect_runtime: { label: '检查环境', next: '先确认 FFmpeg 与 FFprobe 已就绪。' },
+  inspect_audio: { label: '检查音频', next: '检查音频文件、音轨和音频模式配置。' }
+})
+function preflightActionLabel (action) { return PREFLIGHT_ACTIONS[action]?.label || '' }
+function preflightIssueNextStep (issue) { return PREFLIGHT_ACTIONS[issue?.action]?.next || '请根据上面的原因处理后重新预检。' }
+function canAnalyzeGap (issue) { return ['capacity', 'role', 'folder'].includes(String(issue?.category || '').toLowerCase()) }
+function canAutoFillGap (issue) { return canAnalyzeGap(issue) && materialSourceMode.value !== 'local' }
+async function handlePreflightAction (issue) {
+  const action = issue?.action
+  if (!PREFLIGHT_ACTIONS[action]) return
+  if (action !== 'rerun_preview') invalidatePreflight()
+  if (action === 'import_material') {
+    await doGapAnalysis({ silent: false })
+    if (materialSourceMode.value !== 'local') {
+      ElMessage.info('已更新缺口诊断；公开素材需要在素材抓取页配置来源后导入。')
+      goToCrawlWithProject()
+    } else {
+      ElMessage.info('已更新缺口诊断；请在素材库导入可读画面或绑定素材文件夹。')
+      router.push({ path: '/materials', query: { projectId: projectId.value || undefined } })
+    }
+    return
+  }
+  if (action === 'choose_bgm') {
+    ElMessage.info('请在素材库选择可读音频，或切换声音模式后重新预检。')
+    router.push({ path: '/materials', query: { roleHint: 'voice-bgm', projectId: projectId.value || undefined } })
+    return
+  }
+  if (action === 'inspect_audio') {
+    await doGapAnalysis({ silent: false })
+    ElMessage.info('已更新音频与素材缺口诊断，请根据结果选择继续或补充素材。')
+    return
+  }
+  if (action === 'relax_dedupe') {
+    if (p.dedupStrictness === 'strict') p.dedupStrictness = 'standard'
+    else if (p.dedupStrictness === 'standard') p.dedupStrictness = 'off'
+    ElMessage.warning(`已将去重策略调整为「${p.dedupStrictness === 'off' ? '关闭' : '标准'}」，请重新预检确认。`)
+    return
+  }
+  if (action === 'rerun_preview') {
+    await doDryRun()
+    return
+  }
+  if (action === 'inspect_runtime') {
+    router.push({ path: '/capabilities', query: { view: 'environment' } })
+    return
+  }
+  if (action === 'inspect_audio') await doGapAnalysis({ silent: false })
+}
 const admissionCheckedAt = computed(() => admissionSnapshot.value?.checkedAt || '')
 const admissionExpiresAt = computed(() => admissionSnapshot.value?.expiresAt || '')
 const admissionExpiryText = computed(() => {

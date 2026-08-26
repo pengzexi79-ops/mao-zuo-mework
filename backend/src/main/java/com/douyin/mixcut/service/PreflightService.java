@@ -126,6 +126,20 @@ public class PreflightService {
             result.setAudioCoverageStatus("not_required");
         }
 
+        int semanticSegments = safePlan.getSemanticSegmentCount();
+        int gridSegments = safePlan.getGridFallbackCount();
+        if (gridSegments > 0) {
+            String detail = gridSegments + " 个时间线镜头使用网格回退";
+            if (params.getStrictDelivery() && safePlan.isSemanticAnalysisAvailable() && semanticSegments == 0) {
+                result.getBlockers().add(PreflightIssue.blocker(
+                        "semantic.scene_missing", "semantic", detail + "；严格交付要求确实存在 scene 语义证据。",
+                        "analyze_materials"));
+            } else {
+                result.getWarnings().add(PreflightIssue.warning(
+                        "semantic.grid_fallback", "semantic", detail + (safePlan.isSemanticAnalysisAvailable()
+                                ? "；保留 role/时长回退。" : "；分析不可用，未将其升级为硬拦截。"), "analyze_materials"));
+            }
+        }
         if (!safePlan.getNotes().isEmpty()) {
             safePlan.getNotes().stream()
                     .filter(note -> note != null && (note.contains("相邻片段") || note.contains("未标注")))

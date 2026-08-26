@@ -225,15 +225,19 @@ public class DeliveryQcService {
 
     private void assessSemantic(DeliveryQc report, MixPlanner.Plan plan, boolean strict) {
         DeliveryQc.CategoryResult semantic = report.category("semantic");
-        int semanticMaterials = plan == null ? 0 : plan.getSemanticSegmentCount();
-        int gridMaterials = plan == null ? 0 : plan.getGridFallbackCount();
-        if (gridMaterials > 0) {
-            boolean noStructuredVisualEvidence = semanticMaterials == 0;
-            semantic.setStatus(strict && noStructuredVisualEvidence ? "fail" : "warn");
-            semantic.issue(gridMaterials + " 条素材缺少结构化镜头分析，已回退网格切片（降级）"
-                    + (strict && noStructuredVisualEvidence ? "；严格交付已拦截，请完成镜头分析或补充可分析素材" : ""));
+        int semanticSegments = plan == null ? 0 : plan.getSemanticSegmentCount();
+        int gridSegments = plan == null ? 0 : plan.getGridFallbackCount();
+        boolean analysisAvailable = plan != null && plan.isSemanticAnalysisAvailable();
+        if (gridSegments > 0) {
+            boolean confirmedNoSceneEvidence = plan != null && (!plan.isSemanticAuditApplied()
+                    || (analysisAvailable && semanticSegments == 0));
+            semantic.setStatus(strict && confirmedNoSceneEvidence ? "fail" : "warn");
+            semantic.issue(gridSegments + " 个时间线镜头使用网格回退（降级）"
+                    + (strict && confirmedNoSceneEvidence ? "；严格交付已拦截，请完成镜头分析或补充可分析素材"
+                    : analysisAvailable ? "" : "；分析不可用，保留普通选片回退且不因此硬停"));
         }
-        semantic.check("语义镜头 " + semanticMaterials + " 条，网格回退 " + gridMaterials + " 条");
+        semantic.check("scene 语义镜头 " + semanticSegments + " 个，网格回退 " + gridSegments + " 个"
+                + (analysisAvailable ? "" : "（分析不可用）"));
     }
 
     private void assessHook(DeliveryQc report, MixPlanner.Plan plan, boolean hookBurned, boolean strict) {
