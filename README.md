@@ -1,8 +1,16 @@
-# 喵作 · Mework
+# 猫作·Mework
 
 前端 Vue 3 + 后端 Spring Boot 3（Java 17）+ MySQL 8 + ffmpeg。将一组已授权的本地素材、产品信息和受约束工作流，批量生成 50–150 秒的短视频混剪。
 
+![猫作·Mework 应用概览](docs/assets/mework-dashboard.png)
+
 > 本项目默认仅供本机使用。素材版权、肖像权、平台条款和商业授权由使用者负责确认。
+
+## 当前进展
+
+当前开发版本为 `2.2.150`。最近完成了媒体能力路由、音频合同与响度质检、渲染前置检查、AI 媒体适配器、任务恢复与取消、资产识别交接，以及 D 盘启动器和安装验证流程。
+
+完整开发提交记录见 [`docs/zcode-handoff/GIT_HISTORY.md`](docs/zcode-handoff/GIT_HISTORY.md) 及 GitHub 的 `legacy-history-sanitized` 分支；`main` 是可直接分享的最新源码快照。
 
 ## 功能概览
 

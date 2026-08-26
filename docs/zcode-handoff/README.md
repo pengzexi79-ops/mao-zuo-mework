@@ -1,4 +1,4 @@
-# Mework ZCode Handoff Archive
+# 猫作·Mework ZCode Handoff Archive
 
 This directory is the D-drive handoff archive for the Mework project.
 
@@ -10,7 +10,7 @@ This directory is the D-drive handoff archive for the Mework project.
 - ZCode session plans: `session-plans`
 - ZCode commands: `commands`
 - Asset-recognition snapshots: `asset-archives`
-- Supervisor state and activity logs: `monitor`
+- Supervisor scripts and draft records: `monitor` (raw state/activity logs stay local)
 
 The original C-drive project remains unchanged as a rollback copy. The D-drive
 project is the active development location for this task.
@@ -18,11 +18,11 @@ project is the active development location for this task.
 ## Snapshot
 
 - Snapshot date: 2026-08-26
-- Git branch: `codex/ai2-history-closeout-20260825`
-- Git HEAD: `7604b985484d68bc900b521fc92f0cb468d29f84`
-- Source file count: 65,162
-- Source size: 23,497,038,868 bytes
-- Uncommitted entries preserved: 55
+- Current application version: `2.2.150`
+- Local development history: 65 commits through `fd860676944ab7d54f56a4777f4bcf0bdf86d548`
+- GitHub share snapshot: `ac197e608c3deed4ee3f483ea203ccdb2f7cd502`
+- Running D-drive instance: `http://127.0.0.1:8762/`
+- The full commit index is maintained in `GIT_HISTORY.md`; the raw machine runtime remains on D and is intentionally excluded.
 
 ## Handling rules
 
