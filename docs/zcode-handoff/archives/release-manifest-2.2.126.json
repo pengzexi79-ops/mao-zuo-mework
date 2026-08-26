@@ -1,0 +1,208 @@
+﻿{
+    "schemaVersion":  2,
+    "manifestVersion":  "1.1.0",
+    "generatedAt":  "2026-08-23T06:40:05.8790342Z",
+    "productVersion":  "2.2.126",
+    "source":  "Mework build_installer.bat",
+    "entries":  [
+                    {
+                        "path":  "backend/src/main/resources/release-notes.json",
+                        "component":  "release-notes",
+                        "purpose":  "application release metadata",
+                        "required":  true,
+                        "sizeBytes":  253820,
+                        "sha256":  "f9bbd396727229022ffbfc0f5717573b5c82a45b3dddf09cfc485eb3478976fc"
+                    },
+                    {
+                        "path":  "backend/src/main/resources/capabilities.json",
+                        "component":  "capabilities",
+                        "purpose":  "capability allowlist and repair policy",
+                        "required":  true,
+                        "sizeBytes":  10399,
+                        "sha256":  "806f8ffc8c8a0fc131ce01f549a3355365f01a62e81bd54aba8b7b33280ab875"
+                    },
+                    {
+                        "path":  "backend/target/mixcut-delivery.jar",
+                        "component":  "application",
+                        "purpose":  "Spring Boot delivery JAR",
+                        "required":  true,
+                        "sizeBytes":  81309192,
+                        "sha256":  "59acc55b9918aae3bbdb5f7b0ce228217d7c4fd8e98c13c85549f98ccf65c91e"
+                    },
+                    {
+                        "path":  "portable/jdk-17/bin/java.exe",
+                        "component":  "jdk",
+                        "purpose":  "Java 17 runtime",
+                        "required":  true,
+                        "sizeBytes":  47304,
+                        "sha256":  "3ab0516b67b52410f07a92504a50243f23ed8a7a51abed0d76a1bee4b0dbefc7"
+                    },
+                    {
+                        "path":  "portable/mysql/bin/mysqld.exe",
+                        "component":  "mysql",
+                        "purpose":  "MySQL server",
+                        "required":  true,
+                        "sizeBytes":  51125416,
+                        "sha256":  "02716a5bc6d074b43a17323f3d031ae13faadd9347a7475571370ca9a5a3e89a"
+                    },
+                    {
+                        "path":  "portable/ffmpeg/bin/ffmpeg.exe",
+                        "component":  "ffmpeg",
+                        "purpose":  "media renderer",
+                        "required":  true,
+                        "sizeBytes":  222248960,
+                        "sha256":  "05f4251bce9293c2ab492cb17ca7724a0ffd0d06c881ba2ee83b82a89c2fc740"
+                    },
+                    {
+                        "path":  "portable/ffmpeg/bin/ffprobe.exe",
+                        "component":  "ffprobe",
+                        "purpose":  "media probe",
+                        "required":  true,
+                        "sizeBytes":  222044160,
+                        "sha256":  "51e0780cd881f83749b029ed716cbb841c2eac6289f418050f2f2961b158896b"
+                    },
+                    {
+                        "path":  "portable/python/python.exe",
+                        "component":  "python",
+                        "purpose":  "bundled Python runtime",
+                        "required":  true,
+                        "sizeBytes":  105816,
+                        "sha256":  "5341746f92483a93e44c313de830f2fba2956f0759094404a16b2fed06c9a2ed"
+                    },
+                    {
+                        "path":  "portable/whisper/Release/whisper-cli.exe",
+                        "component":  "whisper.cpp",
+                        "purpose":  "local ASR engine",
+                        "required":  true,
+                        "sizeBytes":  479232,
+                        "sha256":  "95e3c0b0e778ad9499eb0125f97c1dcf437dd9eb4ea77050b043574f93c2631d"
+                    },
+                    {
+                        "path":  "portable/imagemagick/magick.exe",
+                        "component":  "imagemagick",
+                        "purpose":  "image processing",
+                        "required":  true,
+                        "sizeBytes":  31153328,
+                        "sha256":  "7e93f2c502c888569e2cf27e049e39d204a8bbd36a958419af7fce5450776f41"
+                    },
+                    {
+                        "path":  "portable/whisper-models/ggml-small.bin",
+                        "component":  "whisper-model",
+                        "purpose":  "local whisper.cpp model",
+                        "required":  true,
+                        "sizeBytes":  487601967,
+                        "sha256":  "1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b"
+                    },
+                    {
+                        "path":  "backend/.venv/Scripts/python.exe",
+                        "component":  "venv",
+                        "purpose":  "application Python environment",
+                        "required":  true,
+                        "sizeBytes":  254800,
+                        "sha256":  "935016795f3e6908e75acbc2040a01e2e4cdb494a57c42f63a0d6eedb2372256"
+                    },
+                    {
+                        "path":  "backend/.venv/pyvenv.cfg",
+                        "component":  "venv-config",
+                        "purpose":  "relocatable venv configuration",
+                        "required":  true,
+                        "sizeBytes":  175,
+                        "sha256":  "ba3a706d58a7df9cfd9e61358b16efddb04cf89309cab0d5db064ff81bb56f66"
+                    },
+                    {
+                        "path":  "start.bat",
+                        "component":  "launcher",
+                        "purpose":  "offline-aware application launcher",
+                        "required":  true,
+                        "sizeBytes":  9681,
+                        "sha256":  "1a0df3b77abb264f7d6310d611004b703cdfed0600881ffbac945be19c9ee910"
+                    },
+                    {
+                        "path":  "setup_runtime.bat",
+                        "component":  "runtime-setup",
+                        "purpose":  "verify or explicitly repair local runtime",
+                        "required":  true,
+                        "sizeBytes":  4068,
+                        "sha256":  "73de9157461c0713420c80d5dae01c397e4aac072463b8016b188f92eeb87ff6"
+                    },
+                    {
+                        "path":  "ensure_env.bat",
+                        "component":  "local-config",
+                        "purpose":  "local environment bootstrap",
+                        "required":  true,
+                        "sizeBytes":  1714,
+                        "sha256":  "41330ce4a8e3ab1107dbe4a79f1ec510e9d2a7f5f70c007814c96c147b19f79c"
+                    },
+                    {
+                        "path":  "start_mysql.bat",
+                        "component":  "mysql-launcher",
+                        "purpose":  "local MySQL launcher",
+                        "required":  true,
+                        "sizeBytes":  3671,
+                        "sha256":  "b2b1deb6115cad511917daa57c7de0cd8f87842eff8ab31e5b6c42f125707349"
+                    },
+                    {
+                        "path":  "backend/requirements-windows.txt",
+                        "component":  "python-requirements",
+                        "purpose":  "pinned Python dependencies",
+                        "required":  true,
+                        "sizeBytes":  374,
+                        "sha256":  "a016c7134a568a476c2ada7fbff46be025b112b731039bf852596bf4d67b5c2f"
+                    },
+                    {
+                        "path":  "backend/tools/bootstrap_media_runtime.bat",
+                        "component":  "runtime-bootstrap",
+                        "purpose":  "offline verify and explicit repair boundary",
+                        "required":  true,
+                        "sizeBytes":  3554,
+                        "sha256":  "8d185b95424e00a25743a14ae548a9ad9e3a492e9d6abc286d3704eccf6eff90"
+                    },
+                    {
+                        "path":  "backend/tools/media_diagnose.py",
+                        "component":  "media-diagnosis",
+                        "purpose":  "local media diagnosis CLI",
+                        "required":  true,
+                        "sizeBytes":  7942,
+                        "sha256":  "d7b9f60d1f1e5e91785fb988e0f9f083aece001580629a177a69bca7182ca1eb"
+                    },
+                    {
+                        "path":  "backend/tools/natural_tts.py",
+                        "component":  "tts-helper",
+                        "purpose":  "local speech helper",
+                        "required":  true,
+                        "sizeBytes":  1860,
+                        "sha256":  "cd8be238174f9e417942a35b6a6796e7ff2aa09db02b6254db53b7c152367c99"
+                    },
+                    {
+                        "path":  "portable\\whisper-models\\hub\\models--Systran--faster-whisper-small",
+                        "type":  "treeSummary",
+                        "component":  "faster-whisper-cache",
+                        "purpose":  "offline faster-whisper model cache",
+                        "required":  true,
+                        "fileCount":  6,
+                        "sha256":  "159250f6f4f50832c8a69ac4fa660d5a8704572622c40335d52f64391b6ca081"
+                    },
+                    {
+                        "path":  "portable\\mysqldata\\ai_mix_video",
+                        "type":  "treeSummary",
+                        "component":  "mysql-data",
+                        "purpose":  "bundled MySQL application database tree",
+                        "required":  true,
+                        "fileCount":  17,
+                        "sha256":  "ca6404858052f669f2dc33d448832c628a50028eab2b45af677349ba7310558b"
+                    }
+                ],
+    "sbom":  {
+                 "format":  "minimal-spdx-like",
+                 "components":  [
+                                    "JDK 17",
+                                    "MySQL 8",
+                                    "FFmpeg/FFprobe",
+                                    "Python 3.13",
+                                    "whisper.cpp",
+                                    "ImageMagick",
+                                    "requirements-windows.txt",
+                                    "capabilities.approvedPip"
+                                ]
+             }
+}

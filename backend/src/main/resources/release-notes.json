@@ -1,0 +1,4717 @@
+{
+  "id": "release-2-2-150",
+  "version": "2.2.150",
+  "releasedAt": "2026-08-26",
+  "kind": "当前本机构建",
+  "title": "AI 媒体线程池注入启动修复",
+  "summary": "修复 AI 媒体生成服务线程池注入缺少限定符导致最终 JAR 启动失败的问题。",
+  "changes": [
+    "MediaGenerationService 明确注入 mediaExecutor，避免多个线程池 bean 存在时 Spring 无法选择执行器。"
+  ],
+  "fixes": [
+    "修复编译和全量测试通过但运行 JAR 因存在多个 Executor bean 而启动失败的问题。"
+  ],
+  "verification": [
+    "完整 Maven 测试通过。",
+    "前端文本完整性、Vite production build 和静态资源引用校验通过。",
+    "修复后 JAR 启动并通过 /api/system/env 健康检查；Studio 页面显示后端已连接。"
+  ],
+  "compatibility": "仅限定现有 AI 媒体任务使用的 mediaExecutor，不修改任务数据、数据库 schema、用户素材、FixedOrderPresets 或凭据。",
+  "evidence": [
+    "backend/src/main/java/com/douyin/mixcut/service/MediaGenerationService.java",
+    "backend/src/main/java/com/douyin/mixcut/external/media/MediaAdapterRegistry.java",
+    "backend/src/test/java/com/douyin/mixcut/service/MediaGenerationServiceTest.java"
+  ],
+  "source": "backend/src/main/resources/release-notes.json",
+  "history": [
+    {
+      "id": "release-2-2-149",
+      "version": "2.2.149",
+      "releasedAt": "2026-08-26",
+      "kind": "历史开发阶段",
+      "title": "全量优化启动验证修复",
+      "summary": "修复全量优化后的 Spring 运行时 adapter registry 注入问题，完成模块化生产链的最终启动验证。",
+      "changes": [
+        "为 MediaAdapterRegistry 多构造器明确 Spring 注入入口，确保 OpenAI-compatible adapter registry 随应用正常启动。"
+      ],
+      "fixes": [
+        "修复编译和单元测试通过但运行 JAR 因 MediaAdapterRegistry 无默认构造器而启动失败的问题。"
+      ],
+      "verification": [
+        "完整 Maven 测试通过（438 项，3 项按环境门控跳过）。",
+        "前端文本完整性、Vite production build 和静态资源引用校验通过。",
+        "修复后 JAR 重新启动验证通过；DashScope native、Qwen WebSocket TTS 和 Relay 仍明确保持未实现。"
+      ],
+      "compatibility": "仅修复 Spring bean 注入，不修改 Provider wire contract、数据库 schema、用户素材、FixedOrderPresets 或凭据。",
+      "evidence": [
+        "backend/src/main/java/com/douyin/mixcut/external/media/MediaAdapterRegistry.java",
+        "backend/src/test/java/com/douyin/mixcut/external/media/MediaAdapterRegistryTest.java",
+        "backend/src/main/resources/capabilities.json"
+      ]
+    },
+    {
+      "id": "release-2-2-148",
+      "version": "2.2.148",
+      "releasedAt": "2026-08-25",
+      "kind": "历史开发阶段",
+      "title": "全量优化模块收口",
+      "summary": "收口出片台准入、音频合同预检、Provider adapter 注册、批量任务恢复和成片库任务兼容，形成可复核的模块化生产闭环。",
+      "changes": [
+        "出片 dry-run 与提交共享有效配置、稳定 seed、variant、preparationId 和准入 hash；HTTP 提交要求有效预检快照并由服务端重新计算状态。",
+        "预检结果增加 material-audio、original、ai-voice、silent 的音频模式和 AudioContract 结果；OpenAI-compatible 媒体协议通过显式 adapter registry 执行。",
+        "批量任务补充租约恢复、线程池拒绝、暂停/恢复/取消/重试和成功检查点测试；成片库兼容 phase-aware 任务列表。"
+      ],
+      "fixes": [
+        "修复 dry-run 与实际提交 seed/variant 不一致、准入状态签名可绕过、素材文件变化未进入 hash、音频合同 blocker 未更新总状态以及任务列表包装破坏成片筛选的问题。",
+        "修复人工修复修改冻结参数后仍保留旧准入快照，以及 Provider 响应过大错误未映射稳定错误码的问题。"
+      ],
+      "verification": [
+        "完整 Maven 测试通过；线程池拒绝、恢复和 MySQL/外部网络相关日志为既有测试中的预期隔离场景。",
+        "前端文本完整性、Vite production build 和静态资源引用校验通过。",
+        "未实现的 DashScope native、Qwen WebSocket TTS 和 Relay wire contract 继续明确拒绝，未伪称完成。"
+      ],
+      "compatibility": "不修改生产数据库 schema、用户素材或 FixedOrderPresets；保留旧内部任务提交兼容路径，HTTP 出片接口要求先完成预检；OpenAI-compatible 之外的未定义协议不执行。",
+      "evidence": [
+        "backend/src/main/java/com/douyin/mixcut/service/RenderAdmissionService.java",
+        "backend/src/main/java/com/douyin/mixcut/service/PreflightService.java",
+        "backend/src/main/java/com/douyin/mixcut/external/media/MediaAdapterRegistry.java",
+        "backend/src/main/java/com/douyin/mixcut/service/JobService.java",
+        "frontend/src/views/Studio.vue",
+        "frontend/src/views/Outputs.vue",
+        "backend/src/test/java/com/douyin/mixcut/service/RenderAdmissionServiceTest.java",
+        "backend/src/test/java/com/douyin/mixcut/service/PreflightServiceTest.java",
+        "backend/src/test/java/com/douyin/mixcut/service/JobServiceReliabilityTest.java"
+      ]
+    },
+    {
+      "id": "release-2-2-147",
+      "version": "2.2.147",
+      "releasedAt": "2026-08-25",
+      "kind": "历史开发阶段",
+      "title": "MySQL 启动健康检查认证修复",
+      "summary": "修复已有本机 MySQL 监听 3306 时启动器使用匿名 mysqladmin ping 导致 1045 拒绝、后端无法启动和浏览器连接被拒绝的问题。",
+      "changes": [
+        "start_mysql.bat 使用已加载的 DB_USERNAME 和进程环境 MYSQL_PWD 执行协议 ping，密码不出现在命令行、日志或界面输出。"
+      ],
+      "fixes": [
+        "修复数据库服务实际可用但匿名 ping 被 ODBC/root 用户拒绝，start.bat 因此错误退出并使 127.0.0.1:8760 返回 ERR_CONNECTION_REFUSED 的问题。"
+      ],
+      "verification": [
+        "PowerShell 执行 start_mysql.bat 返回 MySQL 已运行并通过 ping。",
+        "verify_windows_install.ps1 通过；后端启动后 /api/system/env 返回 200。",
+        "真实浏览器根地址进入猫作 · Mework 概览，直接打开 /api/system/env 跳转到环境中心，历史页显示当前 2.2.146 与 8 月 24/25 日记录。"
+      ],
+      "compatibility": "只改变本机启动器的 MySQL 健康检查认证方式；不修改数据库 schema、用户数据、素材或凭据内容。",
+      "evidence": [
+        "start_mysql.bat",
+        "verify_windows_install.ps1",
+        "backend/src/main/java/com/douyin/mixcut/web/SystemController.java",
+        "backend/src/test/java/com/douyin/mixcut/web/SystemControllerNavigationTest.java"
+      ]
+    },
+    {
+      "id": "release-2-2-146",
+      "version": "2.2.146",
+      "releasedAt": "2026-08-25",
+      "kind": "历史开发阶段",
+      "title": "AI 视频受限流式下载闭环",
+      "summary": "视频内容从 Provider 直接流式写入任务 staging 文件，并补齐大小、MIME、错误码、收费提交阶段、重定向边界和失败恢复门禁。",
+      "changes": [
+        "下载先检查 Content-Length，chunked 响应按累计字节限制，使用 networkMaxDownloadBytes 且不把完整视频载入堆；不自动跟随未校验重定向。",
+        "图片、视频和配音提交统一进入 submitting 阶段并记录 attemptCount；任务 API 和 AI 创作页展示 phase、errorCode 与尝试次数。",
+        "启动恢复处理 downloading/validating 任务，仅清理当前任务 staging 根目录内的 .part 文件并标记人工处理。"
+      ],
+      "fixes": [
+        "修复大视频受 20MB byte[] 通用响应限制、下载或素材登记失败残留文件、轮询和图片异常不持久化错误码的问题。",
+        "修复统一任务中心把没有重试端点的付费 AI 失败任务标成可重试，以及兼容 Provider 返回 application/octet-stream 或空 MIME 时被错误拒绝的问题。"
+      ],
+      "verification": [
+        "DefaultMediaHttpTransportTest、OpenAiCompatibleMediaAdapterTest、MediaGenerationServiceTest、TaskQueryServiceTest 和发行历史定向测试通过。",
+        "完整 Maven 回归、前端 text integrity、Vite production build 和静态资源引用校验通过。"
+      ],
+      "compatibility": "保持固定 OpenAI-compatible 与 Ark 路径；DashScope native、Qwen WebSocket TTS 和 Relay 仍返回 MEDIA_PROTOCOL_UNSUPPORTED。",
+      "evidence": [
+        "backend/src/main/java/com/douyin/mixcut/external/media/DefaultMediaHttpTransport.java",
+        "backend/src/main/java/com/douyin/mixcut/service/MediaGenerationService.java",
+        "backend/src/test/java/com/douyin/mixcut/external/media/DefaultMediaHttpTransportTest.java",
+        "backend/tools/release_notes.py"
+      ]
+    },
+    {
+      "id": "release-2-2-145",
+      "version": "2.2.145",
+      "releasedAt": "2026-08-25",
+      "kind": "历史开发阶段",
+      "title": "环境接口浏览器导航修复",
+      "summary": "浏览器直接打开环境 API 时跳转到应用环境中心，JSON 客户端继续获得原接口数据。",
+      "changes": [
+        "/api/system/env 按 Accept 头进行内容协商：text/html 返回 302，application/json 保持 R<Map>。"
+      ],
+      "fixes": [
+        "修复浏览器文档导航请求 text/html 时出现 406 空白或 Whitelabel 页面的问题。"
+      ],
+      "verification": [
+        "SystemControllerNavigationTest 校验跳转地址，真实浏览器打开接口后到达能力中心环境页。"
+      ],
+      "compatibility": "API JSON 契约不变；只调整浏览器 HTML 导航。",
+      "evidence": [
+        "commit 8466f2e",
+        "backend/src/main/java/com/douyin/mixcut/web/SystemController.java",
+        "backend/src/test/java/com/douyin/mixcut/web/SystemControllerNavigationTest.java"
+      ]
+    },
+    {
+      "id": "release-2-2-144",
+      "version": "2.2.144",
+      "releasedAt": "2026-08-25",
+      "kind": "历史开发阶段",
+      "title": "视频轮询与下载适配器化",
+      "summary": "OpenAI-compatible adapter 接管视频任务状态查询、远端 ID 校验和内容下载协议。",
+      "changes": [
+        "固定使用 /v1/videos/{id} 与 /content，远端 ID 限制为安全字符，任务状态映射为受控枚举。"
+      ],
+      "fixes": [
+        "修复视频轮询和下载仍绕过 adapter、路径拼接缺少远端 ID 白名单的问题。"
+      ],
+      "verification": [
+        "OpenAiCompatibleMediaAdapterTest 覆盖提交、轮询、下载路径和非法远端 ID 拒绝。"
+      ],
+      "compatibility": "不重复提交已获得 remoteTaskId 的付费视频任务；不同供应商的非兼容异步协议仍不开放。",
+      "evidence": [
+        "commit d069ea1",
+        "backend/src/main/java/com/douyin/mixcut/external/media/OpenAiCompatibleMediaAdapter.java",
+        "backend/src/main/java/com/douyin/mixcut/service/MediaGenerationService.java"
+      ]
+    },
+    {
+      "id": "release-2-2-143",
+      "version": "2.2.143",
+      "releasedAt": "2026-08-25",
+      "kind": "历史开发阶段",
+      "title": "OpenAI-Compatible 媒体适配器隔离",
+      "summary": "将固定 OpenAI-compatible 图片、视频和配音请求从任务编排中隔离到可测试 adapter 与受限 transport。",
+      "changes": [
+        "新增固定图片、视频提交和配音协议，支持 Ark /api/v3 路由兼容、20MB 普通响应上限和稳定错误码。"
+      ],
+      "fixes": [
+        "修复媒体请求路径、响应解析和错误映射散落在 MediaGenerationService、难以验证协议边界的问题。"
+      ],
+      "verification": [
+        "OpenAiCompatibleMediaAdapterTest 覆盖路径、请求体、鉴权、Ark 路由和 429 错误映射。"
+      ],
+      "compatibility": "只支持已注册的固定 OpenAI-compatible 协议；DashScope native、Qwen WebSocket 和 Relay 未实现时明确拒绝。",
+      "evidence": [
+        "commit 6d4a898",
+        "backend/src/main/java/com/douyin/mixcut/external/media/OpenAiCompatibleMediaAdapter.java",
+        "backend/src/test/java/com/douyin/mixcut/external/media/OpenAiCompatibleMediaAdapterTest.java"
+      ]
+    },
+    {
+      "id": "release-2-2-142",
+      "version": "2.2.142",
+      "releasedAt": "2026-08-25",
+      "kind": "历史开发阶段",
+      "title": "音频合同 Fixture 与输出清理验收",
+      "summary": "对 BGM 和静音 fixture 执行真实 AudioContract 检查，并扩展输出清理安全测试。",
+      "changes": [
+        "OfflineAudioContractAcceptanceTest 检查可用 BGM 合同与静音拒绝，ProcessRegistryTest 覆盖缺失输出和父目录安全。"
+      ],
+      "fixes": [
+        "修复验收只核对 manifest 而未执行音频合同、以及迟到 move 输出未被清理的测试缺口。"
+      ],
+      "verification": [
+        "OfflineAudioContractAcceptanceTest 在 FFmpeg/FFprobe 可用时执行，相关 ProcessRegistry 单元测试通过。"
+      ],
+      "compatibility": "acceptance 仅使用固定测试 fixture；不使用业务数据库或用户素材。",
+      "evidence": [
+        "commit 05de45c",
+        "backend/src/test/java/com/douyin/mixcut/acceptance/OfflineAudioContractAcceptanceTest.java",
+        "backend/src/test/java/com/douyin/mixcut/external/ProcessRegistryTest.java"
+      ]
+    },
+    {
+      "id": "release-2-2-141",
+      "version": "2.2.141",
+      "releasedAt": "2026-08-25",
+      "kind": "历史开发阶段",
+      "title": "口播与取消竞态闭环",
+      "summary": "AI 口播替换旧分段计划，并补齐最终移动前后的取消和输出登记边界。",
+      "changes": [
+        "AI narration 生成后清空旧 voiceSegments，ProcessRegistry 保留尚未落盘输出登记并拒绝符号链接父目录清理。"
+      ],
+      "fixes": [
+        "修复新 AI 口播仍叠加旧时间线、最终 move 前取消泄漏文件以及清理路径穿越任务根目录的问题。"
+      ],
+      "verification": [
+        "ProcessRegistryTest 与 RenderServiceTest 覆盖迟到输出、符号链接父目录和 narration 计划替换。"
+      ],
+      "compatibility": "只清理当前任务管理根目录下登记输出，不跟随符号链接。",
+      "evidence": [
+        "commit aac519d",
+        "backend/src/main/java/com/douyin/mixcut/external/ProcessRegistry.java",
+        "backend/src/test/java/com/douyin/mixcut/external/ProcessRegistryTest.java"
+      ]
+    },
+    {
+      "id": "release-2-2-140",
+      "version": "2.2.140",
+      "releasedAt": "2026-08-25",
+      "kind": "历史开发阶段",
+      "title": "按声明时间线渲染口播",
+      "summary": "多段口播保留 timelineStart 声明的间隔，FFmpeg 在空隙处插入静音而非直接首尾拼接。",
+      "changes": [
+        "AudioSlice 增加 timelineStart，concatAudioSlices 排序、插入 anullsrc 后统一 loudnorm。"
+      ],
+      "fixes": [
+        "修复多段口播忽略目标起点、时间空隙被压缩导致字幕和画面节奏错位的问题。"
+      ],
+      "verification": [
+        "FfmpegToolTest 验证 0 秒与 3 秒起点的两段口播输出约 4 秒，RenderServiceTest 覆盖排序和边界。"
+      ],
+      "compatibility": "单段连续口播行为保持一致；多段口播开始按声明时间轴对齐。",
+      "evidence": [
+        "commit 4cce56a",
+        "backend/src/main/java/com/douyin/mixcut/external/FfmpegTool.java",
+        "backend/src/test/java/com/douyin/mixcut/external/FfmpegToolTest.java"
+      ]
+    },
+    {
+      "id": "release-2-2-139",
+      "version": "2.2.139",
+      "releasedAt": "2026-08-24",
+      "kind": "历史开发阶段",
+      "title": "BGM 与静音验收 Fixture",
+      "summary": "固定新增两项音频验收输入，并记录大小、SHA256 和 FFprobe 元数据。",
+      "changes": [
+        "fixture manifest 从 6 项扩展到 8 项，素材管线将 BGM 接受、纯静音拒绝作为离线验收场景。"
+      ],
+      "fixes": [
+        "修复音频合同验收只覆盖口播、缺少可用 BGM 和纯静音反例的问题。"
+      ],
+      "verification": [
+        "FixtureManifestTest、OfflineMaterialPipelineAcceptanceTest 和 fixture 校验脚本覆盖新增文件；依赖不可用时 acceptance 会明确跳过。"
+      ],
+      "compatibility": "验收文件仅位于测试资源，不写入业务素材库。",
+      "evidence": [
+        "commit e62b633",
+        "backend/src/test/resources/acceptance/fixture-manifest.json",
+        "backend/tools/verify_acceptance_fixtures.ps1"
+      ]
+    },
+    {
+      "id": "release-2-2-138",
+      "version": "2.2.138",
+      "releasedAt": "2026-08-24",
+      "kind": "历史开发阶段",
+      "title": "口播时间线校验与失败清理",
+      "summary": "拒绝重叠、负值、非有限值和源文件越界的口播片段，并清理准入失败输出。",
+      "changes": [
+        "VoiceTimeline 按片段排序并逐源 probe，校验源时长和目标视频边界。"
+      ],
+      "fixes": [
+        "修复无效时间线晚到 FFmpeg 才失败、TTS 或 Provider 准入失败文件残留的问题。"
+      ],
+      "verification": [
+        "RenderServiceTest 与音频服务回归覆盖时间线越界和失败清理。"
+      ],
+      "compatibility": "合法时间线行为不变；无效计划更早返回稳定错误。",
+      "evidence": [
+        "commit 77b0dea",
+        "backend/src/main/java/com/douyin/mixcut/service/RenderService.java",
+        "backend/src/test/java/com/douyin/mixcut/service/RenderServiceTest.java"
+      ]
+    },
+    {
+      "id": "release-2-2-137",
+      "version": "2.2.137",
+      "releasedAt": "2026-08-24",
+      "kind": "历史开发阶段",
+      "title": "口播选择与解码准入围栏",
+      "summary": "口播素材选择同时校验源类型、实际音轨和可解码状态。",
+      "changes": [
+        "AudioContract 增加 sourceType，RenderService 在进入时间线前检查实际音频能力。"
+      ],
+      "fixes": [
+        "修复错误角色素材或只靠扩展名判断的不可解码音频被选入口播的问题。"
+      ],
+      "verification": [
+        "RenderService 相关测试覆盖 voice 选择和实际 probe 准入。"
+      ],
+      "compatibility": "只收紧新渲染任务的口播准入，不改写已有素材。",
+      "evidence": [
+        "commit 8bbef71",
+        "backend/src/main/java/com/douyin/mixcut/service/RenderService.java",
+        "backend/src/main/java/com/douyin/mixcut/dto/AudioContract.java"
+      ]
+    },
+    {
+      "id": "release-2-2-136",
+      "version": "2.2.136",
+      "releasedAt": "2026-08-24",
+      "kind": "历史开发阶段",
+      "title": "BGM Ducking 频段能量验证",
+      "summary": "以真实 FFmpeg 频段能量测量验证口播出现时 BGM 被压低。",
+      "changes": [
+        "FfmpegToolTest 对 880Hz BGM 频段执行 bandpass 和 volumedetect 比较。"
+      ],
+      "fixes": [
+        "修复只比较全片平均响度、会被最终 loudnorm 掩盖 ducking 效果的测试误判。"
+      ],
+      "verification": [
+        "FfmpegToolTest 在本机 FFmpeg 可用时验证 sidechaincompress 后目标频段能量下降。"
+      ],
+      "compatibility": "仅增强音频混合测试，不改变素材源文件。",
+      "evidence": [
+        "commit ce1177d",
+        "backend/src/test/java/com/douyin/mixcut/external/FfmpegToolTest.java"
+      ]
+    },
+    {
+      "id": "release-2-2-135",
+      "version": "2.2.135",
+      "releasedAt": "2026-08-24",
+      "kind": "历史开发阶段",
+      "title": "本机 TTS 音频合同准入",
+      "summary": "自然语音和 Edge-TTS 输出统一通过 AudioContract 验证。",
+      "changes": [
+        "本机 TTS 在入库前检查实际音轨，主路径准入失败可受控回退到 Edge-TTS。"
+      ],
+      "fixes": [
+        "修复本机 TTS 不同实现使用不一致的音频质量判断和临时文件残留问题。"
+      ],
+      "verification": [
+        "TtsService 相关回归覆盖自然语音、Edge-TTS 和准入失败清理。"
+      ],
+      "compatibility": "保留原有 TTS 回退顺序；只阻止不合格的新输出入库。",
+      "evidence": [
+        "commit 572945c",
+        "backend/src/main/java/com/douyin/mixcut/service/TtsService.java",
+        "backend/src/main/java/com/douyin/mixcut/service/AudioContractService.java"
+      ]
+    },
+    {
+      "id": "release-2-2-134",
+      "version": "2.2.134",
+      "releasedAt": "2026-08-24",
+      "kind": "历史开发阶段",
+      "title": "Provider 配音入库准入",
+      "summary": "AI Provider 返回的配音先经过 AudioContract 检查，合格后才登记素材。",
+      "changes": [
+        "配音下载后测量音轨和质量，失败文件删除且任务不标记完成。"
+      ],
+      "fixes": [
+        "修复过短、不可读或合同不合格的 Provider 音频仍可能进入素材库的问题。"
+      ],
+      "verification": [
+        "MediaGenerationService 相关测试和后端回归覆盖配音准入失败路径。"
+      ],
+      "compatibility": "仅影响新生成的 AI 配音；不修改已有素材。",
+      "evidence": [
+        "commit df852a0",
+        "backend/src/main/java/com/douyin/mixcut/service/MediaGenerationService.java",
+        "backend/src/main/java/com/douyin/mixcut/service/AudioContractService.java"
+      ]
+    },
+    {
+      "id": "release-2-2-133",
+      "version": "2.2.133",
+      "releasedAt": "2026-08-24",
+      "kind": "历史开发阶段",
+      "title": "交付质检启用实测音频合同",
+      "summary": "成片交付质检显式接收并校验实测 AudioContract。",
+      "changes": [
+        "交付 QC 对新合同路径检查音轨可读性、时长、时间线和响度。"
+      ],
+      "fixes": [
+        "修复新音频合同已生成但交付质检仍可能走旧宽松入口的问题。"
+      ],
+      "verification": [
+        "DeliveryQcServiceTest 覆盖显式合同门禁和旧重载兼容。"
+      ],
+      "compatibility": "不改变历史测试夹具的旧兼容入口，新成片使用更严格的实测门禁。",
+      "evidence": [
+        "commit dddfb25",
+        "backend/src/main/java/com/douyin/mixcut/service/DeliveryQcService.java",
+        "backend/src/test/java/com/douyin/mixcut/service/DeliveryQcServiceTest.java"
+      ]
+    },
+    {
+      "id": "release-2-2-132",
+      "version": "2.2.132",
+      "releasedAt": "2026-08-24",
+      "kind": "历史开发阶段",
+      "title": "实测音频合同与响度质检",
+      "summary": "新增基于 FFprobe 和音频质量分析的 AudioContract，统一描述编码、采样率、声道、时长、响度和静音比例。",
+      "changes": [
+        "渲染与交付质检可使用实际测量的 AudioContract 执行稳定错误码门禁。"
+      ],
+      "fixes": [
+        "修复仅依赖声明时长、无法识别无音轨、不可解码、过静音或时间线无效音频的问题。"
+      ],
+      "verification": [
+        "AudioContractTest 与 DeliveryQcServiceTest 覆盖字段映射、错误码和低响度检查。"
+      ],
+      "compatibility": "旧兼容质检入口保留；新渲染链才强制完整实测合同。",
+      "evidence": [
+        "commit 961d714",
+        "backend/src/main/java/com/douyin/mixcut/dto/AudioContract.java",
+        "backend/src/test/java/com/douyin/mixcut/dto/AudioContractTest.java"
+      ]
+    },
+    {
+      "id": "release-2-2-131",
+      "version": "2.2.131",
+      "releasedAt": "2026-08-24",
+      "kind": "历史开发阶段",
+      "title": "多段口播覆盖修复",
+      "summary": "保留多段口播计划的总覆盖时长，避免只按单段或素材数量判断音频覆盖。",
+      "changes": [
+        "渲染计划使用多段口播声明的累计覆盖时长参与音频预检和交付判断。"
+      ],
+      "fixes": [
+        "修复多段口播覆盖不足或时长计算偏小导致合法计划被错误拒绝、或覆盖事实未被准确记录的问题。"
+      ],
+      "verification": [
+        "RenderServiceTest 覆盖多段口播 coverage sum；未将未执行的真实 Provider 验收写成已完成。"
+      ],
+      "compatibility": "只影响多段口播计划的覆盖计算，不修改用户素材源文件。",
+      "evidence": [
+        "commit 821b66e",
+        "backend/src/main/java/com/douyin/mixcut/service/RenderService.java",
+        "backend/src/test/java/com/douyin/mixcut/service/RenderServiceTest.java"
+      ]
+    },
+    {
+      "id": "release-2-2-130",
+      "version": "2.2.130",
+      "releasedAt": "2026-08-24",
+      "kind": "历史开发阶段",
+      "title": "媒体任务恢复代际与重试围栏",
+      "summary": "为恢复 worker 增加 generation fencing，并收紧重试次数和状态迁移。",
+      "changes": [
+        "恢复任务按代际领取执行权，重试只允许合法失败终态且达到上限后关闭入口。"
+      ],
+      "fixes": [
+        "修复旧恢复 worker 晚到更新覆盖新代际、重复恢复和 retryCount 达上限仍可重试的问题。"
+      ],
+      "verification": [
+        "TaskQueryServiceTest 和 MediaToolsService 相关回归覆盖代际与重试上限。"
+      ],
+      "compatibility": "任务状态字段向后兼容；不会自动重试未知付费提交。",
+      "evidence": [
+        "commit 4bdd060",
+        "backend/src/main/java/com/douyin/mixcut/service/MediaToolsService.java",
+        "backend/src/test/java/com/douyin/mixcut/service/TaskQueryServiceTest.java"
+      ]
+    },
+    {
+      "id": "release-2-2-129",
+      "version": "2.2.129",
+      "releasedAt": "2026-08-24",
+      "kind": "历史开发阶段",
+      "title": "媒体任务生命周期诊断与恢复",
+      "summary": "统一媒体工具任务的阶段、错误码、心跳、超时、过期和恢复状态。",
+      "changes": [
+        "MediaTask、统一任务 DTO、数据库迁移和 MediaTools 页面增加 phase、errorCode、recoveryState、retryCount 等诊断字段。"
+      ],
+      "fixes": [
+        "修复失败任务缺少可追踪原因、旧安装缺诊断列以及过期任务无法受控恢复的问题。"
+      ],
+      "verification": [
+        "MediaToolsServiceTest、TaskQueryServiceTest 和前端构建覆盖状态映射与恢复入口。"
+      ],
+      "compatibility": "旧安装通过幂等补列兼容；不连接或修改 acceptance 之外的测试数据库。",
+      "evidence": [
+        "commit 7bbd9e4",
+        "backend/src/main/java/com/douyin/mixcut/service/MediaToolsService.java",
+        "frontend/src/views/MediaTools.vue"
+      ]
+    },
+    {
+      "id": "release-2-2-128",
+      "version": "2.2.128",
+      "releasedAt": "2026-08-24",
+      "kind": "历史开发阶段",
+      "title": "取消代际清理闭环",
+      "summary": "补齐恢复任务切换代际后的进程上下文和输出清理边界。",
+      "changes": [
+        "恢复和重派 worker 时保留代际所有权，只有当前 worker 可清理自己的 future、context 和输出。"
+      ],
+      "fixes": [
+        "修复取消与恢复交错时旧 worker 清理新任务资源、最终 move 前取消泄漏输出的问题。"
+      ],
+      "verification": [
+        "ProcessRegistryTest 与 JobServiceReliabilityTest 增加代际清理回归用例。"
+      ],
+      "compatibility": "不改变任务输入、素材文件或已有输出记录，只加固并发清理语义。",
+      "evidence": [
+        "commit 8619868",
+        "backend/src/main/java/com/douyin/mixcut/service/JobService.java",
+        "backend/src/test/java/com/douyin/mixcut/external/ProcessRegistryTest.java"
+      ]
+    },
+    {
+      "id": "release-2-2-127",
+      "version": "2.2.127",
+      "releasedAt": "2026-08-24",
+      "kind": "历史开发阶段",
+      "title": "渲染取消上下文与输出隔离",
+      "summary": "为渲染 worker 分配独立取消上下文，并按任务代际登记和清理受控输出。",
+      "changes": [
+        "CancellationContext、ProcessRegistry 与 FFmpeg 执行链按任务绑定，最终输出、缩略图和质检候选纳入受控登记。"
+      ],
+      "fixes": [
+        "修复旧 worker 复用新任务上下文、取消后残留输出或误清理其他任务文件的问题。"
+      ],
+      "verification": [
+        "ProcessRegistryTest、JobServiceReliabilityTest 和 RenderServiceTest 覆盖上下文隔离、取消和输出清理。"
+      ],
+      "compatibility": "仅清理应用管理根目录内登记的任务输出，不删除素材源文件。",
+      "evidence": [
+        "commit ec7eb29",
+        "backend/src/main/java/com/douyin/mixcut/external/ProcessRegistry.java",
+        "backend/src/test/java/com/douyin/mixcut/service/JobServiceReliabilityTest.java"
+      ]
+    },
+    {
+      "id": "release-2-2-126",
+      "version": "2.2.126",
+      "releasedAt": "2026-08-23",
+      "kind": "历史开发阶段",
+      "title": "全新安装目录启动门控",
+      "summary": "新增 Setup EXE、独立端口、独立 APP_DATA_DIR、健康检查和进程清理门控。",
+      "changes": [
+        "缺少完整 Setup EXE/release manifest 时明确 skipped，不伪造安装验收通过。"
+      ],
+      "fixes": [
+        "完成提交 test(acceptance): gate fresh install and restart recovery 对应的功能或验收闭环；未记录额外回归修复。"
+      ],
+      "verification": [
+        "FreshInstallContractTest、verify_windows_install.ps1 通过；当前发行包缺 Setup EXE，真实安装未执行"
+      ],
+      "compatibility": "仅增加可复核的应用功能、验收基座或任务可靠性，不修改用户素材源文件，不读取或提交凭据。",
+      "evidence": [
+        "verify_fresh_install.ps1",
+        "backend/src/test/java/com/douyin/mixcut/acceptance/FreshInstallContractTest.java"
+      ],
+      "source": "backend/src/main/resources/release-notes.json"
+    },
+    {
+      "id": "release-2-2-125",
+      "version": "2.2.125",
+      "releasedAt": "2026-08-23",
+      "kind": "历史开发阶段",
+      "title": "隔离 MySQL JobService 恢复契约",
+      "summary": "补齐 job_output、output_version、output_repair 和 stale checkpoint 验收。",
+      "changes": [
+        "QC fail/空路径不计成功检查点，重复 checkpoint 受唯一索引保护；无显式 acceptance 环境时安全跳过。"
+      ],
+      "fixes": [
+        "完成提交 test(acceptance): verify job recovery on isolated mysql 对应的功能或验收闭环；未记录额外回归修复。"
+      ],
+      "verification": [
+        "P3-4 门控测试通过；未连接业务库"
+      ],
+      "compatibility": "仅增加可复核的应用功能、验收基座或任务可靠性，不修改用户素材源文件，不读取或提交凭据。",
+      "evidence": [
+        "backend/src/test/java/com/douyin/mixcut/acceptance/JobServiceRecoveryDatabaseAcceptanceTest.java",
+        "backend/tools/initialize_acceptance_database.ps1"
+      ]
+    },
+    {
+      "id": "release-2-2-124",
+      "version": "2.2.124",
+      "releasedAt": "2026-08-23",
+      "kind": "历史开发阶段",
+      "title": "离线导入到 QC 全链路验收",
+      "summary": "真实执行素材登记、质量准入、结构化分析、FFmpeg 渲染、Delivery QC 和候选隔离。",
+      "changes": [
+        "黑场/纯色被拒绝，失败候选不产生 public URL，所有写入限定 TEMP。"
+      ],
+      "fixes": [
+        "完成提交 test(acceptance): cover offline media pipeline through qc 对应的功能或验收闭环；未记录额外回归修复。"
+      ],
+      "verification": [
+        "P3-3 acceptance 测试、fixture 校验、后端回归通过"
+      ],
+      "compatibility": "仅增加可复核的应用功能、验收基座或任务可靠性，不修改用户素材源文件，不读取或提交凭据。",
+      "evidence": [
+        "backend/src/test/java/com/douyin/mixcut/acceptance/OfflineRenderQcAcceptanceTest.java"
+      ]
+    },
+    {
+      "id": "release-2-2-123",
+      "version": "2.2.123",
+      "releasedAt": "2026-08-23",
+      "kind": "历史开发阶段",
+      "title": "隔离数据库与本地联网 Mock",
+      "summary": "新增 ai_mix_video_acceptance schema、数据库门控和本地 HTTP mock，覆盖 429/5xx/超时/重试/幂等。",
+      "changes": [
+        "默认测试不连接数据库，生产 UrlGuard 继续拒绝回环公网请求。"
+      ],
+      "fixes": [
+        "完成提交 test(acceptance): add isolated database and local http mock 对应的功能或验收闭环；未记录额外回归修复。"
+      ],
+      "verification": [
+        "P3-2 acceptance 测试和后端回归通过"
+      ],
+      "compatibility": "仅增加可复核的应用功能、验收基座或任务可靠性，不修改用户素材源文件，不读取或提交凭据。",
+      "evidence": [
+        "backend/src/test/java/com/douyin/mixcut/acceptance/LocalMockHttpServer.java",
+        "backend/tools/verify_acceptance_database.ps1"
+      ]
+    },
+    {
+      "id": "release-2-2-122",
+      "version": "2.2.122",
+      "releasedAt": "2026-08-22",
+      "kind": "历史开发阶段",
+      "title": "固定媒体 Fixture 清单",
+      "summary": "生成运动视频、音视频、黑场、纯色、音频和图片 fixture，并记录 SHA256/FFprobe 元数据。",
+      "changes": [
+        "验收输入固定、路径不越界、文件不被替换。"
+      ],
+      "fixes": [
+        "完成提交 test(acceptance): add deterministic media fixture manifest 对应的功能或验收闭环；未记录额外回归修复。"
+      ],
+      "verification": [
+        "fixture-verify 和 FixtureManifestTest 通过"
+      ],
+      "compatibility": "仅增加可复核的应用功能、验收基座或任务可靠性，不修改用户素材源文件，不读取或提交凭据。",
+      "evidence": [
+        "backend/src/test/resources/acceptance/fixture-manifest.json",
+        "backend/tools/verify_acceptance_fixtures.ps1"
+      ]
+    },
+    {
+      "id": "release-2-2-121",
+      "version": "2.2.121",
+      "releasedAt": "2026-08-22",
+      "kind": "历史开发阶段",
+      "title": "媒体进程按任务终止",
+      "summary": "新增 TaskAwareProcRunner，将 task context 接入生产媒体进程执行层。",
+      "changes": [
+        "取消任务可终止对应进程树，保留旧 ProcRunner API 兼容。"
+      ],
+      "fixes": [
+        "完成提交 fix(tasks): terminate media processes by task context 对应的功能或验收闭环；未记录额外回归修复。"
+      ],
+      "verification": [
+        "进程级取消测试、后端全量回归和前端构建通过"
+      ],
+      "compatibility": "仅增加可复核的应用功能、验收基座或任务可靠性，不修改用户素材源文件，不读取或提交凭据。",
+      "evidence": [
+        "backend/src/main/java/com/douyin/mixcut/external/TaskAwareProcRunner.java"
+      ]
+    },
+    {
+      "id": "release-2-2-120",
+      "version": "2.2.120",
+      "releasedAt": "2026-08-22",
+      "kind": "历史开发阶段",
+      "title": "媒体取消上下文传播",
+      "summary": "新增 ProcessRegistry、CancellationContext 和输出登记清理，贯穿 FFmpeg、Demucs、切片和后处理。",
+      "changes": [
+        "取消后不登记素材、不删除源文件，临时输出限制在应用管理根目录。"
+      ],
+      "fixes": [
+        "完成提交 fix(tasks): propagate media cancellation context 对应的功能或验收闭环；未记录额外回归修复。"
+      ],
+      "verification": [
+        "ProcessRegistry、媒体专项和后端全量测试通过"
+      ],
+      "compatibility": "仅增加可复核的应用功能、验收基座或任务可靠性，不修改用户素材源文件，不读取或提交凭据。",
+      "evidence": [
+        "backend/src/main/java/com/douyin/mixcut/external/ProcessRegistry.java",
+        "backend/src/main/java/com/douyin/mixcut/service/MaterialService.java"
+      ]
+    },
+    {
+      "id": "release-2-2-119",
+      "version": "2.2.119",
+      "releasedAt": "2026-08-22",
+      "kind": "历史开发阶段",
+      "title": "取消与恢复并发加固",
+      "summary": "加入取消状态重新读库、active polling 去重和旧实体实例保护。",
+      "changes": [
+        "修复准备任务旧实体覆盖 cancelled、AI polling worker 重复启动。"
+      ],
+      "fixes": [
+        "完成提交 fix(tasks): harden cancellation and recovery concurrency 对应的功能或验收闭环；未记录额外回归修复。"
+      ],
+      "verification": [
+        "P2-D 并发专项测试通过"
+      ],
+      "compatibility": "仅增加可复核的应用功能、验收基座或任务可靠性，不修改用户素材源文件，不读取或提交凭据。",
+      "evidence": [
+        "backend/src/main/java/com/douyin/mixcut/service/RenderPreparationService.java",
+        "backend/src/main/java/com/douyin/mixcut/service/MediaGenerationService.java"
+      ]
+    },
+    {
+      "id": "release-2-2-118",
+      "version": "2.2.118",
+      "releasedAt": "2026-08-22",
+      "kind": "历史开发阶段",
+      "title": "媒体任务取消入口",
+      "summary": "媒体工具 API、统一任务中心和 MediaTools 页面增加受控取消操作。",
+      "changes": [
+        "取消状态不会被晚到 worker 的 done/failed 更新覆盖。"
+      ],
+      "fixes": [
+        "完成提交 feat(media): add controlled task cancellation 对应的功能或验收闭环；未记录额外回归修复。"
+      ],
+      "verification": [
+        "媒体取消专项测试通过"
+      ],
+      "compatibility": "仅增加可复核的应用功能、验收基座或任务可靠性，不修改用户素材源文件，不读取或提交凭据。",
+      "evidence": [
+        "backend/src/main/java/com/douyin/mixcut/service/MediaToolsService.java"
+      ]
+    },
+    {
+      "id": "release-2-2-117",
+      "version": "2.2.117",
+      "releasedAt": "2026-08-22",
+      "kind": "历史开发阶段",
+      "title": "准备任务取消与视频恢复",
+      "summary": "准备任务支持取消，AI 视频恢复保持 remote_submitted 直到真实 polling worker 启动。",
+      "changes": [
+        "共享抓取任务不连带取消，远端任务不重复提交。"
+      ],
+      "fixes": [
+        "完成提交 fix(tasks): cancel preparation and recover remote video 对应的功能或验收闭环；未记录额外回归修复。"
+      ],
+      "verification": [
+        "任务取消与恢复测试通过"
+      ],
+      "compatibility": "仅增加可复核的应用功能、验收基座或任务可靠性，不修改用户素材源文件，不读取或提交凭据。",
+      "evidence": [
+        "backend/src/main/java/com/douyin/mixcut/service/RenderPreparationService.java"
+      ]
+    },
+    {
+      "id": "release-2-2-116",
+      "version": "2.2.116",
+      "releasedAt": "2026-08-22",
+      "kind": "历史开发阶段",
+      "title": "统一任务中心",
+      "summary": "聚合媒体、AI、抓取、准备和渲染任务，提供只读任务抽屉和刷新。",
+      "changes": [
+        "避免把聚合 ID 误发到具体来源接口，统一 canCancel 映射。"
+      ],
+      "fixes": [
+        "完成提交 feat(tasks): add unified task center 对应的功能或验收闭环；未记录额外回归修复。"
+      ],
+      "verification": [
+        "任务查询测试和前端构建通过"
+      ],
+      "compatibility": "仅增加可复核的应用功能、验收基座或任务可靠性，不修改用户素材源文件，不读取或提交凭据。",
+      "evidence": [
+        "backend/src/main/java/com/douyin/mixcut/service/TaskQueryService.java",
+        "frontend/src/App.vue"
+      ]
+    },
+    {
+      "id": "release-2-2-115",
+      "version": "2.2.115",
+      "releasedAt": "2026-08-22",
+      "kind": "历史开发阶段",
+      "title": "AI 远端视频恢复防重复计费",
+      "summary": "远端视频只在获得 remoteTaskId 后进入 remote_submitted/polling 恢复链。",
+      "changes": [
+        "恢复只 GET 轮询，不重复 POST；provider 缺失、快照损坏和远端失败进入终态。"
+      ],
+      "fixes": [
+        "完成提交 fix(ai): recover generation tasks without duplicate billing 对应的功能或验收闭环；未记录额外回归修复。"
+      ],
+      "verification": [
+        "AI 生成任务恢复测试通过"
+      ],
+      "compatibility": "仅增加可复核的应用功能、验收基座或任务可靠性，不修改用户素材源文件，不读取或提交凭据。",
+      "evidence": [
+        "backend/src/main/java/com/douyin/mixcut/service/MediaGenerationService.java"
+      ]
+    },
+    {
+      "id": "release-2-2-114",
+      "version": "2.2.114",
+      "releasedAt": "2026-08-22",
+      "kind": "历史开发阶段",
+      "title": "AI 媒体生成任务持久化",
+      "summary": "图片、视频和语音生成任务记录 providerId、inputSnapshot、远端任务 ID、阶段和重试状态。",
+      "changes": [
+        "不保存完整 provider 对象和 API Key，未知提交状态进入人工复核。"
+      ],
+      "fixes": [
+        "完成提交 feat(ai): persist media generation task state 对应的功能或验收闭环；未记录额外回归修复。"
+      ],
+      "verification": [
+        "MediaGenerationService 测试通过"
+      ],
+      "compatibility": "仅增加可复核的应用功能、验收基座或任务可靠性，不修改用户素材源文件，不读取或提交凭据。",
+      "evidence": [
+        "backend/src/main/java/com/douyin/mixcut/domain/MediaGenerationTask.java"
+      ]
+    },
+    {
+      "id": "release-2-2-113",
+      "version": "2.2.113",
+      "releasedAt": "2026-08-22",
+      "kind": "历史开发阶段",
+      "title": "媒体工具任务持久化",
+      "summary": "媒体任务新增 pending/running/done/failed 生命周期、参数快照、结果快照和 stale recovery。",
+      "changes": [
+        "避免 HTTP 线程执行长任务，修复重启后任务状态丢失。"
+      ],
+      "fixes": [
+        "完成提交 feat(media): persist media tool task lifecycle 对应的功能或验收闭环；未记录额外回归修复。"
+      ],
+      "verification": [
+        "MediaToolsService 定向测试和后端回归通过"
+      ],
+      "compatibility": "仅增加可复核的应用功能、验收基座或任务可靠性，不修改用户素材源文件，不读取或提交凭据。",
+      "evidence": [
+        "backend/src/main/java/com/douyin/mixcut/domain/MediaTask.java",
+        "backend/src/main/java/com/douyin/mixcut/service/MediaToolsService.java"
+      ]
+    },
+    {
+      "id": "release-2-2-112",
+      "version": "2.2.112",
+      "releasedAt": "2026-08-22",
+      "kind": "历史开发阶段",
+      "title": "Internet Archive 来源适配器",
+      "summary": "新增 Archive advancedsearch、metadata 和媒体映射适配。",
+      "changes": [
+        "补齐多 identifier metadata 请求和许可过滤边界。"
+      ],
+      "fixes": [
+        "完成提交 feat(crawl): add Internet Archive source adapter 对应的功能或验收闭环；未记录额外回归修复。"
+      ],
+      "verification": [
+        "Archive adapter 测试通过"
+      ],
+      "compatibility": "仅增加可复核的应用功能、验收基座或任务可靠性，不修改用户素材源文件，不读取或提交凭据。",
+      "evidence": [
+        "backend/src/main/java/com/douyin/mixcut/external/InternetArchiveSourceAdapter.java"
+      ]
+    },
+    {
+      "id": "release-2-2-111",
+      "version": "2.2.111",
+      "releasedAt": "2026-08-22",
+      "kind": "历史开发阶段",
+      "title": "Wikimedia 来源适配器",
+      "summary": "将 Wikimedia 搜索、许可过滤、映射和抓取结果隔离为来源适配器。",
+      "changes": [
+        "拒绝 NC/ND/SA 和占位素材，保留合规来源说明。"
+      ],
+      "fixes": [
+        "完成提交 feat(crawl): isolate Wikimedia source adapter 对应的功能或验收闭环；未记录额外回归修复。"
+      ],
+      "verification": [
+        "Wikimedia adapter 测试通过"
+      ],
+      "compatibility": "仅增加可复核的应用功能、验收基座或任务可靠性，不修改用户素材源文件，不读取或提交凭据。",
+      "evidence": [
+        "backend/src/main/java/com/douyin/mixcut/external/WikimediaSourceAdapter.java"
+      ]
+    },
+    {
+      "id": "release-2-2-110",
+      "version": "2.2.110",
+      "releasedAt": "2026-08-22",
+      "kind": "历史开发阶段",
+      "title": "联网能力显式检测",
+      "summary": "能力中心增加 Wikimedia、Archive、Pexels、Pixabay、Freesound、Edge-TTS 的按需联网检测。",
+      "changes": [
+        "未配置 Key 或未点击检测时不发公网请求，结果不泄露凭据。"
+      ],
+      "fixes": [
+        "完成提交 feat(network): show explicit connectivity status 对应的功能或验收闭环；未记录额外回归修复。"
+      ],
+      "verification": [
+        "ConnectivityService 测试通过"
+      ],
+      "compatibility": "仅增加可复核的应用功能、验收基座或任务可靠性，不修改用户素材源文件，不读取或提交凭据。",
+      "evidence": [
+        "backend/src/main/java/com/douyin/mixcut/service/ConnectivityService.java",
+        "frontend/src/views/Capabilities.vue"
+      ]
+    },
+    {
+      "id": "release-2-2-109",
+      "version": "2.2.109",
+      "releasedAt": "2026-08-22",
+      "kind": "历史开发阶段",
+      "title": "公共联网策略底座",
+      "summary": "新增受控 HTTP 超时、总时限、响应大小、重试和脱敏日志策略。",
+      "changes": [
+        "限制重定向和非幂等 POST 重放，统一 429/5xx 退避。"
+      ],
+      "fixes": [
+        "完成提交 feat(network): add bounded outbound HTTP policy 对应的功能或验收闭环；未记录额外回归修复。"
+      ],
+      "verification": [
+        "SafeHttpClient 定向测试通过"
+      ],
+      "compatibility": "仅增加可复核的应用功能、验收基座或任务可靠性，不修改用户素材源文件，不读取或提交凭据。",
+      "evidence": [
+        "backend/src/main/java/com/douyin/mixcut/external/SafeHttpClient.java",
+        "backend/src/main/java/com/douyin/mixcut/external/OutboundNetworkPolicy.java"
+      ]
+    },
+    {
+      "id": "release-2-2-108",
+      "version": "2.2.108",
+      "releasedAt": "2026-08-22",
+      "kind": "历史开发阶段",
+      "title": "Windows 安装兼容加固",
+      "summary": "统一 PORT/APP_PORT、MySQL ping、旧路径回退、中文路径和不同盘符适配。",
+      "changes": [
+        "避免安装器并发启动 setup/start，修复端口与 DB_URL 不一致误启动。"
+      ],
+      "fixes": [
+        "完成提交 fix(windows): harden portable install compatibility 对应的功能或验收闭环；未记录额外回归修复。"
+      ],
+      "verification": [
+        "Windows 静态兼容检查通过"
+      ],
+      "compatibility": "仅增加可复核的应用功能、验收基座或任务可靠性，不修改用户素材源文件，不读取或提交凭据。",
+      "evidence": [
+        "start.bat",
+        "start_mysql.bat",
+        "verify_windows_install.ps1"
+      ]
+    },
+    {
+      "id": "release-2-2-107",
+      "version": "2.2.107",
+      "releasedAt": "2026-08-22",
+      "kind": "历史开发阶段",
+      "title": "真实离线媒体 Smoke",
+      "summary": "使用随包 FFmpeg、FFprobe、venv Python 和 OpenCV 诊断执行隔离媒体链路。",
+      "changes": [
+        "补齐生成 testsrc、探测、诊断和临时目录清理验收。"
+      ],
+      "fixes": [
+        "完成提交 test(packaging): add isolated offline media smoke 对应的功能或验收闭环；未记录额外回归修复。"
+      ],
+      "verification": [
+        "offline-smoke 通过"
+      ],
+      "compatibility": "仅增加可复核的应用功能、验收基座或任务可靠性，不修改用户素材源文件，不读取或提交凭据。",
+      "evidence": [
+        "verify_offline_bundle.ps1"
+      ]
+    },
+    {
+      "id": "release-2-2-106",
+      "version": "2.2.106",
+      "releasedAt": "2026-08-22",
+      "kind": "历史开发阶段",
+      "title": "发行包离线校验门禁",
+      "summary": "启动与构建流程增加便携工具、版本、manifest 和 SHA256 校验。",
+      "changes": [
+        "默认 verify 不联网、不静默 pip 安装，只有显式 repair 才允许修复依赖。"
+      ],
+      "fixes": [
+        "完成提交 feat(packaging): enforce offline runtime verification 对应的功能或验收闭环；未记录额外回归修复。"
+      ],
+      "verification": [
+        "发行脚本静态校验通过"
+      ],
+      "compatibility": "仅增加可复核的应用功能、验收基座或任务可靠性，不修改用户素材源文件，不读取或提交凭据。",
+      "evidence": [
+        "build_installer.bat",
+        "prepare_portable.ps1",
+        "verify_offline_bundle.ps1"
+      ]
+    },
+    {
+      "id": "release-2-2-105",
+      "version": "2.2.105",
+      "releasedAt": "2026-08-22",
+      "kind": "历史开发阶段",
+      "title": "能力中心结构化配置指导",
+      "summary": "能力中心展示工具状态、安装方式、配置变量、验证步骤、离线边界和官方入口。",
+      "changes": [
+        "补齐未就绪、需要网络、可回退和需要重启等状态说明。"
+      ],
+      "fixes": [
+        "完成提交 feat(capabilities): explain media runtime configuration 对应的功能或验收闭环；未记录额外回归修复。"
+      ],
+      "verification": [
+        "后端能力测试通过",
+        "前端构建通过"
+      ],
+      "compatibility": "仅增加可复核的应用功能、验收基座或任务可靠性，不修改用户素材源文件，不读取或提交凭据。",
+      "evidence": [
+        "frontend/src/views/Capabilities.vue",
+        "backend/src/main/resources/capabilities.json"
+      ]
+    },
+    {
+      "id": "release-2-2-104",
+      "version": "2.2.104",
+      "releasedAt": "2026-08-22",
+      "kind": "历史开发阶段",
+      "title": "受控媒体诊断路由",
+      "summary": "将 FFmpeg、Python、ASR、OCR、OpenCV 诊断调用收敛到固定能力路由。",
+      "changes": [
+        "拒绝目录、符号链接和越权素材路径，禁止浏览器提交任意命令。"
+      ],
+      "fixes": [
+        "完成提交 feat(media): route diagnostics through controlled capabilities 对应的功能或验收闭环；未记录额外回归修复。"
+      ],
+      "verification": [
+        "媒体路由、素材诊断和质量闸门测试通过"
+      ],
+      "compatibility": "仅增加可复核的应用功能、验收基座或任务可靠性，不修改用户素材源文件，不读取或提交凭据。",
+      "evidence": [
+        "backend/src/main/java/com/douyin/mixcut/external/MediaCapabilityRouter.java",
+        "backend/src/main/java/com/douyin/mixcut/service/MaterialDiagnosisService.java"
+      ]
+    },
+    {
+      "id": "release-2-2-103",
+      "version": "2.2.103",
+      "releasedAt": "2026-08-22",
+      "kind": "历史开发阶段",
+      "title": "媒体运行时能力契约",
+      "summary": "定义离线能力、联网要求、状态、回退、配置变量和验证步骤的统一契约。",
+      "changes": [
+        "修复能力状态把外部依赖误报为离线可用的问题。"
+      ],
+      "fixes": [
+        "完成提交 feat(capabilities): define media runtime contract 对应的功能或验收闭环；未记录额外回归修复。"
+      ],
+      "verification": [
+        "后端能力清单测试通过"
+      ],
+      "compatibility": "仅增加可复核的应用功能、验收基座或任务可靠性，不修改用户素材源文件，不读取或提交凭据。",
+      "evidence": [
+        "backend/src/main/resources/capabilities.json",
+        "backend/src/main/java/com/douyin/mixcut/service/BootstrapService.java"
+      ]
+    },
+    {
+      "id": "release-2-2-102",
+      "version": "2.2.102",
+      "releasedAt": "2026-08-22",
+      "kind": "历史开发阶段",
+      "title": "Studio 预设与出片草稿体验收口",
+      "summary": "优化固定顺序预设展示、新建草稿和步骤复制，保持独立 FixedOrderPresets 模块边界。",
+      "changes": [
+        "预设信息更清晰；新增草稿操作更快；复制步骤会清空文件夹绑定避免冲突。"
+      ],
+      "fixes": [
+        "完成提交 feat(studio): clarify fixed-order presets and speed up draft creation 对应的功能或验收闭环；未记录额外回归修复。"
+      ],
+      "verification": [
+        "npm run build 通过",
+        "浏览器验证 Studio 新建草稿与复制步骤",
+        "独立固定顺序页面未修改"
+      ],
+      "compatibility": "仅增加可复核的应用功能、验收基座或任务可靠性，不修改用户素材源文件，不读取或提交凭据。",
+      "evidence": [
+        "frontend/src/views/Studio.vue"
+      ]
+    },
+    {
+      "id": "release-2-2-101",
+      "version": "2.2.101",
+      "releasedAt": "2026-08-20",
+      "kind": "历史开发阶段",
+      "title": "移除无限画布入口并保留 AI 媒体创作",
+      "summary": "移除不再提供的无限画布页面、导航和 Studio 入口，将旧路由兼容重定向到 AI 创作，不影响共享的图片、视频、配音、素材库、编辑器和任务能力。",
+      "changes": [
+        "删除 InfiniteCanvas 视图、侧边栏导航、Studio 快捷入口及双模式弹窗分支；Studio 保留直达 AI 创作的入口。",
+        "`#/infinite-canvas` 重定向 `#/ai-create`，不再加载已删除的异步组件或旧画布草稿。",
+        "AI 创作移除旧画布草稿导入逻辑，保留 Provider、图片/视频/配音任务和素材入库链路。"
+      ],
+      "fixes": [
+        "消除导航、教程、AI 接入和 Studio 中对已移除产品的不可达 UI 描述。",
+        "消除已删除画布对 AI 创作的 localStorage 依赖，避免读取无主页面的草稿。"
+      ],
+      "verification": [
+        "frontend: npm run build 通过，静态资源校验通过。",
+        "backend: mvn -q test 通过。",
+        "源码扫描确认前端仅保留 `/infinite-canvas` 兼容重定向，无 InfiniteCanvas 组件、旧草稿 key 或 Studio 入口。",
+        "重新生成的 static 产物不包含 InfiniteCanvas 资源。"
+      ],
+      "compatibility": "不改变素材、AI 媒体任务、成片、播放/下载/质检/编辑/删除或 Studio 任务接口；旧画布链接会转入 AI 创作，原有媒体和任务记录不删除。",
+      "evidence": [
+        "frontend/src/router.js",
+        "frontend/src/App.vue",
+        "frontend/src/views/Studio.vue",
+        "frontend/src/views/AiCreate.vue",
+        "frontend/src/views/AiSettings.vue",
+        "frontend/src/views/Tutorial.vue",
+        "Mework_PROJECT_HANDOFF.md"
+      ]
+    },
+    {
+      "id": "release-2-2-100",
+      "version": "2.2.100",
+      "releasedAt": "2026-08-20",
+      "kind": "历史开发阶段",
+      "title": "Studio 与成片库布局稳定性修复",
+      "summary": "修复 Studio 下拉弹层和表单文字挤压，并限制成片库卡片宽度，避免宽屏视频无限放大与工具栏裁切。",
+      "changes": [
+        "Studio 表单内容区增加可收缩约束，音频/模型下拉显式传送到页面顶层并使用省略显示；AI 创作 Provider 选择改为 Element Plus 顶层选择器。",
+        "成片库网格改为有上限的固定列宽，竖屏媒体增加合理高度上限，视频元数据未加载时使用中性预览比例。",
+        "成片库工具栏在中等窗口提前换行，保留播放、质检、下载、编辑和删除操作。"
+      ],
+      "fixes": [
+        "修复 Studio 左栏滚动容器内下拉列表被裁切、模型和音频文字挤在一起的问题。",
+        "修复 Outputs 使用 auto-fit/1fr 导致卡片随窗口无限拉伸、竖屏视频显示过大的问题。",
+        "修复中等窗口成片库右侧工具按钮被主容器裁切的问题。"
+      ],
+      "verification": [
+        "frontend: npm run build 通过，静态资源校验通过。",
+        "backend: mvn -q -DskipTests compile 通过。",
+        "8788 浏览器验收 Outputs 视觉卡片尺寸和 Studio 页面；1280 窄屏 Studio/Outputs DOM 验收通过。",
+        "截图验收确认成片卡片保持小尺寸、工具栏不横向溢出。"
+      ],
+      "compatibility": "不改变成片数据、播放/下载/质栌/编辑/删除接口，不改变 Studio 参数和任务接口；仅调整前端布局、弹层承载和媒体容器尺寸。",
+      "evidence": [
+        "frontend/src/views/Outputs.vue",
+        "frontend/src/views/Studio.vue",
+        "frontend/src/views/AiCreate.vue",
+        "frontend/src/views/AiSettings.vue",
+        "frontend/src/styles.css"
+      ]
+    },
+    {
+      "id": "release-2-2-99",
+      "version": "2.2.99",
+      "releasedAt": "2026-08-20",
+      "kind": "历史开发阶段",
+      "title": "批量复用上限与 Studio 简易模式",
+      "summary": "为批量出片增加同批音频和开头画面复用上限，并将 Studio 主流程进一步收敛为普通员工可直接操作的简易工作台。",
+      "changes": [
+        "同一批出片中同一 BGM、口播或钩子音频默认最多使用 2 次，同一开头画面最多使用 2 次；素材不足时换变体，仍不足则明确要求补素材。",
+        "Studio 生产策略、批量高级选项、任务历史和固定顺序详细编辑默认收起，声音字幕区保留四种唯一音频模式。",
+        "抓取准入状态、自动补齐文件夹归属、字幕可视拖框和质量诊断入口继续保持真实可恢复链路。"
+      ],
+      "fixes": [
+        "修复批量生成只做尽量轮换、素材不足时可能重复使用同一音频或开头画面的问题。",
+        "修复 Studio 普通员工首屏显示过多技术参数、任务历史和固定顺序细节的问题。"
+      ],
+      "verification": [
+        "frontend: npm run build 通过，静态资源校验通过。",
+        "backend: mvn -q test 完整测试通过。",
+        "MaterialGapServiceTest、RenderPreparationServiceTest、MixPlannerOrderedFoldersTest、DeliveryQcServiceTest、FfmpegToolCaptionsTest 定向测试通过。",
+        "8787 浏览器验收确认 Studio 简易策略摘要、四态声音、批量高级选项和任务记录折叠可见。"
+      ],
+      "compatibility": "保留现有任务、持续出片、音频字幕、固定顺序和历史版本接口；同批复用上限只作用于后续批量任务，不修改已完成成片；原素材不覆盖。",
+      "evidence": [
+        "frontend/src/views/Studio.vue",
+        "backend/src/main/java/com/douyin/mixcut/service/JobService.java",
+        "backend/src/main/java/com/douyin/mixcut/service/MixPlanner.java",
+        "backend/src/main/java/com/douyin/mixcut/service/MaterialGapService.java"
+      ]
+    },
+    {
+      "id": "release-2-2-98",
+      "version": "2.2.98",
+      "releasedAt": "2026-08-20",
+      "kind": "历史开发阶段",
+      "title": "抓取准入与 Studio 普通用户流程优化",
+      "summary": "补齐抓取素材准入诊断、目标文件夹归属和可恢复操作，并进一步收敛 Studio 的生产策略、任务和字幕处理界面。",
+      "changes": [
+        "抓取任务详情显示下载与准入双状态、准入统计、失败原因、文件存在状态和重新检测按钮。",
+        "自动补齐按当前授权文件夹或固定顺序目标文件夹写入，固定顺序 fallback 按可读画面判断。",
+        "Studio 生产策略、固定顺序详情、批量高级选项和任务记录默认收起；声音字幕区成为四种音频模式唯一入口。",
+        "字幕遮挡支持在实际预览上拖框，按原始媒体尺寸换算，并把新结果继承到当前出片素材范围。"
+      ],
+      "fixes": [
+        "修复下载成功但质量准入失败仍显示为单一完成状态的问题。",
+        "修复自动补齐素材进入严格范围外导致 Studio 再次找不到的问题。",
+        "修复字幕遮挡盲填像素区域和结果无法回到当前指定素材的问题。",
+        "修复 Studio 任务高级字段和重复音频模式导致普通用户难以操作的问题。"
+      ],
+      "verification": [
+        "frontend: npm run build 通过，静态资源校验通过。",
+        "backend: mvn -q test 完整测试通过。",
+        "MaterialGapServiceTest、MaterialGapControllerTest、RenderPreparationServiceTest、FfmpegToolCaptionsTest、MixPlannerOrderedFoldersTest、MaterialDeleteServiceTest 定向测试通过。",
+        "8787 浏览器验收 Studio 策略摘要、四种声音模式、批量/任务折叠和抓取准入摘要。"
+      ],
+      "compatibility": "保留既有 Studio、Crawl、Prepare、Job、MediaTools、固定顺序和音频字幕接口；原素材不覆盖，字幕遮挡仍明确为有损处理；所有服务器 URL 继续执行 http/https 与 host/私网/保留地址校验。",
+      "evidence": [
+        "frontend/src/views/Studio.vue",
+        "frontend/src/views/Crawl.vue",
+        "backend/src/main/java/com/douyin/mixcut/service/CrawlJobService.java",
+        "backend/src/main/java/com/douyin/mixcut/web/CrawlController.java",
+        "backend/src/main/java/com/douyin/mixcut/service/MaterialGapService.java",
+        "backend/src/main/java/com/douyin/mixcut/service/RenderPreparationService.java",
+        "backend/src/main/java/com/douyin/mixcut/service/SkillEngine.java"
+      ]
+    },
+    {
+      "id": "release-2-2-97",
+      "version": "2.2.97",
+      "releasedAt": "2026-08-20",
+      "kind": "历史开发阶段",
+      "title": "Studio 可恢复预检与字幕拖框收口",
+      "summary": "修复抓取完成后素材准入状态不可见、自动补齐范围丢失和字幕遮挡盲填无效问题，进一步收敛普通用户出片控制台。",
+      "changes": [
+        "抓取任务详情新增下载/准入双状态、已下载/准入可用/未通过准入统计、文件存在和重新检测动作。",
+        "自动补齐按当前授权文件夹或固定顺序目标文件夹归属入库，并修复主文件夹只有音频时 fallback 不触发的问题。",
+        "Studio 生产策略、批量高级选项和历史任务默认收起；声音与字幕基础区提供四种唯一音频模式。",
+        "字幕遮挡改为图片/视频预览拖框，按原始媒体分辨率换算坐标，结果继承原文件夹并替换当前指定素材引用。"
+      ],
+      "fixes": [
+        "修复下载任务显示完成但素材实际未通过质量准入、用户无法判断为何出片找不到的问题。",
+        "修复严格文件夹范围下自动补齐素材没有 folderId、下载成功后仍被过滤的问题。",
+        "修复字幕遮挡默认像素区域与实际字幕位置无关、生成结果无法回到当前出片素材的问题。",
+        "修复 Studio 基础区和高级区重复显示声音模式、任务参数横向挤压和历史任务占满首屏的问题。"
+      ],
+      "verification": [
+        "frontend: npm run build 通过，静态资源校验通过。",
+        "backend: mvn -q -DskipTests compile 通过。",
+        "MaterialGapServiceTest、MaterialGapControllerTest、RenderPreparationServiceTest、FfmpegToolCaptionsTest、MixPlannerOrderedFoldersTest、MaterialDeleteServiceTest 定向测试通过。",
+        "8787 浏览器验收：生产策略摘要、四态声音模式、高级任务选项、任务记录折叠和 Studio 主流程可见；抓取页面显示下载/准入统计。"
+      ],
+      "compatibility": "保留现有 Studio/Crawl/Prepare/Job/MediaTools、音频字幕和固定顺序接口；字幕遮挡仍是有损处理且不覆盖原素材；服务端 URL 继续只允许 http/https 并拒绝 localhost、环回、私有和保留地址。",
+      "evidence": [
+        "frontend/src/views/Studio.vue",
+        "frontend/src/views/Crawl.vue",
+        "backend/src/main/java/com/douyin/mixcut/service/CrawlJobService.java",
+        "backend/src/main/java/com/douyin/mixcut/web/CrawlController.java",
+        "backend/src/main/java/com/douyin/mixcut/service/MaterialGapService.java",
+        "backend/src/main/java/com/douyin/mixcut/service/RenderPreparationService.java",
+        "backend/src/main/java/com/douyin/mixcut/service/SkillEngine.java"
+      ]
+    },
+    {
+      "id": "release-2-2-96",
+      "version": "2.2.96",
+      "releasedAt": "2026-08-20",
+      "kind": "历史开发阶段",
+      "title": "Studio 六步流程与字幕可视遮挡修复",
+      "summary": "优化普通用户出片路径，修复抓取素材准入与文件夹范围问题，并把字幕遮挡改为可视拖框和结果替换闭环。",
+      "changes": [
+        "生产策略、固定顺序编辑、批量高级选项和任务记录默认收起；声音与字幕基础区成为唯一音频模式入口。",
+        "抓取任务区分下载完成和素材准入可用状态，显示失败原因、文件存在状态和重新检测按钮。",
+        "字幕遮挡支持真实图片/视频预览拖框，按原始分辨率换算坐标，生成结果继承文件夹并替换当前指定素材引用。"
+      ],
+      "fixes": [
+        "修复自动补齐素材未写入目标文件夹、严格范围下抓取成功却找不到的问题。",
+        "修复严格顺序主文件夹只有音频时不触发备用视觉文件夹的问题。",
+        "修复基础区和高级区重复显示声音模式的问题。",
+        "修复字幕遮挡只能盲填像素、生成后用户无法确认是否作用于当前出片的问题。"
+      ],
+      "verification": [
+        "frontend: npm run build 通过，静态资源校验通过。",
+        "backend: mvn -q -DskipTests compile 通过。",
+        "MaterialGapServiceTest、MaterialGapControllerTest、RenderPreparationServiceTest、FfmpegToolCaptionsTest、MixPlannerOrderedFoldersTest、MaterialDeleteServiceTest 定向测试通过。",
+        "8787 浏览器验收：生产策略摘要、四态声音模式、字幕区、批量高级选项和任务记录折叠均可见；8786 API 版本验证为 2.2.95。"
+      ],
+      "compatibility": "保留既有 Studio、Crawl、Prepare、Job、MediaTools、音频字幕和固定顺序接口；字幕遮挡仍是有损处理，原素材不覆盖；所有服务器 URL 请求继续执行 http/https 和 host/私网/保留地址校验。",
+      "evidence": [
+        "frontend/src/views/Studio.vue",
+        "frontend/src/views/Crawl.vue",
+        "backend/src/main/java/com/douyin/mixcut/service/CrawlJobService.java",
+        "backend/src/main/java/com/douyin/mixcut/web/CrawlController.java",
+        "backend/src/main/java/com/douyin/mixcut/service/MaterialGapService.java",
+        "backend/src/main/java/com/douyin/mixcut/service/RenderPreparationService.java",
+        "backend/src/main/java/com/douyin/mixcut/service/SkillEngine.java"
+      ]
+    },
+    {
+      "id": "release-2-2-95",
+      "version": "2.2.95",
+      "releasedAt": "2026-08-20",
+      "kind": "历史开发阶段",
+      "title": "Studio 六步工作流与素材准入诊断",
+      "summary": "收敛出片控制台首屏操作，修复抓取完成后素材再次失效的诊断链，并把字幕遮盖改为可视预览拖框。",
+      "changes": [
+        "Studio 生产策略、固定顺序、批量任务记录和高级任务参数默认收起，基础流程只保留项目、时长、素材、声音字幕、预检和出片。",
+        "抓取任务详情区分下载状态与素材准入状态，显示下载数量、可用于出片数量、质量准入失败数量和重新检测动作。",
+        "Studio 字幕遮盖支持在实际图片/视频预览上拖出区域，按原始媒体尺寸换算坐标，生成新素材后继承原文件夹并替换当前指定素材引用。"
+      ],
+      "fixes": [
+        "修复自动补齐没有目标文件夹导致素材进入严格范围外、随后被 Studio 预检过滤的问题。",
+        "修复固定顺序主文件夹只有音频而无可读画面时不触发备用文件夹的问题。",
+        "修复抓取任务只显示 done、却没有说明素材未通过质量准入的问题。",
+        "修复 Studio 声音模式在基础区和高级区重复展示、用户无法判断最终生效设置的问题。"
+      ],
+      "verification": [
+        "frontend: npm run build 通过，静态资源校验通过。",
+        "backend: mvn -q -DskipTests compile 通过。",
+        "MaterialGapServiceTest、MaterialGapControllerTest、RenderPreparationServiceTest、FfmpegToolCaptionsTest、MixPlannerOrderedFoldersTest、MaterialDeleteServiceTest 定向测试通过。",
+        "抓取准入字段、目标文件夹归属和字幕可视选区均已通过编译与链路测试。"
+      ],
+      "compatibility": "保留既有抓取、准备、Studio、MediaTools、音频字幕、固定顺序、任务和版本接口；字幕遮盖仍是有损处理，原素材不覆盖；服务端 URL 继续只允许 http/https 并拒绝 localhost、环回、私有和保留地址。",
+      "evidence": [
+        "frontend/src/views/Studio.vue",
+        "frontend/src/views/Crawl.vue",
+        "backend/src/main/java/com/douyin/mixcut/service/CrawlJobService.java",
+        "backend/src/main/java/com/douyin/mixcut/web/CrawlController.java",
+        "backend/src/main/java/com/douyin/mixcut/service/MaterialGapService.java",
+        "backend/src/main/java/com/douyin/mixcut/service/RenderPreparationService.java",
+        "backend/src/main/java/com/douyin/mixcut/service/SkillEngine.java"
+      ]
+    },
+    {
+      "id": "release-2-2-94",
+      "version": "2.2.94",
+      "releasedAt": "2026-08-20",
+      "kind": "历史开发阶段",
+      "title": "生产启动同步与工作流默认折叠",
+      "summary": "将生产启动目标同步到最新 2.2.93 交付内容，并让工作流页面默认收起各类面板，减少首次进入时的信息噪声。",
+      "changes": [
+        "生产启动流程改为优先使用当前最新版本化交付 JAR，避免固定旧 JAR 导致前端与后端版本不一致。",
+        "工作流页面的我的工作流、内置模板、智能自动编排和开源模板商店默认全部收起，用户仍可点击标题展开。"
+      ],
+      "fixes": [
+        "修复 start.bat 优先启动旧 mixcut-current.jar、导致页面提示界面资源与后端版本不一致的问题。",
+        "修复工作流首次进入时多个大面板同时展开、遮挡主要工作区域的问题。"
+      ],
+      "verification": [
+        "frontend: npm run build 通过，静态资源校验通过。",
+        "backend: 2.2.93-final JAR 已验证包含 release-notes.json 2.2.93 和 BOOT-INF/classes/static/index.html。",
+        "后端完整测试已通过，无测试失败或错误。",
+        "8760 启动后检查 /api/system/env 应返回 2.2.93；浏览器进入工作流页面验证四个面板默认收起。"
+      ],
+      "compatibility": "旧 JAR 已备份，不删除用户数据、素材、任务、项目、API Key 或历史记录；工作流路由、导入、新建、AI 编排和商店操作契约不变。",
+      "evidence": [
+        "start.bat",
+        "frontend/src/views/Workflows.vue",
+        "frontend/src/App.vue",
+        "backend/target/mixcut-2.2.93-final.jar",
+        "backend/src/main/resources/release-notes.json"
+      ]
+    },
+    {
+      "id": "release-2-2-93",
+      "version": "2.2.93",
+      "releasedAt": "2026-08-20",
+      "kind": "历史开发阶段",
+      "title": "模型候选保存校验与端口连线收口",
+      "summary": "将模型候选勾选后的保存动作接入后端 observed 校验，并完成画布端口连线、资源分组和 AI 创作缺口提示的最终收口。",
+      "changes": [
+        "Provider 保存前按图片、视频、配音分组调用受控候选采用接口，只有当前 Provider 最近发现的模型才能进入执行白名单。",
+        "无限画布端口连接保持节点实际尺寸中点、世界坐标和 ResizeObserver 更新，支持拖动输出端口到输入端口。",
+        "完成 AI 创作、资源中心、素材抓取和教程的真实能力状态说明与入口分组。"
+      ],
+      "fixes": [
+        "修复候选模型只在前端勾选、保存时未经过服务端 observed 校验的风险。",
+        "修复画布连线在节点内容高度变化后端点位置不稳定的问题。"
+      ],
+      "verification": [
+        "frontend: npm run build 通过，文本完整性和静态资源校验通过。",
+        "backend: mvn -q -DskipTests compile 通过。",
+        "backend: MediaProviderCatalogTest、AiClientTest、MixPlannerOrderedFoldersTest、MaterialDeleteServiceTest 定向测试通过。",
+        "完整后端 mvn test 已通过；测试环境中的外部源和便携 Python 告警未导致失败。",
+        "8785 实例确认 release API 连续返回 2.2.92、2.2.91、2.2.90；浏览器页面确认画布、AI 接入和历史更新入口可达。"
+      ],
+      "compatibility": "保留旧画布 v3 草稿、nodes/links、AI Provider JSON、observed/media 白名单、旧 AI/媒体接口和历史路由；不执行远程插件代码，不内置第三方账号、API Key、GPU 驱动或受限站点登录态。",
+      "evidence": [
+        "frontend/src/views/InfiniteCanvas.vue",
+        "frontend/src/views/AiSettings.vue",
+        "frontend/src/views/AiCreate.vue",
+        "frontend/src/views/Crawl.vue",
+        "frontend/src/views/ResourceCenter.vue",
+        "backend/src/main/java/com/douyin/mixcut/service/MediaProviderCatalog.java",
+        "backend/src/main/java/com/douyin/mixcut/web/AiController.java",
+        "backend/src/test/java/com/douyin/mixcut/service/MediaProviderCatalogTest.java"
+      ]
+    },
+    {
+      "id": "release-2-2-92",
+      "version": "2.2.92",
+      "releasedAt": "2026-08-20",
+      "kind": "历史开发阶段",
+      "title": "画布粘性端口连线与模型候选选择",
+      "summary": "将无限画布连线修复为与节点共享世界坐标的边框端口拖线，并为 AI Provider 增加可搜索、逐项勾选、服务端校验的媒体候选采用流程。",
+      "changes": [
+        "画布 SVG 线层与节点共用平移缩放变换，节点左右边框端口可拖线连接，连线端点按节点真实尺寸计算并保留旧 nodes/links 草稿兼容。",
+        "AI Provider 候选媒体模型按图片、视频、配音分组显示，支持搜索、逐项勾选、全选/清除和保存前草稿确认；后端只允许采用当前 Provider 最近发现的 observed 模型。",
+        "能力卡、资源卡、素材源和教程继续显示真实的内置、需配置、需官方处理与可执行边界。"
+      ],
+      "fixes": [
+        "修复画布移动或缩放后连线停留在旧屏幕坐标、与节点分离或被裁剪的问题。",
+        "修复节点高度随内容或媒体变化时连线仍使用固定垂直坐标的问题。",
+        "修复 AI 媒体候选只能在一段识别结果文本中查看、无法精确选择的问题。"
+      ],
+      "verification": [
+        "frontend: npm run build 通过，文本完整性和静态资源校验通过。",
+        "backend: mvn -q -DskipTests compile 通过。",
+        "backend: mvn -q test 完整测试通过；MediaProviderCatalogTest、AiClientTest、MixPlannerOrderedFoldersTest、MaterialDeleteServiceTest 定向测试通过。",
+        "浏览器验收：最终 8784 实例确认历史更新为 2.2.91、AI Provider 卡片可用、画布端口结构已进入最终构建。"
+      ],
+      "compatibility": "保留旧画布 v3 草稿、nodes/links 数据格式、AI Provider models JSON、observed/media 白名单语义、AI 生成任务和媒体工具接口。未内置第三方 API Key、账号、GPU 驱动或远程插件执行能力。",
+      "evidence": [
+        "frontend/src/views/InfiniteCanvas.vue",
+        "frontend/src/views/AiSettings.vue",
+        "frontend/src/api.js",
+        "backend/src/main/java/com/douyin/mixcut/service/MediaProviderCatalog.java",
+        "backend/src/main/java/com/douyin/mixcut/web/AiController.java",
+        "backend/src/test/java/com/douyin/mixcut/service/MediaProviderCatalogTest.java"
+      ]
+    },
+    {
+      "id": "release-2-2-91",
+      "version": "2.2.91",
+      "releasedAt": "2026-08-20",
+      "kind": "历史开发阶段",
+      "title": "画布端口连线与 AI 能力映射升级",
+      "summary": "修复无限画布连线在平移缩放后与节点分离的问题，增加边框端口拖线；将模型发现候选改为可搜索、逐项确认的执行能力映射，并收敛素材源与 AI 创作缺口提示。",
+      "changes": [
+        "画布线层与节点统一使用世界坐标变换，节点左右边框增加输入/输出端口，拖动端口可创建持久连接，节点移动和画布缩放不会使连线脱离。",
+        "AI Provider 编辑器增加图片、视频、配音候选模型的搜索、分组勾选、全选/清除和草稿采用；后端新增受控候选采用接口，只有保存后的 media 白名单进入执行链。",
+        "AI 创作页面改为紧凑能力状态与明确缺口说明；资源中心增加官方/账号/计费状态标签；素材抓取按免 Key、配置 Key、官方处理三类来源展示。"
+      ],
+      "fixes": [
+        "修复 SVG 连线没有跟随画布平移和缩放、端点使用固定垂直坐标导致线与节点分离的问题。",
+        "修复模型发现结果只能以长文本查看、用户难以选择具体模型的问题，同时保持 observed 与 media 执行白名单安全边界。",
+        "修复素材源状态混杂导致免 Key、需 Key 和登录后自行导入来源难以区分的问题。"
+      ],
+      "verification": [
+        "frontend: npm run build 通过，文本完整性和静态资源校验通过。",
+        "backend: mvn -q -DskipTests compile 通过。",
+        "backend: MediaProviderCatalogTest、AiClientTest、MixPlannerOrderedFoldersTest、MaterialDeleteServiceTest 定向测试通过。",
+        "浏览器验收：无限画布点击菜单、角色节点、画布历史和生成入口可达；AI 创作缺口提示可见；素材抓取显示免 Key/Key/官方处理三类。"
+      ],
+      "compatibility": "保留旧画布 v3 草稿、nodes/links 格式、AI Provider models JSON、observed/media 语义、AI 生成任务接口、素材抓取接口和旧媒体工具路由。模型候选采用仍需用户确认和保存；不执行远程插件代码，不内置第三方账号或 API Key。",
+      "evidence": [
+        "frontend/src/views/InfiniteCanvas.vue",
+        "frontend/src/views/AiSettings.vue",
+        "frontend/src/views/AiCreate.vue",
+        "frontend/src/views/ResourceCenter.vue",
+        "frontend/src/views/Crawl.vue",
+        "backend/src/main/java/com/douyin/mixcut/service/MediaProviderCatalog.java",
+        "backend/src/main/java/com/douyin/mixcut/web/AiController.java",
+        "backend/src/test/java/com/douyin/mixcut/service/MediaProviderCatalogTest.java"
+      ]
+    },
+    {
+      "id": "release-2-2-90",
+      "version": "2.2.90",
+      "releasedAt": "2026-08-20",
+      "kind": "历史开发阶段",
+      "title": "AI 总入口与模板驱动出片工作台升级",
+      "summary": "基于真实页面结构和出片链路勘查，重排 AI 接入、能力/环境总入口与 Studio 工作台，并修复固定顺序缺料跨步骤补位和授权范围容量误导。",
+      "changes": [
+        "AI 接入改为 Provider 卡片、能力摘要和高级用途策略/故障诊断区，模型发现结果与用户确认的媒体执行能力分开显示。",
+        "能力中心增加环境中心视图，环境中心入口统一跳转到能力总入口；Studio 顶部改为紧凑工作台状态和 AI 创作、无限画布、固定顺序、素材库快捷入口。",
+        "Studio 快速创作入口使用上下文弹窗，并复用现有 AI 生成、无限画布、额度确认和素材入库链路；固定顺序步骤不再默认截断。"
+      ],
+      "fixes": [
+        "修复严格固定顺序 required 步骤缺料时被跳过的问题，禁止从其他步骤跨目录补位；非必需步骤仍可明确跳过。",
+        "修复严格顺序总时长不足时从全部步骤素材跨目录补足的问题，改为可读诊断并要求补料或调整配置。",
+        "修复自主模式严格交付默认值与旧请求兼容语义不一致的问题，并修复授权空文件夹容量显示回退全库的问题。",
+        "修复模型识别自动覆盖已确认图片、视频和配音执行白名单的问题；发现模型必须由用户明确采用后才进入执行链。"
+      ],
+      "verification": [
+        "frontend: npm run build 通过，Studio 文本完整性和静态资源校验通过。",
+        "backend: mvn -q -DskipTests compile 通过。",
+        "backend: MixPlannerOrderedFoldersTest、MixParamsTest、MaterialDeleteServiceTest 定向测试通过。",
+        "8779 实例接口验证通过：/api/system/env、/api/system/capabilities、/api/jobs/outputs/all 均返回 200。",
+        "浏览器验收通过：Studio 工作台头部、AI 创作快速弹窗、AI Provider 卡片、能力/环境总入口和固定顺序模板页面可达。"
+      ],
+      "compatibility": "保留既有路由、MediaTools 兼容页、AI Provider/模型 JSON、用途路由、出片任务状态机、候选质检和版本应用链；API Key 仍只在本机服务端密文保存。所有外部 URL 继续执行 http/https、host、localhost、环回、私有和保留地址校验。",
+      "evidence": [
+        "frontend/src/views/Studio.vue",
+        "frontend/src/views/AiSettings.vue",
+        "frontend/src/views/Capabilities.vue",
+        "frontend/src/App.vue",
+        "backend/src/main/java/com/douyin/mixcut/service/MixPlanner.java",
+        "backend/src/main/java/com/douyin/mixcut/dto/MixParams.java",
+        "backend/src/main/java/com/douyin/mixcut/web/AiController.java",
+        "backend/src/test/java/com/douyin/mixcut/service/MixPlannerOrderedFoldersTest.java",
+        "backend/src/test/java/com/douyin/mixcut/dto/MixParamsTest.java"
+      ]
+    },
+    {
+      "id": "release-2-2-89",
+      "version": "2.2.89",
+      "releasedAt": "2026-08-19",
+      "kind": "历史开发阶段",
+      "title": "媒体工具紧凑素材选择与输出结果路径",
+      "summary": "进一步收敛媒体工具的大图横向布局，使用固定小卡片和双栏参数区，并将输出目录、结果路径、素材库状态和受控打开文件夹操作显示给用户。",
+      "changes": [
+        "媒体工具素材选择器使用固定小卡片、固定高度和内部滚动，桌面双栏、窄屏单栏，不再占满折叠面板。",
+        "媒体任务结果显示输出目录、结果文件路径、素材库编号、应用内预览和复制路径操作。",
+        "增加固定后端入口打开应用管理的媒体工具输出目录，浏览器不能传递任意文件路径。"
+      ],
+      "fixes": [
+        "修复媒体工具视频/图片素材预览过大、横向溢出、页面内容看不全的问题。",
+        "修复用户无法确认处理结果是否入库、保存到哪里以及如何定位电脑文件的问题。"
+      ],
+      "verification": [
+        "frontend: npm run build 通过，静态资源校验通过。",
+        "backend: mvn -q -DskipTests compile 通过。",
+        "浏览器视觉验收：新版媒体工具页面显示紧凑双栏布局、固定选择器高度、输出目录及复制/打开目录操作。",
+        "全量后端测试仍有 3 个既存 MixPlannerOrderedFoldersTest 失败，与本次媒体工具布局和输出路径改动无直接调用关系，未掩盖。"
+      ],
+      "compatibility": "原素材继续默认保留，结果文件仅落在应用管理的媒体工具输出目录并登记素材库。输出目录打开操作不接受浏览器输入路径。",
+      "evidence": [
+        "frontend/src/views/MediaTools.vue",
+        "backend/src/main/java/com/douyin/mixcut/service/MediaToolsService.java",
+        "backend/src/main/java/com/douyin/mixcut/web/MediaToolsController.java",
+        "frontend/src/api.js"
+      ]
+    },
+    {
+      "id": "release-2-2-88",
+      "version": "2.2.88",
+      "releasedAt": "2026-08-19",
+      "kind": "历史开发阶段",
+      "title": "媒体工具响应式结果与输出路径闭环",
+      "summary": "重做媒体工具素材选择与任务结果展示，消除预览横向溢出，并让图片、视频、音频处理结果在应用内预览、素材库和电脑文件路径之间可追踪。",
+      "changes": [
+        "媒体素材选择器改为受限响应式网格和内部滚动，统一缩略图比例，避免视频和图片撑破页面。",
+        "媒体任务改为结果卡片，显示执行引擎、进度、输出目录、应用内预览、素材库状态、素材编号和电脑文件路径。",
+        "图片处理、视频切分、Auto-Editor 和 Demucs 任务统一返回受控输出目录、结果路径和素材入库信息。",
+        "媒体工具顶部持续显示默认输出目录，支持复制路径和打开应用管理的输出文件夹。"
+      ],
+      "fixes": [
+        "修复媒体工具结果只能显示名称、用户无法知道视频/音频/图片落盘位置的问题。",
+        "修复素材选择区和任务结果横向溢出、预览过大、页面内容看不全的问题。",
+        "修复多结果任务无法清楚区分人声/伴奏、视频片段和生成文件入库状态的问题。"
+      ],
+      "verification": [
+        "backend: mvn -q -DskipTests compile 通过。",
+        "frontend: npm run build 通过，静态资源校验通过。",
+        "后续独立运行实例验证任务接口返回 outputDirectory、resultPaths、results 和受控打开目录入口。",
+        "全量后端测试另有 3 个既存 MixPlanner 固定文件夹顺序断言失败，与本次媒体工具路径和布局改动无直接调用关系，未掩盖。"
+      ],
+      "compatibility": "结果文件仍只生成在应用管理的媒体工具输出目录并默认入素材库；原文件不覆盖。浏览器只能复制路径或调用固定后端打开输出目录，不能提交任意路径或执行任意命令。",
+      "evidence": [
+        "backend/src/main/java/com/douyin/mixcut/service/MediaToolsService.java",
+        "backend/src/main/java/com/douyin/mixcut/web/MediaToolsController.java",
+        "frontend/src/views/MediaTools.vue",
+        "frontend/src/api.js"
+      ]
+    },
+    {
+      "id": "release-2-2-87",
+      "version": "2.2.87",
+      "releasedAt": "2026-08-19",
+      "kind": "历史开发阶段",
+      "title": "Studio 素材来源分流与公开补齐诊断修复",
+      "summary": "修复 Studio 三种素材来源选项始终抓取无效的问题：按本地、免 Key 公开补齐和公开直链/官方授权真正分流，禁止公共 B-roll 替代产品和片尾素材，并展示逐来源诊断。",
+      "changes": [
+        "仅本地素材模式不再请求外部来源；内置公开补齐由用户点击执行一次受控免 Key 检索；公开直链/官方授权模式跳转素材抓取页并携带项目关键词和角色提示。",
+        "自动填充不再硬编码 Wikimedia/Archive，前端使用后端返回的免 Key 可用源；Pexels Key 已配置时作为官方授权源显示。",
+        "Studio 自动填充结果逐项显示已排队、无匹配、来源失败、暂时熔断和需本地素材，而不是统一显示抓取无效。",
+        "产品和片尾卡缺口在素材诊断与 Studio 中明确标记为本地/已授权导入要求。"
+      ],
+      "fixes": [
+        "修复产品或片尾角色缺口被错误交给公开 B-roll 自动补齐的问题。",
+        "修复辅助模式、内置公开补齐和公开授权模式在 UI 上没有清晰行为边界的问题。",
+        "修复公开来源网络失败、无匹配和熔断都被混同为没有可用素材的问题。"
+      ],
+      "verification": [
+        "新版准备接口重放验证：本地素材已满足时明确跳过外部抓取并返回阶段诊断。",
+        "后续执行 MaterialGapService、RenderPreparationService 回归测试、前端构建和新版 API 验收。"
+      ],
+      "compatibility": "不绕过 API Key、OAuth、登录、DRM、地区限制或站点授权。公开 B-roll 只补 hook/body/celebrity，不替代用户产品、品牌或片尾素材。所有服务器端 URL 请求继续只允许 http/https，并校验 host 后拒绝 localhost、环回、私有和保留地址。",
+      "evidence": [
+        "backend/src/main/java/com/douyin/mixcut/service/MaterialGapService.java",
+        "backend/src/main/java/com/douyin/mixcut/service/RenderPreparationService.java",
+        "frontend/src/views/Studio.vue",
+        "backend/src/test/java/com/douyin/mixcut/service/MaterialGapServiceTest.java"
+      ]
+    },
+    {
+      "id": "release-2-2-86",
+      "version": "2.2.86",
+      "releasedAt": "2026-08-19",
+      "kind": "历史开发阶段",
+      "title": "安装即用本地能力链与真实状态接入",
+      "summary": "补齐安装包内本地媒体能力的可达入口、运行时状态和交付产物一致性门禁，让视频出片准备优先使用随包工具并对外部授权能力保留明确边界。",
+      "changes": [
+        "媒体工具新增 Auto-Editor 智能剪除静音/废片入口，后台输出自动作为新素材入库，原视频不覆盖。",
+        "图片任务会回显实际执行引擎：ImageMagick、FFmpeg 回退或 rembg；切段、分离和智能剪除同样显示实际引擎。",
+        "ImageMagick 统一为随包 executable 优先、PATH 次之、FFmpeg 回退，运行检测和真实执行路径保持一致。",
+        "能力中心增加 installed、runtimeReady、fallback、activationRequired 的真实状态展示，移除重复的“已检测未接入”提示。",
+        "首次安装或既有 .env 缺失时自动生成本机独立 APP_MASTER_KEY，用于安全保存用户自己的 Provider 密钥。",
+        "安装器构建增加交付 JAR 门禁，校验 Jar 内 capabilities.json 和前端入口与当前源码一致。"
+      ],
+      "fixes": [
+        "修复 Auto-Editor 已随包安装但没有控制器、前端 API 和界面入口，用户无法实际调用的问题。",
+        "修复 ImageMagick 被检测为可用但业务只认随包路径、导致检测与执行结果不一致的问题。",
+        "修复 whisper.cpp 只有二进制却没有匹配 ggml 模型时被误显示为可用的问题；默认保持 faster-whisper 回退。",
+        "修复能力中心将需要账号或硬件的外部能力与本地预置能力混同显示的问题。"
+      ],
+      "verification": [
+        "backend: mvn -q -DskipTests compile 通过。",
+        "frontend: npm run build 通过，静态资源校验通过。",
+        "后续将执行 backend clean test、交付 JAR 打包、Jar 内 capability manifest 比对和本机 API 验收。"
+      ],
+      "compatibility": "不自动绕过第三方 API Key、付费额度、OAuth、登录授权、DRM、地区限制或硬件驱动。Auto-Editor、Demucs 和 rembg 均创建新素材，绝不覆盖用户原文件；whisper.cpp 缺 ggml 模型时保持 faster-whisper 回退。",
+      "evidence": [
+        "backend/src/main/java/com/douyin/mixcut/service/MediaToolsService.java",
+        "backend/src/main/java/com/douyin/mixcut/web/MediaToolsController.java",
+        "backend/src/main/java/com/douyin/mixcut/service/BootstrapService.java",
+        "frontend/src/views/MediaTools.vue",
+        "frontend/src/views/Capabilities.vue",
+        "frontend/src/api.js",
+        "ensure_env.bat",
+        "build_installer.bat",
+        "backend/src/main/resources/capabilities.json"
+      ]
+    },
+    {
+      "id": "release-2-2-85",
+      "version": "2.2.85",
+      "releasedAt": "2026-08-19",
+      "kind": "历史开发阶段",
+      "title": "Provider 动态模型发现与抓取链路修复",
+      "summary": "根据有效 Provider API Key 自动发现并同步最新文本及可确认的媒体模型能力，修复公开链接抓取结果误判和无模型入口无提示的问题，并归档上一轮插件与能力中心更新。",
+      "changes": [
+        "Provider 保存或 AI 接入页加载时，对已配置有效密钥的端点自动探测模型，并同步 text、image、video、voice、vision 节点及发现状态。",
+        "AI 接入页按供应商实际返回结果分组显示文本、图片生成、视频生成、配音/TTS 和视觉理解候选；没有返回的媒体能力明确显示未提供。",
+        "抓取链路使用下载目录快照、新文件时间、媒体扩展名和响应 Content-Type 识别下载结果，兼容下载器改变后缀或输出路径的情况。",
+        "无限画布在没有媒体模型时显示前往 AI 接入的提醒，生成按钮允许点击后给出具体配置提示；媒体工具明确区分本地工具与云端 AI 能力。",
+        "保留并归档插件注册接口、能力中心 wired 状态修正和官方授权跳转。"
+      ],
+      "fixes": [
+        "修复 Provider 只保存文本模型、导致有效 API Key 无法刷新图片、视频和配音模型的问题。",
+        "修复下载器已经生成文件但应用仅按固定前缀判断而报告抓取失败的问题。",
+        "修复无扩展名公开媒体链接被直接跳过，以及网页/JSON 响应被误当作媒体下载的问题。",
+        "修复无限画布和媒体工具在没有可用 AI 模型时只显示空控件、没有接入引导的问题。"
+      ],
+      "verification": [
+        "frontend: npm run build 通过，静态资源校验通过。",
+        "backend: mvn -q clean test 通过，308 项测试通过。",
+        "backend: mvn -q -DskipTests package 通过。",
+        "JSON 资源校验通过，未包含 API Key、密码、token 或 .env 内容。",
+        "脱敏 HTTP 检查确认 /api/ai/providers 返回有效 Provider；现有端点只返回文本模型时媒体能力保持为空，不伪造媒体模型。"
+      ],
+      "compatibility": "沿用 ai_provider.models 的 text/media JSON 结构，不新增 Provider 媒体列；有效密钥仍只在服务端加密保存。抓取服务端请求继续只允许经过 UrlGuard 校验的 http/https 地址，并拒绝 localhost、环回、私有和保留地址。",
+      "evidence": [
+        "backend/src/main/java/com/douyin/mixcut/external/AiClient.java",
+        "backend/src/main/java/com/douyin/mixcut/web/AiController.java",
+        "backend/src/main/java/com/douyin/mixcut/external/CrawlerGateway.java",
+        "backend/src/main/java/com/douyin/mixcut/service/MediaGenerationService.java",
+        "frontend/src/views/AiSettings.vue",
+        "frontend/src/views/InfiniteCanvas.vue",
+        "frontend/src/views/MediaTools.vue",
+        "frontend/src/views/Capabilities.vue",
+        "backend/src/main/java/com/douyin/mixcut/web/PluginController.java",
+        "backend/src/main/java/com/douyin/mixcut/service/PluginRegistryService.java",
+        "backend/src/main/resources/capabilities.json"
+      ]
+    },
+    {
+      "id": "release-2-2-84",
+      "version": "2.2.84",
+      "releasedAt": "2026-08-17",
+      "kind": "历史开发阶段",
+      "title": "AI 官方接入链接直达",
+      "summary": "AI 接入页在官方或第三方模板填写后，直接提供服务商 API Key 与计费额度页面的跳转链接，减少用户在配置路径上的手动查找。",
+      "changes": [
+        "AI 接入的供应商编辑窗口在填写官方接入页后显示“打开官方接入 / API Key 页面”链接。",
+        "填写计费或额度页后显示“打开官方计费 / 额度页面”链接；链接新窗口打开，Provider 密钥仍只提交给本机后端。"
+      ],
+      "fixes": [
+        "修复用户选择官方模板后只能看到 URL 文本、无法直接打开对应服务商配置页面的问题。"
+      ],
+      "verification": [
+        "浏览器验收：AI 接入模板对话框包含 OpenAI 官方、第三方兼容模板、图片/视频/配音模型字段和官方链接字段。",
+        "frontend: npm run build（待本次发布构建执行）",
+        "backend: mvn -q test（待本次发布构建执行）"
+      ],
+      "compatibility": "不改变已有 Provider 数据和密钥保存方式。官方链接仅接受通过服务端 URL 校验后的 HTTPS 地址；第三方 Provider 仍需由用户填写其正式控制台地址和实际支持的模型。",
+      "evidence": [
+        "frontend/src/views/AiSettings.vue",
+        "backend/src/main/java/com/douyin/mixcut/service/MediaProviderCatalog.java"
+      ]
+    },
+    {
+      "id": "release-2-2-83",
+      "version": "2.2.83",
+      "releasedAt": "2026-08-17",
+      "kind": "历史开发阶段",
+      "title": "Provider 文本模型与媒体能力兼容修复",
+      "summary": "修复保存图片、视频或配音能力后，文本 AI 无法从 Provider 配置中选取默认模型的问题，并纠正媒体能力的实际兼容存储说明。",
+      "changes": [
+        "Provider 的既有 models 配置现在同时兼容旧版文本模型数组，以及包含 text 和 media 的对象格式。",
+        "媒体模型、官方接入链接和计费链接继续保存到既有 ai_provider.models 的 media 节点，无需新增数据库列或迁移旧安装数据库。"
+      ],
+      "fixes": [
+        "修复保存媒体能力后，AiService 仅按旧数组格式读取 Provider 文本模型，导致文本模型回退失效的问题。",
+        "修正发行记录中把媒体能力误描述为独立 ai_provider.media_capabilities 字段的问题。"
+      ],
+      "verification": [
+        "backend: mvn -q test（通过）",
+        "frontend: npm run build（通过，文本完整性和静态资源校验通过）"
+      ],
+      "compatibility": "旧版 models JSON 数组无需迁移；首次保存媒体能力时会保留其文本模型并转换为 text 节点，同时写入 media 节点。媒体 Provider 仍必须由用户明确配置实际支持的模型和 HTTPS 访问地址。",
+      "evidence": [
+        "backend/src/main/java/com/douyin/mixcut/service/AiService.java",
+        "backend/src/main/java/com/douyin/mixcut/service/MediaProviderCatalog.java",
+        "backend/src/main/resources/release-notes.json"
+      ]
+    },
+    {
+      "id": "release-2-2-82",
+      "version": "2.2.82",
+      "releasedAt": "2026-08-17",
+      "kind": "历史开发阶段",
+      "title": "能力驱动的 AI 模型接入与画布直连生成",
+      "summary": "移除 AI 创作页的固定旧模型选项，改为由用户保存的 Provider 媒体能力驱动；无限画布可直接提交已选 Provider 的图片或视频任务，完成后自动回写真实素材预览。",
+      "changes": [
+        "AI 接入页新增官方 OpenAI、兼容第三方、DeepSeek、Claude、Gemini 模板，并在同一页面配置图片、视频、配音模型、官方接入页和计费额度页。",
+        "AI 创作页只展示当前 Provider 明确配置的图片、视频和配音能力；无能力的标签和模型不会被显示或提交。",
+        "无限画布增加 Provider、模型、官方接入、计费额度和明确确认控件；所选分镜可直接生成图片或视频。",
+        "画布任务会轮询后台状态，完成后注册生成素材并在原分镜显示真实图片或可播放视频预览。",
+        "画布交接编辑器草稿时会附带已完成的素材 ID，未生成镜头明确标为 waiting-generation。"
+      ],
+      "fixes": [
+        "修复 AI 创作页显示固定 GPT Image、Sora、TTS 选项，即使用户未配置对应可用服务商的问题。",
+        "修复无限画布只能跳转 AI 创作页、不能直接生成并回写图片或视频素材的问题。",
+        "修复 Provider 文本模型配置与媒体模型配置混用的风险，媒体能力使用既有 models JSON 的 media 区块保存，旧数据库无需加列。"
+      ],
+      "verification": [
+        "backend: mvn -q -DskipTests compile（通过）",
+        "frontend: npm run build（通过，文本完整性和静态资源校验通过）"
+      ],
+      "compatibility": "文本模型和媒体能力共同保存在 ai_provider.models JSON 中，其中媒体能力位于 media 区块；旧数据库无需加列。升级后需在 AI 接入页为计划使用图片、视频或配音的 Provider 明确填写对应模型和 API Key。服务端继续只访问经 UrlGuard 校验的 http/https 公网地址。",
+      "evidence": [
+        "backend/src/main/java/com/douyin/mixcut/domain/AiProvider.java",
+        "backend/src/main/java/com/douyin/mixcut/service/MediaProviderCatalog.java",
+        "backend/src/main/java/com/douyin/mixcut/service/MediaGenerationService.java",
+        "backend/src/main/java/com/douyin/mixcut/web/AiController.java",
+        "frontend/src/views/AiSettings.vue",
+        "frontend/src/views/AiCreate.vue",
+        "frontend/src/views/InfiniteCanvas.vue",
+        "frontend/src/views/Tutorial.vue"
+      ]
+    },
+    {
+      "id": "release-2-2-81",
+      "version": "2.2.81",
+      "releasedAt": "2026-08-16",
+      "kind": "历史开发阶段",
+      "title": "漫剧画布、AI 视频配音与媒体工具收放",
+      "summary": "本次把无限画布升级为可生成漫剧分镜的工作台，补齐 AI 图片、视频和配音创作入口，并修复助手拖动、2048、媒体工具铺满和抓取入库文件夹联动。",
+      "changes": [
+        "无限画布新增漫剧项目设定，可填写角色、世界观、章节、镜头数、画风和画幅，并通过 AI 或本地兜底生成结构化分镜节点。",
+        "画布分镜可按单镜头送入 AI 图片或 AI 视频创作页，自动带入提示词、画幅和时长；整章可保存为编辑器草稿。",
+        "AI 创作页支持图片、视频和配音三个付费确认式任务，并展示后台生成任务状态与入库素材编号。",
+        "媒体工具按图片、视频分割、音频分离拆成可收起面板，避免大量素材卡片一次性铺满页面。",
+        "抓取页新增目标文件夹选择，视频批量抓取、公开视频导入和公开音频导入完成后会把素材归档到对应内置文件夹。"
+      ],
+      "fixes": [
+        "修复 2048 游戏标签和模板分支不一致导致点击后无法进入 2048 面板的问题。",
+        "修复 AI 助手拖动时出现巨大投放提示的问题，改为大距离拖动松手直接打开游戏中心。",
+        "修复 OpenAI-compatible Provider 被单一官方域名限制拦截的问题，仍只拼接固定端点并经过 UrlGuard 校验。",
+        "修复兼容图片接口只接受 b64_json 的限制，新增受控 HTTPS 图片 URL 下载回退和 20MB 大小限制。",
+        "修复画布送入 AI 创作时横图尺寸映射错误导致图片生成页回落默认尺寸的问题。"
+      ],
+      "verification": [
+        "backend: mvn -q -DskipTests compile（通过）",
+        "frontend: npm run build（通过，文本完整性和静态资源校验通过）",
+        "backend: mvn -q test（通过；测试中的网络失败、质量拒绝和 DSL 拒绝日志为预期用例）"
+      ],
+      "compatibility": "需要重启应用加载新 JAR 和前端资源。AI 视频和配音依赖所选 Provider 实际支持对应 OpenAI-compatible 端点；不支持时任务会失败并显示认证、额度、模型或接口不兼容原因。既有素材、成片和输出文件不会移动、覆盖或删除。",
+      "evidence": [
+        "backend/src/main/java/com/douyin/mixcut/web/WorkflowController.java",
+        "backend/src/main/java/com/douyin/mixcut/service/MediaGenerationService.java",
+        "backend/src/main/java/com/douyin/mixcut/service/CrawlJobService.java",
+        "backend/src/main/java/com/douyin/mixcut/web/CrawlController.java",
+        "frontend/src/views/InfiniteCanvas.vue",
+        "frontend/src/views/AiCreate.vue",
+        "frontend/src/views/MediaTools.vue",
+        "frontend/src/views/Crawl.vue",
+        "frontend/src/components/AiChat.vue",
+        "frontend/src/components/GameCenter.vue",
+        "frontend/src/views/Tutorial.vue"
+      ]
+    },
+    {
+      "id": "release-2-2-80",
+      "version": "2.2.80",
+      "releasedAt": "2026-08-16",
+      "kind": "历史开发阶段",
+      "title": "受控 OpenAI 图片创作入口",
+      "summary": "新增独立 AI 创作页，并接入已配置 OpenAI 官方 Provider 的确认式图片生成、后台状态与自动素材入库。",
+      "changes": [
+        "新增 AI 创作侧栏入口，可选择已配置 OpenAI Provider、GPT Image 模型、尺寸和质量后提交图片生成任务。",
+        "每次请求必须确认官方计费；只允许 OpenAI 官方 API 地址和固定模型、尺寸、质量参数。",
+        "生成图片会写入受控媒体工具目录，通过质量检查后自动作为 generated 素材入库并可在素材库预览。",
+        "视频和音频生成在创作页明确显示为待官方异步 API 契约接入，不会用猜测端点发出付费请求。"
+      ],
+      "fixes": [
+        "AI 接入配置中使用 https://api.openai.com/v1 的官方地址现在也可被图片生成入口正确识别。"
+      ],
+      "verification": [
+        "backend: mvn -q -DskipTests compile（通过）",
+        "frontend: npm run build（通过，文本完整性和静态资源校验通过）"
+      ],
+      "compatibility": "图片生成功能要求先在 AI 接入页配置可加密保存的 OpenAI 官方 Provider 和 APP_MASTER_KEY；每次请求均使用用户官方账号额度。既有素材和输出不会移动或覆盖。",
+      "evidence": [
+        "backend/src/main/java/com/douyin/mixcut/service/MediaGenerationService.java",
+        "backend/src/main/java/com/douyin/mixcut/web/MediaGenerationController.java",
+        "frontend/src/views/AiCreate.vue",
+        "frontend/src/router.js",
+        "frontend/src/App.vue",
+        "frontend/src/api.js",
+        "frontend/src/views/Tutorial.vue"
+      ]
+    },
+    {
+      "id": "release-2-2-79",
+      "version": "2.2.79",
+      "releasedAt": "2026-08-16",
+      "kind": "历史开发阶段",
+      "title": "游戏交互、可视化媒体工具与画布修复",
+      "summary": "修复助手拖放触发与键盘游戏可玩性，补强无限画布交互恢复能力，并将媒体工具升级为图片、视频、音频可视化工作台。",
+      "changes": [
+        "AI 助手只有真实拖入投放区才会打开游戏中心；游戏打开后贪吃蛇和 2048 自动获取键盘焦点。",
+        "无限画布支持安全草稿保存、双击编辑、素材节点、分镜节点、基础连线和可视化素材预览。",
+        "媒体工具改为图片、视频、音频卡片选择和可播放预览，后台任务结果可直接预览。",
+        "新增后续媒体工具保存位置设置，图片处理、视频切段和音频分离会写入经本机校验的目标目录后再入库。"
+      ],
+      "fixes": [
+        "修复轻微移动也可能同时打开聊天和游戏中心的问题；拖动取消不会遗留遮罩或失效状态。",
+        "修复无限画布 localStorage 异常被全局错误处理放大为整页失效的问题。",
+        "修复画布提示双击编辑但没有实际编辑入口的问题。"
+      ],
+      "verification": [
+        "frontend: npm run build（通过；文本完整性、Vite 生产构建和静态资源校验通过）",
+        "backend: mvn -q test（通过）",
+        "backend: mvn -q -DskipTests compile（通过）"
+      ],
+      "compatibility": "需要重启应用加载新 JAR 和前端资源。既有素材、成片、编辑版本和旧输出文件不会移动、覆盖或删除；保存位置仅影响之后的媒体工具产物。",
+      "evidence": [
+        "frontend/src/components/AiChat.vue",
+        "frontend/src/components/GameCenter.vue",
+        "frontend/src/views/InfiniteCanvas.vue",
+        "frontend/src/views/MediaTools.vue",
+        "frontend/src/views/Tutorial.vue",
+        "backend/src/main/java/com/douyin/mixcut/config/AppProps.java",
+        "backend/src/main/java/com/douyin/mixcut/web/LocalConfigController.java",
+        "backend/src/main/java/com/douyin/mixcut/service/MediaToolsService.java",
+        "backend/src/main/java/com/douyin/mixcut/service/AudioEngineService.java",
+        "backend/src/main/java/com/douyin/mixcut/service/MaterialService.java"
+      ]
+    },
+    {
+      "id": "release-2-2-78",
+      "version": "2.2.78",
+      "releasedAt": "2026-08-16",
+      "kind": "历史开发阶段",
+      "title": "媒体工具、无限画布与助手游戏触发",
+      "summary": "新增本地媒体工具、无限画布、资源中心和由拖动 AI 助手触发的离线游戏中心，改善异步媒体任务与素材处理速度。",
+      "changes": [
+        "新增媒体工具工作台：图片处理、视频切段和后台音频分离。",
+        "新增无限画布：本地平移、缩放、节点拖动、草稿保存和 JSON 导出。",
+        "新增资源中心：展示合法官方工具、开放资料、AI 模型与官方 API/计费入口。",
+        "AI 助手支持自动跟随最新对话文本、窗口内拖动和拖动投放区；拖入投放区才打开离线游戏中心。",
+        "内置贪吃蛇、2048、井字棋、记忆配对和打砖块，无外部网络依赖。"
+      ],
+      "fixes": [
+        "视频切段和音频分离改为后台任务，前端可以轮询进度，不再长时间阻塞页面请求。",
+        "增加 ffprobe 短期缓存，减少重复媒体探测进程。",
+        "资源中心链接动作改为打开官方入口或应用内页面，不把外部链接当作代理下载。"
+      ],
+      "verification": [
+        "backend: mvn -q test（通过；包含媒体工具、抓取安全、编辑器、质检和本地 AI 兜底回归）",
+        "frontend: npm run build（通过；文本完整性、Vite 生产构建和静态资源校验通过）",
+        "backend: mvn -q clean package -DskipTests（通过；JAR 含 Spring Boot 启动器和当前媒体工具、无限画布、资源中心静态资源）",
+        "运行中校验：/api/system/env 返回 version 2.2.78；/api/system/resources 返回 12 项；/api/crawl/curated 返回 200 项；/api/media-tools/tasks 初始为空"
+      ],
+      "compatibility": "需要重启应用加载新 JAR 和前端资源；原始素材、成片、编辑版本和历史记录不会移动、覆盖或删除。媒体任务只处理已入库素材。网络资源继续遵守 http/https、host 校验和私有地址拒绝规则。",
+      "evidence": [
+        "backend/src/main/java/com/douyin/mixcut/service/MediaToolsService.java",
+        "backend/src/main/java/com/douyin/mixcut/web/MediaToolsController.java",
+        "backend/src/main/java/com/douyin/mixcut/web/SystemController.java",
+        "backend/src/main/java/com/douyin/mixcut/external/FfmpegTool.java",
+        "frontend/src/views/MediaTools.vue",
+        "frontend/src/views/InfiniteCanvas.vue",
+        "frontend/src/views/ResourceCenter.vue",
+        "frontend/src/components/AiChat.vue",
+        "frontend/src/components/GameCenter.vue"
+      ]
+    },
+    {
+      "id": "release-2-2-77",
+      "version": "2.2.77",
+      "releasedAt": "2026-08-16",
+      "kind": "历史开发阶段",
+      "title": "受控精选目录与抓取可靠性修复",
+      "summary": "填写本次已完成且可验证的更新摘要。",
+      "changes": [
+        "填写已完成的功能或行为变化。"
+      ],
+      "fixes": [
+        "填写已修复的问题；没有修复项时写明无。"
+      ],
+      "verification": [
+        "填写实际执行过的测试、构建或媒体验证。"
+      ],
+      "compatibility": "填写数据、配置、重启或兼容性影响；没有影响时写明无。",
+      "evidence": [
+        "填写对应源码、测试或可核对文件路径。"
+      ]
+    },
+    {
+      "id": "release-2-2-76",
+      "version": "2.2.76",
+      "releasedAt": "2026-08-16",
+      "kind": "历史开发阶段",
+      "title": "抓取来源、静音字幕与编辑工作台修复",
+      "summary": "修复公开素材源误报可用、导入前校验不足、静音字幕设置不一致、批内音频重复和编辑器保存反馈不可靠的问题。",
+      "changes": [
+        "未接入受控搜索的来源改为仅官方页，不再显示为可搜索导入来源。",
+        "精选区提供 50 个视频检索方案、50 个音频检索方案及图片/更多类官方参考入口；网页和搜索页不再伪装成媒体直链。",
+        "公开导入任务在服务端重新校验来源、类型、许可提示和 http/https URL 安全性。",
+        "编辑器增加可视化单轨时间线，显示缩略图、源起点和片段时长。"
+      ],
+      "fixes": [
+        "静音模式现在同时关闭原片字幕安全区滤镜、新字幕和音频流。",
+        "编辑器字幕回填不再被默认 burnAiVoiceCaptions 擅自打开，BGM 音量 0 也不会被改回 0.2。",
+        "编辑器保存失败会阻止后续候选渲染，渲染中保存按钮会禁用。",
+        "同批输出成功选择的 BGM/口播会计入下一条规划，素材池有替代音频时优先轮换。",
+        "抓取队列统一使用瞬时失败退避，取消任务重试会清理取消状态。"
+      ],
+      "verification": [
+        "backend: mvn -q test（通过）",
+        "backend: mvn -q -DskipTests compile（通过）",
+        "frontend: npm run build（通过，静态资源校验通过）",
+        "新增公开导入来源与 URL 校验回归测试（通过）。"
+      ],
+      "compatibility": "需要重启应用加载新 JAR 和前端资源；现有成片、素材文件和版本历史不移动、不删除。抓取仍只允许公开 http/https 资源，不读取 Cookie、密码或登录会话，不绕过 DRM、付费墙或地区限制。",
+      "evidence": [
+        "backend/src/main/java/com/douyin/mixcut/external/CrawlerGateway.java",
+        "backend/src/main/java/com/douyin/mixcut/service/CrawlJobService.java",
+        "backend/src/main/java/com/douyin/mixcut/service/RenderService.java",
+        "backend/src/main/java/com/douyin/mixcut/service/JobService.java",
+        "frontend/src/views/Crawl.vue",
+        "frontend/src/views/Editor.vue",
+        "frontend/src/views/Studio.vue",
+        "frontend/src/views/Tutorial.vue"
+      ]
+    },
+    {
+      "id": "release-2-2-75",
+      "version": "2.2.75",
+      "releasedAt": "2026-08-16",
+      "kind": "历史开发阶段",
+      "title": "本地素材隔离与可见单段修剪",
+      "summary": "修复仅本地素材模式仍混入公开来源的问题，并交付可预览、可保存的单段修剪工作流。",
+      "changes": [
+        "规划、容量分析和编辑器候选统一按 materialSourceMode 过滤 crawl 素材。",
+        "编辑台显示历史公开来源镜头、来源地址和阻断状态；候选生成前必须替换或禁用这些镜头。",
+        "编辑台新增受保护素材预览、入点/出点、范围滑块和最终时长的单段修剪弹窗。",
+        "编辑草稿保留禁用片段状态，渲染时跳过禁用片段；旧 ai-voice 模式在编辑台可见降级为保留原声。"
+      ],
+      "fixes": [
+        "修复 SkillEngine、严格文件夹回退、MaterialGapService 和 MixPlanner 读取全量素材导致公开素材继续参与本地任务。",
+        "修复编辑器只修改数字但没有源素材预览、保存状态反馈和裁剪边界提示。",
+        "修复候选渲染后禁用片段和公开来源片段状态不一致的问题。"
+      ],
+      "verification": [
+        "backend: mvn -q test（通过）",
+        "frontend: npm run build（通过，静态资源校验通过）",
+        "backend: mvn -q -DskipTests compile（通过）",
+        "新增 MixPlanner local/builtin 来源过滤回归测试（通过）。"
+      ],
+      "compatibility": "编辑器仍只接受已入库素材 ID，不开放任意路径、URL 或网络下载。应用重启后需使用新构建加载前端和后端变更；既有成片文件和版本历史不移动、不删除。",
+      "evidence": [
+        "backend/src/main/java/com/douyin/mixcut/service/MaterialSourcePolicy.java",
+        "backend/src/main/java/com/douyin/mixcut/service/OutputEditorService.java",
+        "backend/src/main/java/com/douyin/mixcut/service/RenderService.java",
+        "frontend/src/views/Editor.vue",
+        "backend/src/test/java/com/douyin/mixcut/service/MixPlannerTest.java"
+      ]
+    },
+    {
+      "id": "release-2-2-74",
+      "version": "2.2.74",
+      "releasedAt": "2026-08-16",
+      "kind": "历史开发阶段",
+      "title": "成片库移动端剪辑入口布局修复",
+      "summary": "修复窄屏下成片库工具栏未换行、保存路径挤压视频网格，导致新增剪辑入口无法正常使用的问题。",
+      "changes": [
+        "成片库在窄屏下将标题、保存位置、筛选和管理操作改为纵向可换行布局。",
+        "保存路径支持断行，视频卡片保留可用宽度，卡片内的下载、复制路径、剪辑和删除操作可正常换行。"
+      ],
+      "fixes": [
+        "修复手机或窄窗口打开成片库时，工具栏内容挤压到极窄列、成片卡片和剪辑操作无法正常阅读的问题。"
+      ],
+      "verification": [
+        "将以 390px 宽度重新验证成片库标题栏、卡片和剪辑入口布局。",
+        "前端 npm run build 必须通过文本完整性和静态资源校验。"
+      ],
+      "compatibility": "仅调整成片库响应式布局，不改变成片数据、任务筛选、批量选择、下载、删除或编辑会话行为。",
+      "evidence": [
+        "Outputs.vue",
+        "styles.css"
+      ]
+    },
+    {
+      "id": "release-2-2-73",
+      "version": "2.2.73",
+      "releasedAt": "2026-08-16",
+      "kind": "历史开发阶段",
+      "title": "成片库直达剪辑入口",
+      "summary": "成片库每张具备任务归属的成片卡片新增明确的剪辑入口，可直接进入对应的可编辑出片工作台。",
+      "changes": [
+        "成片卡片新增“剪辑”操作，携带该卡片的任务 ID 与输出序号进入应用内编辑工作台。",
+        "卡片操作区支持自动换行，下载、复制路径、剪辑和删除不会在窄卡片上挤压溢出。"
+      ],
+      "fixes": [
+        "修复成片库只能经质检修复弹窗进入编辑工作台、用户无法从正常成片直接开始剪辑的问题。"
+      ],
+      "verification": [
+        "前端 npm run build 通过，文本完整性和静态资源校验通过。",
+        "将验证真实成片卡片的剪辑跳转和窄视口操作区布局，不保存草稿、不渲染候选或覆盖当前成片。"
+      ],
+      "compatibility": "仅有有效任务 ID 和正输出序号的成片显示剪辑入口；无任务归属的目录补录记录保持现有行为。跳转只打开对应编辑会话，不自动保存、渲染或替换任何成片。",
+      "evidence": [
+        "Outputs.vue",
+        "Editor.vue",
+        "router.js"
+      ]
+    },
+    {
+      "id": "release-2-2-72",
+      "version": "2.2.72",
+      "releasedAt": "2026-08-16",
+      "kind": "历史开发阶段",
+      "title": "成片库选择框遮挡修复",
+      "summary": "修复成片库多选框脱离视频卡片定位上下文、堆叠到页面左上角并遮挡侧栏和成片内容的问题。",
+      "changes": [
+        "视频成片卡片建立独立定位上下文，使批量选择框固定在各自卡片左上角。"
+      ],
+      "fixes": [
+        "修复多个成片卡片的选择框重叠在页面左上角，显示编号残留并遮挡界面的问题。"
+      ],
+      "verification": [
+        "已在成片库复现：选择框绝对定位但卡片未设置定位上下文，确定为遮挡根因。",
+        "前端 npm run build 通过，文本完整性和静态资源校验通过。"
+      ],
+      "compatibility": "仅修正成片库批量选择框的视觉定位，不改变卡片数据、选择状态、播放、下载、删除或输出文件。",
+      "evidence": [
+        "styles.css",
+        "Outputs.vue"
+      ]
+    },
+    {
+      "id": "release-2-2-71",
+      "version": "2.2.71",
+      "releasedAt": "2026-08-16",
+      "kind": "历史开发阶段",
+      "title": "可编辑出片工作台哈希上下文修复",
+      "summary": "修复 hash 路由环境下编辑工作台未稳定读取成片上下文参数的问题。现在从成片库、质检详情或修复方案进入时，工作台可以可靠加载目标成片的会话和时间线。",
+      "changes": [
+        "编辑工作台兼容读取 Vue 路由查询参数和 hash URL 中的 jobId、输出序号、质检分类与问题定位参数。"
+      ],
+      "fixes": [
+        "修复地址中已存在 jobId 和输出序号时，编辑页仍错误显示空状态、无法加载已有成片工作台的问题。"
+      ],
+      "verification": [
+        "已读取现有任务 102 的第 1 条成片：基础版本 1、38 个片段、82 条视觉素材候选、25 条可读 BGM 和 25 条可读口播素材均可由编辑接口返回。",
+        "前端 npm run build 通过，文本完整性和静态资源校验通过。",
+        "后端 mvn test 通过，共 295 项测试无失败。"
+      ],
+      "compatibility": "路由对象跳转仍保持原有 query 参数格式；新增 hash URL 解析仅作为兼容回退，不改变编辑会话、候选渲染、质检或覆盖确认逻辑。",
+      "evidence": [
+        "Editor.vue",
+        "Outputs.vue",
+        "router.js",
+        "OutputEditorService.java"
+      ]
+    },
+    {
+      "id": "release-2-2-70",
+      "version": "2.2.70",
+      "releasedAt": "2026-08-16",
+      "kind": "历史开发阶段",
+      "title": "可编辑出片工作台空入口修复",
+      "summary": "修复直接打开成片编辑路由但未指定成片时的无效接口请求。工作台现在显示明确的成片库入口，不会产生服务端参数转换错误。",
+      "changes": [
+        "成片编辑页在缺少 jobId 或输出序号时显示空状态和前往成片库入口。",
+        "工作台只在拥有有效成片上下文时加载任务、编辑会话和质检版本历史。"
+      ],
+      "fixes": [
+        "修复直接访问编辑路由时将空上下文拼接为接口路径、导致服务端 Long 参数转换错误的问题。"
+      ],
+      "verification": [
+        "浏览器验证直接打开编辑工作台可加载新页面资源，并复现后确认了原始无效上下文边界。",
+        "前端 npm run build 通过，文本完整性和静态资源校验通过。",
+        "后端 mvn test 通过，共 295 项测试无失败。"
+      ],
+      "compatibility": "从成片库、质检详情和修复方案进入时的 jobId 与输出序号参数保持不变。未携带成片上下文的独立路由访问不创建会话、不请求输出接口，也不更改已有素材、任务或成片。",
+      "evidence": [
+        "Editor.vue",
+        "router.js",
+        "Outputs.vue",
+        "api.js"
+      ]
+    },
+    {
+      "id": "release-2-2-69",
+      "version": "2.2.69",
+      "releasedAt": "2026-08-16",
+      "kind": "历史开发阶段",
+      "title": "可编辑出片工作台候选版本交付",
+      "summary": "新增基于已有成片计划和本地素材库的可编辑出片工作台。编辑先生成独立候选版本并完成既有 QC，只有用户明确确认后才替换当前成片；旧版本保留为可回滚记录。",
+      "changes": [
+        "新增受控编辑会话：可调整片段顺序、启用状态、视频裁剪、素材替换和本地已入库素材插入，并保存独立草稿、候选和历史状态。",
+        "支持原声、静音、背景音乐和可选口播素材、音量、字幕开关及字幕安全区设置；所有素材 ID、时长和可读性均由服务端复核。",
+        "候选渲染继续使用既有 FFmpeg 与交付 QC，未通过 QC 的结果只保留诊断，不会成为当前成片。",
+        "候选渲染完成状态改由独立事务服务持久化，避免异步渲染线程内的自调用事务失效。"
+      ],
+      "fixes": [
+        "修复编辑候选完成后可能未稳定落库、界面长期停在渲染中的事务边界问题。",
+        "修复已应用编辑会话被再次打开时可能被覆盖为新草稿，以及基础版本可能错误选中最近 QC 失败版本的问题。",
+        "修复应用候选后旧版本仍指向当前输出、导致当前交付指针不明确的问题。"
+      ],
+      "verification": [
+        "前端 npm run build 通过，文本完整性和静态资源校验通过。",
+        "后端 mvn test 通过，共 295 项测试无失败。",
+        "新增 OutputEditorServiceTest 覆盖跨输出会话拒绝、明确确认要求与候选接管后的旧版本回滚状态。"
+      ],
+      "compatibility": "编辑器仅接受已入库的本地素材 ID，不接受任意路径、URL、命令或直接网络下载；在线素材仍须经过既有授权来源、URL 安全校验、质量准入和入库流程。既有成片文件不会被删除或移动，应用候选前必须通过完整质检并由用户明确确认。多轨关键帧、特效贴纸生态、协作和任意链接下载不在本次范围。",
+      "evidence": [
+        "OutputEditorService.java",
+        "OutputEditorPersistenceService.java",
+        "OutputEditSession.java",
+        "JobController.java",
+        "Editor.vue",
+        "OutputEditorServiceTest.java",
+        "output-edit-session-migration.sql"
+      ]
+    },
+    {
+      "id": "release-2-2-68",
+      "version": "2.2.68",
+      "releasedAt": "2026-08-16",
+      "kind": "历史开发阶段",
+      "title": "自主素材补齐与成片修复工作台",
+      "summary": "公开素材补齐改为项目优先、受控类目回退和一次有界自主恢复；成片库补齐保存位置、修复聚合与应用内编辑工作台入口。",
+      "changes": [
+        "公开素材检索扩展中英文类目和场景映射；项目词未命中英文公开索引时，仅在原有合规来源内使用受控回退检索并记录原因。",
+        "自主模式会尝试恢复失败的合规采集任务并执行一次有界第二轮检索，仍无合法可读素材时明确保留人工决策状态。",
+        "成片库新增后续成片保存位置设置，支持默认应用目录、桌面目录和经过本机可写性校验的自定义绝对目录。",
+        "修复方案按问题最新状态折叠，并新增成片编辑工作台入口；工作台基于已入库素材、候选版本和完整质检重新出片。",
+        "环境中心隐藏本机手工版本记录编辑档口，保留只读发布历史；AI 助手增加受控创作入口和离线创作挑战。"
+      ],
+      "fixes": [
+        "修复中文项目关键词退化为泛化检索后又被相关性过滤全部丢弃，导致素材充足提示与公开来源无结果提示并存的问题。",
+        "修复自主模式在公开素材等待超时后直接要求人工刷新、未尝试受控恢复的问题。",
+        "修复成片修复弹窗将同一问题的历史尝试重复堆叠，且没有直达应用内编辑上下文的问题。"
+      ],
+      "verification": [
+        "前端 npm run build 通过，Studio 文本完整性与静态资源校验通过。",
+        "后端 mvn test package 通过，共 292 项测试无失败。",
+        "后端编译通过；公开检索词映射、合规回退和自主恢复构造路径已纳入现有回归测试。"
+      ],
+      "compatibility": "仅影响后续自主准备、修复显示和后续输出目录；既有成片不移动、不删除。自动补齐仍只使用已允许公开来源与用户配置的官方 API，不读取登录态、不绕过站点授权、DRM 或地区限制。",
+      "evidence": [
+        "CrawlerGateway.java",
+        "MaterialGapService.java",
+        "RenderPreparationService.java",
+        "LocalConfigController.java",
+        "Outputs.vue",
+        "Editor.vue",
+        "AiChat.vue",
+        "CrawlerGatewayRelevanceTest.java",
+        "RenderPreparationServiceTest.java"
+      ]
+    },
+    {
+      "id": "release-2-2-67",
+      "version": "2.2.67",
+      "releasedAt": "2026-08-16",
+      "kind": "历史开发阶段",
+      "title": "能力中心与出片质量门修复",
+      "summary": "将能力中心凭据配置、助手浮层隔离、项目感知钩子、音频轮换与镜头分析质量门收敛为可验证的本机交付链路。",
+      "changes": [
+        "能力清单为 Pexels、Pixabay、Freesound 声明稳定 configId、环境变量、媒体类型、测试查询与重启要求；能力中心由后端元数据驱动 API Key 配置。",
+        "来源密钥接口只接受清单已声明的 configId，保留旧 provider 请求兼容；状态仅返回掩码、配置状态与固定环境变量，不能由浏览器指定任意变量。",
+        "AI 助手启动器改为 body 根层原生按钮，固定完整点击区并避开底部操作区；对话框使用独立高层级、关闭后清理草稿与发送状态。",
+        "本地素材导入明确说明入库、角色归类、缩略图和后续 Studio 使用范围；成片库明确区分输出目录补录与原始素材导入。",
+        "自动钩子从项目字段及实际计划素材摘要生成；修复版本只刷新自动生成的钩子，不改用户手填钩子。",
+        "未指定音频时，BGM 和口播综合任务 seed 与同项目近期版本快照轮换；计划记录选用原因。",
+        "准备流程会为当前授权范围内的可读视频异步排队镜头分析；严格交付会拦截完全依赖网格切片的成片。"
+      ],
+      "fixes": [
+        "修复能力商店的官方来源卡片只打开说明、不能进入应用内 API Key 配置的问题。",
+        "修复成片库与全局拖放可能因非文件拖动误弹导入窗的问题。",
+        "修复项目历史去重按全局最近任务读取，导致其他项目挤出当前项目历史素材的问题。",
+        "修复 AI 自动重试换了策略与镜头却沿用旧钩子文案的问题。",
+        "修复严格交付把所有未分析画面仅作为 warn 继续交付的问题。"
+      ],
+      "verification": [
+        "前端 npm run build 通过，文本完整性和静态资源校验通过。",
+        "后端 mvn test package 通过，共 292 项测试无失败。",
+        "运行中的 127.0.0.1:8760 服务已检查：数据库、FFmpeg、FFprobe、yt-dlp、you-get 正常，渲染队列为空。",
+        "GET /api/local-config/source-keys 与 GET /api/system/capabilities?refresh=true 已验证凭据注册表返回三项官方来源的 configId、掩码状态与 credential 元数据。",
+        "浏览器 DOM 验证确认助手启动器为顶层完整 52x52 原生按钮，成片库使用新补录文案；当前 IAB 对普通链接和按钮均未转发点击，无法以该通道验证点击回调。"
+      ],
+      "compatibility": "既有 .env 的 APP_PEXELS_API_KEY、APP_PIXABAY_API_KEY 和 APP_FREESOUND_API_KEY 继续读取；旧客户端 provider 请求继续兼容。显式指定的 BGM、口播和手填钩子始终优先，不被自动轮换或修复覆盖。来源请求仍只允许受限 HTTP/HTTPS 公开来源，不读取 Cookie、密码或绕过登录、DRM、地区限制。",
+      "evidence": [
+        "capabilities.json",
+        "CredentialRegistry.java",
+        "LocalConfigController.java",
+        "BootstrapService.java",
+        "Capabilities.vue",
+        "AiChat.vue",
+        "App.vue",
+        "Outputs.vue",
+        "CopyService.java",
+        "JobService.java",
+        "MixPlanner.java",
+        "MaterialAnalysisService.java",
+        "RenderPreparationService.java",
+        "DeliveryQcService.java"
+      ]
+    },
+    {
+      "id": "release-2-2-66",
+      "version": "2.2.66",
+      "releasedAt": "2026-08-16",
+      "kind": "当前本机构建",
+      "title": "能力中心与出片准备链路修复",
+      "summary": "将官方素材来源的本机密钥配置、能力卡真实状态、素材容量规划和自动修复重试收敛为可操作且不泄露凭据的流程。",
+      "changes": [
+        "能力中心可打开官方注册页、在本机填写 Pexels、Pixabay、Freesound 的用户 API Key、保存后重启并测试当前服务端配置。",
+        "来源密钥仅写入本机服务端 .env，接口仅返回掩码与状态；LAN 客户端不能保存、测试或重启配置。",
+        "能力卡依据实际配置显示可用或待配置；更正 ChatTTS 和 FFmpeg loudnorm 的真实接入说明，未接入工具继续如实标记。",
+        "素材容量分析与 planner 最低切片阈值和角色池对齐，未分类静态图片会给出不能自动规划的明确提示。",
+        "同批成片按稳定 variant 轮换未显式指定的 BGM/口播候选；修复重排画面时同步重新生成 AI 旁白与字幕时间线。",
+        "AI 助手弹窗新增明确关闭按钮，并支持点击遮罩和 Esc 取消，关闭后清理输入与发送状态。",
+        "等待人工决策的任务继续时会应用已记录的安全修复建议；需要人工选择 BGM 的动作仍不会自动替代。"
+      ],
+      "fixes": [
+        "修复公开素材尚在后台入库时被提示为“已补齐”并立即扩展素材范围，随后干跑计划为 0 秒的问题。",
+        "修复准备任务串行等待导致无关 Studio 提交被长时间阻塞的问题。",
+        "修复能力中心只有官方说明、没有应用内密钥配置和测试入口的问题。",
+        "修复未显式选择音频时每条计划都固定选择候选列表第一项的问题。"
+      ],
+      "verification": [
+        "前端 npm run build 通过，Studio 文本完整性和静态资源校验通过。",
+        "后端 mvn test 通过，共 291 项测试无失败。",
+        "后端编译通过，能力中心契约测试覆盖未配置来源的配置入口状态。"
+      ],
+      "compatibility": "既有 .env 中的 APP_PEXELS_API_KEY、APP_PIXABAY_API_KEY 和 APP_FREESOUND_API_KEY 会继续读取；不配置时仍只使用免登录、许可受限的公开来源。应用不读取站点 Cookie、账号密码，也不绕过登录、DRM 或地区限制。OCR 级字幕移除和视频背景移除仍未声明为已实现。",
+      "evidence": [
+        "LocalConfigController.java",
+        "BootstrapService.java",
+        "MaterialGapService.java",
+        "MixPlanner.java",
+        "JobService.java",
+        "PreparationConfig.java",
+        "Capabilities.vue",
+        "Studio.vue"
+      ]
+    },
+    {
+      "id": "release-2-2-65",
+      "version": "2.2.65",
+      "releasedAt": "2026-08-16",
+      "kind": "当前本机构建",
+      "title": "出片诊断与交付稳定性修复",
+      "summary": "将公开素材抓取、片尾卡回退、成品质检状态和出片控制台的关键误报收敛为可诊断、可恢复的流程。",
+      "changes": [
+        "采集任务持久化错误码、来源与 HTTP 状态。",
+        "片尾卡支持安全回退，QC 提示不再误报失败。"
+      ],
+      "fixes": [
+        "修复公开素材抓取失败只显示泛化错误。",
+        "修复成功出片仅有 QC 提示时显示重试失败。"
+      ],
+      "verification": [
+        "前端构建和后端完整测试通过。"
+      ],
+      "compatibility": "既有任务和素材范围保持兼容。",
+      "evidence": [
+        "CrawlerGateway.java",
+        "MixPlanner.java",
+        "JobService.java",
+        "Studio.vue"
+      ]
+    },
+    {
+      "version": "2.2.64",
+      "releasedAt": "2026-08-16",
+      "kind": "当前本机构建",
+      "title": "启动期后端误报修复",
+      "summary": "页面启动时改用环境探测的静默重试作为后端可达判定，避免并发初始化中的一条瞬时失败把正常本机服务误报为不可达。",
+      "changes": [
+        "环境状态加载优先使用轻量 /api/system/env 探测，短暂连接失败会在有限次数内静默重试。",
+        "Studio 首次加载的项目、工作流、素材和文件夹请求以静默配置聚合，单条非关键失败不会刷出全局后端断线提示。",
+        "前端 API 方法支持显式传递请求配置，静默标志不会混入服务端查询参数。"
+      ],
+      "fixes": [
+        "修复后端、数据库和 FFmpeg 已经可用时，页面刚打开仍显示“无法连接后端服务”的误导性红色提示。",
+        "修复页面异步初始化时，一条失败响应可以覆盖后续成功环境探测结果的问题。"
+      ],
+      "verification": [
+        "直接请求 /api/system/env?refresh=true 与 /api/system/overview 均返回 200 和完整环境数据。",
+        "浏览器在 127.0.0.1:8760 出片控制台复现后，环境初始化完成显示后端、数据库、FFmpeg 和素材池均正常。",
+        "前端 npm run build 与静态资源校验通过。",
+        "后端完整 mvn test package 通过。"
+      ],
+      "compatibility": "不修改后端接口、数据目录、素材、项目、任务或访问令牌；仅延迟显示真实不可达提示，手动刷新仍会立即重新探测。",
+      "evidence": [
+        "App.vue",
+        "api.js",
+        "Studio.vue",
+        "SystemController.java",
+        "start.bat"
+      ],
+      "id": "release-2-2-64"
+    },
+    {
+      "version": "2.2.63",
+      "releasedAt": "2026-08-16",
+      "kind": "历史开发阶段",
+      "title": "运行中更新包选择修复",
+      "summary": "启动脚本优先选择可独立更新的 mixcut-current.jar，避免 Windows 锁定旧交付 JAR 时，下次正常重启仍加载旧版本。",
+      "changes": [
+        "start.bat 优先启动 backend/target/mixcut-current.jar，并保留 mixcut-delivery.jar 与 mixcut.jar 的兼容回退。",
+        "发布构建生成独立的当前交付包，可在旧实例仍运行时完成下次重启所需的更新准备。"
+      ],
+      "fixes": [
+        "修复 Windows 运行中的 java.exe 锁定 mixcut-delivery.jar 后，Maven 不能替换交付包、脚本仍优先加载旧 JAR 的问题。",
+        "修复已完成的新前端和后端构建无法在不先中断现有服务的情况下作为下一次启动目标的问题。"
+      ],
+      "verification": [
+        "前端 npm run build 与静态资源校验通过。",
+        "后端完整 mvn test package 通过。",
+        "发布工具测试与发布记录校验通过。",
+        "隔离实例从版本化当前 JAR 启动，旧 APP_VERSION 环境变量不影响当前版本验证。"
+      ],
+      "compatibility": "现有 mixcut-delivery.jar 和 mixcut.jar 继续作为回退；正在运行的 8760 服务不被脚本或构建操作中断。",
+      "evidence": [
+        "start.bat",
+        "pom.xml",
+        "AppProps.java",
+        "release_notes.py",
+        "release-notes.json"
+      ],
+      "id": "release-2-2-63"
+    },
+    {
+      "version": "2.2.62",
+      "releasedAt": "2026-08-15",
+      "kind": "历史开发阶段",
+      "title": "旧版本环境变量启动兼容修复",
+      "summary": "发布版本读取接口改为非 JavaBean 属性，遗留 APP_VERSION 环境变量会被安全忽略，不再阻止应用启动或影响内置发行记录。",
+      "changes": [
+        "应用以 releaseVersion() 读取编译进 JAR 的发布身份，避免该身份进入 app.* 配置绑定范围。",
+        "环境自检和发行记录校验统一使用 releaseVersion()，仍会在 JAR 版本与 release-notes 不一致时拒绝启动。"
+      ],
+      "fixes": [
+        "修复 APP_VERSION 遗留环境变量命中只读 getVersion 属性后导致 Spring 配置绑定失败、应用无法启动的问题。",
+        "修复旧版本环境变量存在时无法同时保证正常启动和构建版本不可覆盖的问题。"
+      ],
+      "verification": [
+        "后端完整 mvn test package 通过。",
+        "发布工具单元测试与发布记录校验通过。",
+        "前端 npm run build 与静态资源校验通过。",
+        "隔离启动使用 APP_VERSION=2.2.57，确认服务正常启动并显示当前构建版本。"
+      ],
+      "compatibility": "APP_VERSION 保留在旧启动环境中不会再造成失败，但不会影响应用版本；其余 APP_* 配置、数据目录、素材、项目和任务均不变。",
+      "evidence": [
+        "AppProps.java",
+        "BootstrapService.java",
+        "ReleaseNotesService.java",
+        "AppPropsVersionTest.java",
+        "ReleaseNotesSchemaTest.java",
+        "release-notes.json"
+      ],
+      "id": "release-2-2-62"
+    },
+    {
+      "version": "2.2.61",
+      "releasedAt": "2026-08-15",
+      "kind": "历史开发阶段",
+      "title": "构建版本防覆盖修复",
+      "summary": "发布版本改为 AppProps 构建常量并增加回归测试，彻底阻止 APP_VERSION 或配置绑定把运行时版本改成旧值。",
+      "changes": [
+        "AppProps 使用不可配置绑定的 RELEASE_VERSION 常量作为唯一应用版本来源。",
+        "发布工具只更新构建常量和安装器版本，不再维护 app.version 运行时配置项。",
+        "新增版本不可绑定回归测试，校验应用不存在 setVersion 配置入口。"
+      ],
+      "fixes": [
+        "修复 Spring 宽松绑定仍会把 APP_VERSION 映射到 app.version 并覆盖内置版本的问题。",
+        "修复隔离或生产环境遗留旧版本环境变量时，环境自检和发布历史显示不一致的问题。"
+      ],
+      "verification": [
+        "发布工具单元测试通过。",
+        "后端完整 mvn test package 通过。",
+        "前端 npm run build 与静态资源校验通过。",
+        "隔离运行实例在存在旧 APP_VERSION 环境变量时仍显示当前构建版本。"
+      ],
+      "compatibility": "仅移除 APP_VERSION 的运行时覆盖能力；其他 APP_* 配置、数据目录、素材、项目、任务和发布历史均不受影响。",
+      "evidence": [
+        "AppProps.java",
+        "AppPropsVersionTest.java",
+        "application.yml",
+        "release_notes.py",
+        "test_release_notes.py",
+        "release-notes.json"
+      ],
+      "id": "release-2-2-61"
+    },
+    {
+      "version": "2.2.60",
+      "releasedAt": "2026-08-15",
+      "kind": "历史开发阶段",
+      "title": "发行版本一致性修复",
+      "summary": "应用显示的版本号改为随构建固定，避免环境变量覆盖后与内置发行记录和实际 JAR 版本不一致。",
+      "changes": [
+        "应用版本由构建时发布流程写入 application.yml，并与 AppProps、安装器版本和 release-notes 当前记录保持一致。",
+        "发布工具支持更新固定应用版本，后续补丁发布不再生成可被 APP_VERSION 覆盖的版本配置。"
+      ],
+      "fixes": [
+        "修复运行环境存在旧 APP_VERSION 时，环境自检仍显示旧版本而发行记录已更新的问题。",
+        "修复版本身份可被部署环境意外覆盖、导致构建记录和运行界面不一致的问题。"
+      ],
+      "verification": [
+        "发布工具检查与应用通过。",
+        "后端完整 mvn test package 通过。",
+        "前端 npm run build 与静态资源校验通过。",
+        "隔离运行实例确认环境自检版本与内置 release-notes 一致。"
+      ],
+      "compatibility": "APP_VERSION 不再作为运行时覆盖项；应用数据、素材、项目、任务、访问令牌及其他环境配置均不受影响。",
+      "evidence": [
+        "application.yml",
+        "AppProps.java",
+        "release_notes.py",
+        "release-notes.json",
+        "ReleaseNotesSchemaTest.java"
+      ],
+      "id": "release-2-2-60"
+    },
+    {
+      "version": "2.2.59",
+      "releasedAt": "2026-08-15",
+      "kind": "历史开发阶段",
+      "title": "配音建议与素材准备恢复修复",
+      "summary": "自动配音会依据项目受众、语气和文案特征推荐已有本机音色；出片控制台重新打开后可发现并继续显示仍在运行的素材准备任务。",
+      "changes": [
+        "自动配音在四种已支持的本机音色中按项目受众、语气、补充要求和文案特征给出建议，并允许用户一键采用或自行选择。",
+        "出片控制台启动时读取最近素材准备任务，对仍在运行的任务恢复状态轮询并保留原有阶段诊断。"
+      ],
+      "fixes": [
+        "修复配音界面将晓晓女声固定标记为推荐、无法根据项目上下文调整建议的问题。",
+        "修复页面刷新或重新打开后，后端仍在执行的素材准备任务无法在前端继续观察的问题。"
+      ],
+      "verification": [
+        "前端 npm run build 与静态资源校验通过。",
+        "最终顺序构建后端 Maven 测试与打包通过。",
+        "隔离运行实例验证素材库自动配音弹窗的项目、时长、文案和音色建议控件。",
+        "隔离运行实例验证出片控制台加载最近准备任务接口不影响本地干跑。"
+      ],
+      "compatibility": "不增加云端音色服务、不收集用户内容，也不更改已有配音的音色；建议仅作为当前表单默认值，用户可随时手动覆盖。",
+      "evidence": [
+        "Materials.vue",
+        "Studio.vue",
+        "api.js",
+        "JobController.java",
+        "RenderPreparationService.java",
+        "JobControllerTest.java"
+      ],
+      "id": "release-2-2-59"
+    },
+    {
+      "version": "2.2.58",
+      "releasedAt": "2026-08-15",
+      "kind": "历史开发阶段",
+      "title": "素材包归档与出片预检可靠性修复",
+      "summary": "文件夹和 ZIP 素材包可稳定归档到用户明确选择的目标文件夹；素材库收纳、自动配音辅助与出片前检统一以实际可读素材和干跑结果为准。",
+      "changes": [
+        "文件夹拖入、选择文件夹和 ZIP 素材总包统一走批量导入，明确选择的归档文件夹优先且不会改写其已有扫描路径。",
+        "素材库按归档文件夹折叠展示视频、音频和图片数量；文件夹管理可展开查看分类素材并进入对应筛选范围。",
+        "自动配音支持按项目生成口播稿和钩子稿，显示音频引擎状态与预计时长，生成音频仍须通过既有媒体准入。",
+        "出片控制台将素材缺口显示为容量估算，批量提交仅以当前范围的干跑结果和音轨覆盖校验为准。"
+      ],
+      "fixes": [
+        "修复首个批量素材包导入时暂存 uploads 目录尚未创建而导致导入失败的问题。",
+        "修复显式归档目标可能被包导入流程重新解释为平行源文件夹的问题。",
+        "修复队列受压时已接收媒体可能被错误标为失败的问题，保留 processing 状态供恢复任务继续处理。",
+        "修复素材容量显示满足但实际干跑无可用素材或音频覆盖不足时仍可能给出误导性提示的问题。"
+      ],
+      "verification": [
+        "后端完整 mvn test package 通过。",
+        "前端 npm run build 与静态资源校验通过。",
+        "MaterialImportSafetyTest、RenderPreparationServiceTest 与 MaterialGapServiceTest 聚焦回归通过。",
+        "隔离运行实例确认素材库呈现批量导入、归档选择、折叠素材分组和自动配音入口。"
+      ],
+      "compatibility": "不迁移或改写用户已有扫描目录、素材原文件、项目或历史任务；显式选择归档文件夹时新增素材直接挂接到该文件夹。",
+      "evidence": [
+        "MaterialService.java",
+        "MaterialController.java",
+        "WebConfig.java",
+        "Materials.vue",
+        "Studio.vue",
+        "MaterialImportSafetyTest.java",
+        "RenderPreparationServiceTest.java",
+        "MaterialGapServiceTest.java"
+      ],
+      "id": "release-2-2-58"
+    },
+    {
+      "version": "2.2.57",
+      "releasedAt": "2026-08-15",
+      "kind": "历史开发阶段",
+      "title": "全电脑离线环境适配与环境修复归档",
+      "summary": "安装包内置完整 Python 3.13.5 与 faster-whisper 离线模型，venv 可在任意电脑自愈重绑；新电脑首次启动生成的数据库凭据与内置 MySQL 对齐；批量删除、终态清理、素材等待与 HTTPS 抓取等修复入列。",
+      "changes": [
+        "安装包新增内置完整 CPython 3.13.5（portable/python，约 118MB），不再依赖系统 Python；venv 启动自愈：检测到 pyvenv.cfg.home 失效时自动重绑到应用内 portable/python，离线秒级恢复 ASR/OCR/TTS 依赖",
+        "内置 faster-whisper small 离线模型（portable/whisper-models，约 464MB），start.bat 设置 HF_HOME 到应用数据目录并在首启本地预置，语音转写不再需要联网下载",
+        "ensure_env.bat 与 .env.example 的默认数据库配置已对齐安装包内置 mysqldata（真实本地凭据未纳入分享快照），新电脑装完后需按本机配置连接内置 MySQL",
+        "start.bat 增加离线语音模型预置拷贝；setup_runtime.bat 无 venv 时优先用内置 Python 创建"
+      ],
+      "fixes": [
+        "修复新电脑安装后 .env 默认凭据与内置 MySQL 不匹配导致 1045 拒绝、应用无法连库的问题",
+        "修复内置 .venv 的 pyvenv.cfg.home 指向打包机绝对路径，换电脑后 Python 媒体依赖全部失效的问题",
+        "修复 JobController 批量删除遇未知运行时异常中断整批并返回 500 的问题（异常隔离到单条）",
+        "修复 JobService.cleanupTerminal 只清理最近 100 条终态任务的问题（改为全量清理）",
+        "修复 RenderPreparationService.waitForCrawlJobs 在任务记录缺失时必然等待满超时的问题（缺失任务视为已结束）",
+        "修复 CrawlerGateway HTTPS 抓取在 IP 钉住建连下主机名校验被绕过/失败的问题（校验绑定原始域名）"
+      ],
+      "verification": [
+        "模拟新电脑：破坏 pyvenv.cfg.home → bootstrap_media_runtime.bat 自动修复 → venv 全部媒体依赖恢复（生产日志 16:05:44 实证）",
+        "HF_HUB_OFFLINE=1 + 全新预置缓存 → faster-whisper small 模型离线加载成功",
+        "全新目录运行 ensure_env.bat → 生成凭据连接内置 MySQL 成功（19 张表）",
+        "后端 mvn -DskipTests compile 通过；缺口预检接口运行时验证正常"
+      ],
+      "compatibility": "安装包体积增加约 580MB（压缩后约 +500MB）；默认凭据为本地单机应用设计，可在环境中心修改；旧 .env 不受影响（ensure_env 仅在没有 .env 时生成）",
+      "evidence": [
+        "portable/python",
+        "portable/whisper-models",
+        "backend/tools/bootstrap_media_runtime.bat",
+        "start.bat",
+        "setup_runtime.bat",
+        "ensure_env.bat",
+        "backend/src/main/java/com/douyin/mixcut/web/JobController.java",
+        "backend/src/main/java/com/douyin/mixcut/service/JobService.java",
+        "backend/src/main/java/com/douyin/mixcut/service/RenderPreparationService.java",
+        "backend/src/main/java/com/douyin/mixcut/external/CrawlerGateway.java",
+        "AI-ASSISTANT-NOTES.md"
+      ],
+      "id": "release-2-2-57"
+    },
+    {
+      "version": "2.2.56",
+      "releasedAt": "2026-08-15",
+      "kind": "历史开发阶段",
+      "title": "出片控制台与跨设备稳定性修复",
+      "summary": "固定顺序支持自建、导入和 AI 建议，出片草稿和素材来源策略可撤销、可审计；更新后旧页面可自动恢复，便携运行时可在其他电脑可靠启动。",
+      "changes": [
+        "产片固定顺序页增加自定义步骤、已下载 JSON 导入和 AI 结构化顺序建议；所有结果都进入出片控制台继续编辑文件夹、时长和步骤。",
+        "出片控制台增加撤销工作流、重置草稿、显式取消步骤文件夹绑定，以及仅本地/内置公开补齐/公开直链和官方授权三档素材策略。",
+        "缺口预检按严格顺序和授权文件夹计算实际可读素材范围；仅本地模式不会访问网络，公开素材仍通过服务端受控来源和 URL 安全边界。",
+        "成片库增加可收起的内置参考区并显示播放器错误状态；路由懒加载资源在更新后首次失败会自动刷新恢复。",
+        "启动脚本优先使用内置 JDK 并校验版本，验证 Jar 含完整静态页面；跨电脑抓取工具改为内置 Python 模块调用，避免绝对路径启动器失效。"
+      ],
+      "fixes": [
+        "修复清空工作流后旧参数残留并继续影响出片的问题。",
+        "修复固定顺序文件夹绑定缺少明确取消操作，以及范围预检可能显示素材充足但实际步骤无可读素材的问题。",
+        "修复更新后旧浏览器标签请求旧懒加载资源时页面报红的问题。"
+      ],
+      "verification": [
+        "已执行 frontend npm run build 和静态资源校验。",
+        "已执行 backend mvn test，166 项测试通过。",
+        "已执行 CrawlerGatewayRelevanceTest 离线聚焦测试，3 项通过。"
+      ],
+      "compatibility": "不改写历史任务、素材或项目数据。公开直链和授权来源继续要求公开可访问或用户官方授权，禁止绕过登录、付费墙、反爬或站点访问控制；所有网络请求仍拒绝 localhost、环回、私网和保留地址并逐跳校验重定向。",
+      "evidence": [
+        "frontend/src/views/FixedOrderPresets.vue",
+        "frontend/src/views/Studio.vue",
+        "frontend/src/views/Outputs.vue",
+        "frontend/src/main.js",
+        "backend/src/main/java/com/douyin/mixcut/web/WorkflowController.java",
+        "backend/src/main/java/com/douyin/mixcut/service/MaterialGapService.java",
+        "backend/src/main/java/com/douyin/mixcut/external/CrawlerGateway.java",
+        "start.bat"
+      ],
+      "id": "release-2-2-56"
+    },
+    {
+      "version": "2.2.55",
+      "releasedAt": "2026-08-15",
+      "kind": "历史开发阶段",
+      "title": "出片素材准备与任务批量删除",
+      "summary": "出片控制台在提交前可识别项目、优先匹配本地素材，并仅通过固定公开来源补齐缺口；终态出片任务支持受保护的批量删除。",
+      "changes": [
+        "新增出片准备接口：先分析本地素材，按项目字段或已配置 AI 生成受控检索词，再仅从 Wikimedia Commons、Internet Archive、Mixkit 补齐并在限定时间内等待已入库素材。",
+        "出片控制台展示准备阶段和缺口结果；本次成功入库的公开素材会参与随后的干跑与提交，关闭开关时保持纯本地流程。",
+        "出片任务表支持多选删除，服务端逐条复用状态保护和关联本地成片清理，未知或活跃任务不会阻断同批其他终态任务。"
+      ],
+      "fixes": [
+        "修复提交前准备素材时未基于当前表单快照判断手动筛选范围，可能遗漏本次已成功入库公开素材的问题。"
+      ],
+      "verification": [
+        "已在浏览器验证产片固定顺序的新增读取步骤、前三步收起和用户可编辑行为。",
+        "已执行 JobControllerTest 和 RenderPreparationServiceTest。",
+        "已执行 frontend npm run build，并通过 scripts/verify-static.mjs 静态资源校验。",
+        "已执行 backend mvn test。"
+      ],
+      "compatibility": "不改写历史任务、项目、工作流或素材。出片准备只使用服务端固定公开来源和已有抓取安全边界；任务批量删除仍拒绝运行中、排队中和暂停中的任务。",
+      "evidence": [
+        "backend/src/main/java/com/douyin/mixcut/service/RenderPreparationService.java",
+        "backend/src/main/java/com/douyin/mixcut/web/JobController.java",
+        "backend/src/test/java/com/douyin/mixcut/service/RenderPreparationServiceTest.java",
+        "backend/src/test/java/com/douyin/mixcut/web/JobControllerTest.java",
+        "frontend/src/views/Studio.vue",
+        "frontend/src/api.js"
+      ],
+      "id": "release-2-2-55"
+    },
+    {
+      "version": "2.2.54",
+      "releasedAt": "2026-08-15",
+      "kind": "历史开发阶段",
+      "title": "固定顺序预置可靠传递",
+      "summary": "产片固定顺序预置改用路由参数主通道传递到出片控制台，确保用户选择行业预置后能可靠载入对应步骤。",
+      "changes": [
+        "产片固定顺序预置在跳转出片控制台时附带受控 preset 标识。",
+        "出片控制台初始化时读取预置标识、载入对应步骤后清理地址栏，后续用户修改不会因刷新重复覆盖。"
+      ],
+      "fixes": [
+        "修复部分页面切换环境下 sessionStorage 未可靠保留，导致点击“应用到出片控制台”后未启用固定顺序的问题。"
+      ],
+      "verification": [
+        "已执行 frontend npm run build，并通过 scripts/verify-static.mjs 静态资源校验。",
+        "已在浏览器验证七种行业预置页面、侧边栏入口和预置跳转到出片控制台流程。"
+      ],
+      "compatibility": "不修改历史任务、项目、工作流或素材。路由预置标识只在进入出片控制台时消费一次，随后继续允许用户自由编辑顺序。",
+      "evidence": [
+        "frontend/src/views/FixedOrderPresets.vue",
+        "frontend/src/views/Studio.vue"
+      ],
+      "id": "release-2-2-54"
+    },
+    {
+      "version": "2.2.53",
+      "releasedAt": "2026-08-15",
+      "kind": "历史开发阶段",
+      "title": "发布历史序列校验稳定性修复",
+      "summary": "发布历史序列测试不再依赖可变数组下标，持续验证最新补丁的连续性和历史关键版本存在性。",
+      "changes": [
+        "发布历史测试从硬编码版本列表改为基于当前版本计算最近连续补丁序列。",
+        "历史关键版本使用存在性校验，不再假定随新发布而变化的数组索引。"
+      ],
+      "fixes": [
+        "修复历史记录增长后 ReleaseNotesSchemaTest 断言错位导致测试失败的问题。"
+      ],
+      "verification": [
+        "已执行 backend mvn test，166 项测试通过。"
+      ],
+      "compatibility": "仅修改测试断言策略，不修改发布历史内容、任务、项目、工作流或运行时行为。",
+      "evidence": [
+        "backend/src/test/java/com/douyin/mixcut/service/ReleaseNotesSchemaTest.java"
+      ],
+      "id": "release-2-2-53"
+    },
+    {
+      "version": "2.2.52",
+      "releasedAt": "2026-08-15",
+      "kind": "历史开发阶段",
+      "title": "发布校验自动化与固定顺序入口修复",
+      "summary": "发布历史序列测试改为自动验证连续补丁，固定顺序技能入口修复 Vue 插槽编译问题并完成生产构建验证。",
+      "changes": [
+        "ReleaseNotesSchemaTest 改为从当前版本自动验证最近连续补丁序列，避免每次发布手工移动大段版本断言。",
+        "工作流页新增产片固定顺序入口提示，可直接进入行业顺序预置页。"
+      ],
+      "fixes": [
+        "修复 2.2.51 发布后 ReleaseNotesSchemaTest 仍绑定旧版本号和固定数组下标的问题。",
+        "修复工作流页 el-alert 同时使用默认文本与显式默认插槽导致 Vite 生产构建失败的问题。"
+      ],
+      "verification": [
+        "已执行 backend mvn test，166 项测试通过。",
+        "已执行 frontend npm run build，并通过 scripts/verify-static.mjs 静态资源校验。"
+      ],
+      "compatibility": "仅增强发布测试和工作流页入口，不修改历史任务、项目、工作流、素材或已冻结参数。",
+      "evidence": [
+        "backend/src/test/java/com/douyin/mixcut/service/ReleaseNotesSchemaTest.java",
+        "frontend/src/views/Workflows.vue"
+      ],
+      "id": "release-2-2-52"
+    },
+    {
+      "version": "2.2.51",
+      "releasedAt": "2026-08-15",
+      "kind": "历史开发阶段",
+      "title": "产片固定顺序与参数优先级",
+      "summary": "出片控制台改为用户可编辑的产片固定顺序，新增行业预置技能入口；项目、工作流和当前表单的参数优先级统一，避免工作流默认步骤覆盖用户修改。",
+      "changes": [
+        "新增侧边栏“产片固定顺序”页面，提供美妆护肤、食品饮料、母婴育儿、3C 数码、服饰穿搭、家居日用和知识口播七种行业顺序预置，可下载 JSON 或应用到出片控制台。",
+        "严格目录模式改名为“产片固定顺序”；开启后默认只创建并显示前三个读取步骤，用户可自行添加、删除、停用、改名、改时长和绑定文件夹。",
+        "出片控制台可选择行业顺序预置，预置只提供步骤建议和文件夹关键词匹配，不锁定目录、步骤数量或后续编辑。",
+        "项目和工作流选择会把可用默认参数回填到表单，当前表单参数作为提交与渲染时的最终可编辑值。"
+      ],
+      "fixes": [
+        "修复工作流 set_duration、set_slice 等默认步骤在后端覆盖用户当前表单参数，导致干跑与用户设置不一致的问题。",
+        "修复 Studio 初始加载自动选中第一个工作流、造成用户误以为系统强制使用内置内容的问题。",
+        "修复严格目录模式一开启即固定显示八步且无法增删的问题。"
+      ],
+      "verification": [
+        "已执行新增 SkillEngineParameterPrecedenceTest，验证用户时长和切片参数覆盖工作流建议。",
+        "已执行 backend mvn test，166 项测试通过。",
+        "已执行 frontend npm run build，并通过 scripts/verify-static.mjs 静态资源校验。"
+      ],
+      "compatibility": "不改写历史项目、工作流和任务快照。普通混剪保持原有行为；新建严格顺序任务继续冻结提交时的步骤、文件夹名称和最终参数。行业预置不读取物理路径，不运行命令，也不自动跨目录取材。",
+      "evidence": [
+        "frontend/src/fixedOrderPresets.js",
+        "frontend/src/views/FixedOrderPresets.vue",
+        "frontend/src/views/Studio.vue",
+        "frontend/src/views/Workflows.vue",
+        "frontend/src/App.vue",
+        "frontend/src/router.js",
+        "backend/src/main/java/com/douyin/mixcut/service/SkillEngine.java",
+        "backend/src/test/java/com/douyin/mixcut/service/SkillEngineParameterPrecedenceTest.java"
+      ],
+      "id": "release-2-2-51"
+    },
+    {
+      "version": "2.2.50",
+      "releasedAt": "2026-08-14",
+      "kind": "历史开发阶段",
+      "title": "八段目录锁定与静音出片",
+      "summary": "新增严格文件夹顺序出片、任务配置冻结和真正无音轨静音模式；能力台补充业务接入状态与官方处理入口。",
+      "changes": [
+        "Studio 支持八段式严格目录配置，每一步只能绑定应用内主文件夹及同一步备用文件夹，素材不足不会跨目录或回退全库。",
+        "任务提交时冻结有效参数、工作流定义、项目默认参数和文件夹名称快照；恢复、连续出片及人工修复优先使用冻结参数。",
+        "新增 audioMode=silent，最终输出不含音频流、不生成新字幕，并由 FFprobe 与质检门禁验证。",
+        "能力中心新增实际业务接入状态和使用入口，并补充 FFmpeg、ASR、OCR、OpenCV、响度、抠图和自动剪辑的官方说明链接。"
+      ],
+      "fixes": [
+        "修正已选空文件夹会回退全库素材的边界漏洞。",
+        "修正任务运行时读取被编辑工作流或项目默认参数导致输出漂移的问题。",
+        "修正静音模式被静音音轨替代而非真正移除音频流的问题。"
+      ],
+      "verification": [
+        "已执行 backend mvn test，165 项测试通过。",
+        "已执行 frontend npm run build，并通过静态资源校验。",
+        "已执行 backend mvn -DskipTests compile。"
+      ],
+      "compatibility": "普通工作流与历史任务继续走原有兼容路径；严格目录模式仅在 strictFolderSequence=true 且配置 folderReadSteps 时启用。未安装或未接入能力不会被自动安装或伪装为可用。",
+      "evidence": [
+        "backend/src/main/java/com/douyin/mixcut/dto/MixParams.java",
+        "backend/src/main/java/com/douyin/mixcut/service/MixPlanner.java",
+        "backend/src/main/java/com/douyin/mixcut/service/SkillEngine.java",
+        "backend/src/main/java/com/douyin/mixcut/service/JobService.java",
+        "backend/src/main/java/com/douyin/mixcut/service/RenderService.java",
+        "backend/src/main/java/com/douyin/mixcut/service/DeliveryQcService.java",
+        "backend/src/main/java/com/douyin/mixcut/service/BootstrapService.java",
+        "frontend/src/views/Studio.vue",
+        "frontend/src/views/Capabilities.vue"
+      ],
+      "id": "release-2-2-50"
+    },
+    {
+      "version": "2.2.49",
+      "releasedAt": "2026-08-14",
+      "kind": "历史开发阶段",
+      "title": "AI素材导演与旧字幕清理",
+      "summary": "出片台新增用户可选的 AI 自行引入素材与旧字幕安全区清理，工作流系统新增受控 set_quality 步骤，并交付可导入的 AI 素材导演工作流与 ZCode 执行命令。",
+      "changes": [
+        "出片参数新增 autoUseCrawledMaterials、cleanSourceSubtitles 和 sourceSubtitleCleanMode，用户可在 Studio 中选择是否允许 AI 补齐公开素材、是否清理素材自带旧字幕安全区。",
+        "渲染拼接阶段增加受控的 subtitle-safe-band 旧字幕清理过滤器，只执行后端固定 FFmpeg drawbox 安全区遮盖，不接收前端自定义 filter。",
+        "工作流引擎新增 set_quality 内置步骤，可通过导入工作流配置 AI 补素材、项目相关性、严格去重、旧字幕清理和字幕烧录策略。",
+        "新增 AI 素材导演带货混剪工作流包、工作流商店入口、ZCode slash command 和视频内容勘察指令文档。"
+      ],
+      "fixes": [
+        "修正工作流 DSL 无法直接表达 AI 补素材和旧字幕清理策略的问题。",
+        "降低旧素材自带字幕与新烧录字幕叠加导致带货成片不可发布的风险。"
+      ],
+      "verification": [
+        "已执行 Java/Maven/Node/npm 环境检查。",
+        "已执行项目私有 Python 媒体模块检查：edge_tts、faster_whisper、rapidocr_onnxruntime、ffmpeg_normalize、demucs、ChatTTS 均可导入，ffmpeg/ffprobe 可用。",
+        "已执行 frontend npm run build，并通过 scripts/verify-static.mjs 静态资源校验。",
+        "已执行 backend mvn -DskipTests package，后端主代码和测试代码均编译通过。"
+      ],
+      "compatibility": "不安装 IndexTTS2，不升级或覆盖 PyTorch、CUDA、Python、FFmpeg、Java、Node 或现有模型环境；新增参数默认关闭旧字幕清理，已导入工作流可主动开启。",
+      "evidence": [
+        "backend/src/main/java/com/douyin/mixcut/dto/MixParams.java",
+        "backend/src/main/java/com/douyin/mixcut/external/FfmpegTool.java",
+        "backend/src/main/java/com/douyin/mixcut/service/RenderService.java",
+        "backend/src/main/java/com/douyin/mixcut/service/SkillEngine.java",
+        "frontend/src/views/Studio.vue",
+        "frontend/src/workflowStoreCatalog.js",
+        "docs/workflows/mework-ai-material-director.mixcut-workflow.json",
+        ".zcode/commands/mework-ai-material-director.md",
+        "docs/zcode/video-content-survey-instruction.md"
+      ],
+      "id": "release-2-2-49"
+    },
+    {
+      "version": "2.2.48",
+      "releasedAt": "2026-08-14",
+      "kind": "历史开发阶段",
+      "title": "素材抓取扩充：新增 3D/材质/游戏/电商数据源 + 精选库 3D/电商分类",
+      "summary": "素材源中心新增 Poly Haven(3D/HDR)/AmbientCG(材质)/Kenney(游戏素材)/DummyJSON(电商产品数据) 4 个免 Key 源；精选素材库新增「3D/电商/更多」分类（可一键打开官方页），并补充 Wikimedia 山景图。",
+      "changes": [
+        "素材源中心新增 4 源：Poly Haven 3D/HDR（CC0）、AmbientCG 材质（CC0）、Kenney 游戏素材（CC0）、DummyJSON 电商产品数据（免费 API）",
+        "精选素材库新增「3D/电商/更多」分类：Poly Haven / AmbientCG / Kenney / DummyJSON / Openverse / Sketchfab，一键打开官方页供 AI 与用户选择",
+        "精选素材库补充 Wikimedia 瑞士山景图（Fronalpstock，跳官方页）"
+      ],
+      "fixes": [
+        "此前素材抓取仅覆盖音视频/图片，缺少 3D、材质、游戏素材与电商产品数据入口"
+      ],
+      "verification": [
+        "素材源中心实测 16 源（12 ready），新增 4 源均返回 ready",
+        "前端 vite build 通过（精选库 3D/电商分类）",
+        "8760 部署最新合并版运行正常"
+      ],
+      "compatibility": "新增源均为免 Key 来源页/API；DummyJSON 供 AI 生成商品文案与选品参考，不自动入库为媒体素材。",
+      "evidence": [
+        "CrawlController.java",
+        "Crawl.vue"
+      ],
+      "id": "release-2-2-48"
+    },
+    {
+      "version": "2.2.47",
+      "releasedAt": "2026-08-14",
+      "kind": "历史开发阶段",
+      "title": "纠错批次：修复 CrawlerGateway 编译错误 + 直链下载稳定性",
+      "summary": "修复 CrawlerGateway 引用了不存在的 java.net.SocketFactory 导致整体编译失败的问题；直链下载 readTimeout 提升到 180s；精选素材库移除对 Java 直链不友好的源（SoundHelix/Incompetech），保留稳定源。",
+      "changes": [
+        "直链下载 downloadDirect readTimeout 60s→180s（大文件下载更充足）",
+        "精选素材库音频移除不稳定源（SoundHelix/Incompetech 对 Java 直链断连），保留 MDN CC0 稳定音频，并提示使用素材源中心稳定源"
+      ],
+      "fixes": [
+        "修复 CrawlerGateway 编译失败：import java.net.SocketFactory 不存在（应为 javax.net 包），该 import 未使用已删除",
+        "修复后端整体 mvn package 因该编译错误而无法构建的问题"
+      ],
+      "verification": [
+        "mvn package 成功（修复后 53.5MB）",
+        "8760 恢复运行 version=2.2.46，直链下载 MDN 音频验证通过",
+        "前端 vite build 通过，精选库更新已部署"
+      ],
+      "compatibility": "仅移除错误 import 与不稳定源，不改变现有抓取/下载行为。",
+      "evidence": [
+        "CrawlerGateway.java",
+        "Crawl.vue"
+      ],
+      "id": "release-2-2-47"
+    },
+    {
+      "version": "2.2.46",
+      "releasedAt": "2026-08-14",
+      "kind": "历史开发阶段",
+      "title": "环境探测提速：python 模块检测改 find_spec（消除卡顿）",
+      "summary": "环境探测中 9 个 python 模块检测从「真正 import」改为「importlib.util.find_spec」探测：实测单模块 80ms vs import 4-6s，环境重探测从 15 秒级降到毫秒级，消除界面卡顿与间歇超时。",
+      "changes": [
+        "pythonModuleAvailable 改用 importlib.util.find_spec 检测模块是否安装（不加载重型库如 torch/ChatTTS，避免数秒冷启动）",
+        "环境探测总耗时从约 15s（9 模块串行 import）降到约 0.1-1s；结合缓存 TTL 300s，前端轮询不再卡顿"
+      ],
+      "fixes": [
+        "修复 /api/system/env 每次重探测 15 秒导致的前端轮询超时与界面卡顿（用户多次反馈'会卡'）",
+        "修复缓存过期后首次访问长时间无响应"
+      ],
+      "verification": [
+        "实测 env 首次响应 43ms、缓存 17ms（此前 15s 超时）",
+        "检测正确性：fasterWhisper/rembg/ChatTTS 均正确识别为已装",
+        "全量 Maven 测试 155 项通过"
+      ],
+      "compatibility": "find_spec 仅检测模块是否存在（不保证运行时 import 成功），对'工具是否已安装'的检测语义足够；缺失模块仍正确返回未安装。",
+      "evidence": [
+        "BootstrapService.java"
+      ],
+      "id": "release-2-2-46"
+    },
+    {
+      "version": "2.2.45",
+      "releasedAt": "2026-08-14",
+      "kind": "历史开发阶段",
+      "title": "素材抓取升级：精选素材库+新增4个免费商用源+直链下载自动分类入库",
+      "summary": "素材抓取新增「精选素材库」：内置 17 个验证可用的免费商用素材（8 视频/4 音频/5 图片），一键抓取并按类型自动分类入库；新增 4 个免费商用源（Mixkit 视频/Coverr/Bensound/ccMixter）；新增图片/音频/视频直链下载入库端点，按角色自动分类（image/audio/video → body/product/bgm）。",
+      "changes": [
+        "素材抓取页新增「精选素材库」：8 视频（Archive/W3C/MDN/YouTube CC 素材）+ 4 音频（CC0 音效/免费 BGM）+ 5 图片（Wikimedia/Unsplash/Pexels 免费商用），一键抓取入库",
+        "新增 POST /api/crawl/direct：直链下载图片/音频/视频并按角色自动分类入库（type→image/audio/video，role→body/product/bgm）",
+        "素材源中心新增 4 个免费商用源：Mixkit 免费视频 / Coverr 免费视频 / Bensound 免费音乐 / ccMixter 音乐库（免 Key，可点击来源页）",
+        "CrawlerGateway.downloadDirect：带 SSRF 校验、重定向跟随、Content-Type/扩展名推断、空文件防护"
+      ],
+      "fixes": [
+        "修复此前仅支持视频 URL 抓取、图片/音频无法从链接直接入库的缺口",
+        "素材源列表新增可点击来源页，避免用户找不到官方站点"
+      ],
+      "verification": [
+        "直链下载实测：Unsplash 图片 509ms 入库（type=image, role=product）、MDN CC0 音频入库（role=bgm）、Archive 视频入库（role=body）",
+        "素材源中心实测 12 源（含 4 新源 ready）",
+        "前端 vite build 通过（精选素材库 UI）；后端全量 155 测试通过"
+      ],
+      "compatibility": "新增能力均为可选抓取入口；直链下载复用现有 registerDownloaded 入库链路，不改变素材库数据结构；下载文件带 SSRF 校验。",
+      "evidence": [
+        "CrawlerGateway.java",
+        "CrawlController.java",
+        "Crawl.vue",
+        "api.js"
+      ],
+      "id": "release-2-2-45"
+    },
+    {
+      "version": "2.2.44",
+      "releasedAt": "2026-08-14",
+      "kind": "历史开发阶段",
+      "title": "稳定性加固：环境探测缓存 TTL 修复（解决间歇卡顿/超时）",
+      "summary": "修复 /api/system/env 每次触发 15 秒环境重探测（串行 python import 冷启动 + 工具探测）导致的前端轮询超时与间歇卡顿：环境探测缓存 TTL 从 30 秒提升到 300 秒，绝大多数请求走毫秒级缓存，每 5 分钟才重探测一次。",
+      "changes": [
+        "BootstrapService 环境探测缓存 TTL 30s→300s（两处），大幅降低 /api/system/env 的响应时间与重探测频率",
+        "前端轮询 env 不再频繁触发 15 秒重探测，消除间歇性 HTTP 超时"
+      ],
+      "fixes": [
+        "修复 8760 反复出现的间歇性请求超时（根因：/api/system/env 重探测串行执行 python import 冷启动约 4 秒 × 多个模块 + 工具探测共 15 秒，而缓存 30 秒就过期）",
+        "修复用户反馈的界面卡顿（前端轮询与重探测互相放大）"
+      ],
+      "verification": [
+        "实测 /api/system/env 修复前 15 秒超时，其他端点 25-186ms；修复后缓存期间毫秒级",
+        "全量 Maven 测试 155 项通过",
+        "python import 冷启动实测约 4 秒（faster-whisper），TTL 提升后不再频繁触发"
+      ],
+      "compatibility": "环境检测结果最多滞后 5 分钟；能力中心「刷新」/install 完成仍会强制失效缓存立即重探测。",
+      "evidence": [
+        "BootstrapService.java"
+      ],
+      "id": "release-2-2-44"
+    },
+    {
+      "version": "2.2.43",
+      "releasedAt": "2026-08-14",
+      "kind": "历史开发阶段",
+      "title": "纠错批次：ffprobe 解析容错 + 工具路径解析改进 + 前端优化",
+      "summary": "修复渲染切片时 ffprobe 输出混入非 JSON 导致 probe 解析失败的健壮性问题（提取 JSON 子串重试）；AppProps 新增 localPythonPath 统一解析内置 Python；能力中心/抓取页前端优化；全量回归通过。",
+      "changes": [
+        "FfmpegTool.probe 容错：ffprobe 输出混入非 JSON 时提取 JSON 子串重试解析，正常路径不变，渲染切片不再因 probe 失败降级",
+        "AppProps.localPythonPath 统一解析内置 venv Python 路径（Codex/ZCode 协同）",
+        "能力中心、素材抓取页前端优化与收纳"
+      ],
+      "fixes": [
+        "修复渲染时 probe parse failed（JsonParseException Unrecognized token output）导致切片媒体信息缺失的问题"
+      ],
+      "verification": [
+        "全量 Maven 测试 155 项全部通过（0 失败）",
+        "前端 vite build 通过",
+        "8760 前端 hash 与 static 一致（最新构建已部署）"
+      ],
+      "compatibility": "probe 容错不改变正常解析结果；localPythonPath 仅增强路径解析，不影响既有配置。",
+      "evidence": [
+        "FfmpegTool.java",
+        "AppProps.java",
+        "Capabilities.vue",
+        "Crawl.vue"
+      ],
+      "id": "release-2-2-43"
+    },
+    {
+      "version": "2.2.42",
+      "releasedAt": "2026-08-14",
+      "kind": "历史开发阶段",
+      "title": "产品化升级批次三：受控模板商店、严格工作流校验与修复版本一致性",
+      "summary": "能力中心提供安装引导；二十条工作流与二十条项目模板均在应用内可复制使用。工作流在保存、导入、AI 草稿与运行前共用严格校验，候选成片版本具备唯一性与可清理的审计生命周期。",
+      "changes": [
+        "能力中心新增能力商店：gallery-dl、ChatTTS、Demucs 等能力提供一键安装或官方授权引导",
+        "工作流模板商店改为直接展示后端内置目录的 20 条受约束工作流，复制后才可编辑，消除前后端模板 JSON 漂移",
+        "项目页新增 20 条只读内置项目模板与复制使用入口，复制后的项目可独立修改品牌、卖点、AI 路由与默认参数",
+        "工作流定义在创建、更新、导入、复制、AI 暂存及运行前统一标准化校验；未知 Skill、无效参数和被忽略字段会被明确拒绝",
+        "输出候选版本增加 job/idx/versionNo 唯一约束；删除任务会清理受控候选文件、版本记录与修复记录"
+      ],
+      "fixes": [
+        "修复中文向导 set_slice 参数名与执行器旧字段不一致导致部分节奏设置被忽略的问题",
+        "修复模板商店仅三条前端硬编码包、与后端内置模板目录脱节的问题",
+        "修复旧安装器可能因运行中通用 JAR 被锁而打入过期字节的问题"
+      ],
+      "verification": [
+        "全量 Maven 测试 155 项通过，0 failures，0 errors",
+        "前端 Vite 生产构建与静态资源引用校验通过",
+        "隔离实例在 8762 启动，数据库迁移完成；浏览器确认 FFmpeg 就绪、20 个项目模板、20 个工作流模板及成片库批量控制可见",
+        "最终 mixcut-2.2.42-clean.jar 仅包含当前入口引用的前端哈希资源"
+      ],
+      "compatibility": "内置模板本体只读，复制后才允许编辑；工作流校验只阻止新写入或重运行中的无效定义，不批量改写用户历史记录。候选版本迁移保留旧审计数据，发现历史重复版本号时只告警不删除。",
+      "evidence": [
+        "SkillEngine.java",
+        "WorkflowController.java",
+        "BootstrapService.java",
+        "OutputVersion.java",
+        "ProjectController.java",
+        "Projects.vue",
+        "Workflows.vue",
+        "Outputs.vue",
+        "installer/Mework.iss"
+      ],
+      "id": "release-2-2-42"
+    },
+    {
+      "version": "2.2.41",
+      "releasedAt": "2026-08-14",
+      "kind": "历史开发阶段",
+      "title": "产品化升级批次二：成片库批量/播放互斥+素材AI分类+能力中心安装引导+模板商店20+20",
+      "summary": "成片库支持全选/批量删除/批量下载与播放互斥；素材自动分类从仅按文件名升级为结合 AI 标签/OCR/摘要二次精化；能力中心缺失能力可一键跳转安装引导；工作流与项目模板商店扩充到各 20 个真实运营模板。",
+      "changes": [
+        "成片库新增全选、批量删除、批量下载；同一时间只播放一个视频，播放新视频自动停止其他",
+        "素材 AI 分类精化：分析完成后用 AI 标签/OCR/摘要二次推断角色（product/body/celebrity/endcard/hook），仅在自动兜底角色时升级，不覆盖用户手动指定",
+        "能力中心缺失能力新增「去安装/查看引导」：引导对话框说明原因/步骤/官方页面，支持 POST /api/system/capabilities/install 尝试自动安装",
+        "工作流模板 3→20：新增剧情切片/带货硬广/探店/知识口播/爆款拆解/短剧切片/明星安利/美食/健身/母婴/宠物/旅行/穿搭/家居/音乐卡点/批量矩阵/直播切片",
+        "项目模板 3→20：新增护肤/母婴/宠物/健身/家居/穿搭/旅行/数码配件/家电/汽车/健康/教育/剧情短剧/探店/礼盒/日用/生鲜"
+      ],
+      "fixes": [
+        "修复成片库无法批量管理、多视频同时播放互相干扰的问题",
+        "修复素材自动分类只看文件名、忽略画面/音频/OCR 内容的问题",
+        "修复能力中心缺失能力无安装引导、用户不知如何开通的问题"
+      ],
+      "verification": [
+        "全量 Maven 测试 153 项（150 通过；SkillDslValidationTest 由 ZCode 处理中）",
+        "前端 vite build 通过（成片库批量/播放互斥/能力中心安装引导）",
+        "模板商店编译通过：20 工作流 + 20 项目"
+      ],
+      "compatibility": "新增能力均为增强与引导，不改变既有导入/出片流程；模板 seed 幂等（同名不重复）。",
+      "evidence": [
+        "Outputs.vue",
+        "MaterialAnalysisService.java",
+        "BootstrapService.java",
+        "SystemController.java",
+        "Capabilities.vue"
+      ],
+      "id": "release-2-2-41"
+    },
+    {
+      "version": "2.2.40",
+      "releasedAt": "2026-08-14",
+      "kind": "历史开发阶段",
+      "title": "自愈修复闭环 UI：QC 失败重试/人工决策/版本历史",
+      "summary": "打通「AI制作→自检→自纠→修复→再渲染→再质检→最终放行」的成片修复闭环 UI：新增整批失败项重试端点，成片库展示修复方案与版本历史，QC 失败不再只能放弃，可自动修复或由用户选择方案后重新渲染。",
+      "changes": [
+        "JobController 新增 POST /api/jobs/{id}/retry-failed：将失败/中断任务的失败项重置并重新排队，镜像素材抓取的重试模式",
+        "成片库（Outputs.vue）新增「修复方案/版本历史」入口：QC 失败成片展示问题分类、修复建议、自动修复状态与候选动作",
+        "修复对话框支持人工决策（换 BGM/保留原声/关闭字幕/重新规划/重试自动），决策后重入现有渲染队列",
+        "DeliveryRepairService 修复评估完善，新增 DeliveryRepairServiceTest 覆盖自动修复策略",
+        "保留候选版本与质检证据，最终交付指针只关联通过 QC 的版本"
+      ],
+      "fixes": [
+        "修复 QC 失败/出片失败后没有重试或修复入口、只能放弃或重跑整批的问题",
+        "修复失败项无法单独重新渲染、状态停留在失败的问题"
+      ],
+      "verification": [
+        "全量 Maven 测试 148 项通过（含 DeliveryRepairServiceTest）",
+        "前端 vite build 通过，成片库修复对话框渲染正常",
+        "真实出片验证：渲染失败→保留候选版本→awaiting_decision→人工决策→自动重渲染闭环工作"
+      ],
+      "compatibility": "重试端点对运行中/待处理任务拒绝重试；修复决策仅作用于该条输出的候选版本，不影响已完成成片与既有出片流程。",
+      "evidence": [
+        "JobController.java",
+        "JobService.java",
+        "DeliveryRepairService.java",
+        "Outputs.vue",
+        "DeliveryRepairServiceTest.java"
+      ],
+      "id": "release-2-2-40"
+    },
+    {
+      "version": "2.2.39",
+      "releasedAt": "2026-08-14",
+      "kind": "历史开发阶段",
+      "title": "工具与能力管理升级：随包预置 + 自动检测 + 能力中心",
+      "summary": "把所有可合法随包分发的开源工具改为随安装包直接预置并自动配置：you-get/yt-dlp 装入内置 venv，whisper.cpp 与 ImageMagick 装入 portable；工具检测全部自动化（venv 模块检测 + portable 路径自动解析，不再依赖 PATH 注入）；新增「能力中心」页面，用户看到的是「应用能做什么」而非技术组件名，AI 自动调用、无需用户懂命令行。",
+      "changes": [
+        "you-get 0.4.1743 与 yt-dlp 2026.07.04 预置进内置 venv，随安装包分发，抓取视频不再要求用户自行安装",
+        "CrawlerGateway 的 you-get/yt-dlp 路径自动解析：优先内置 venv，未配置时不再依赖 PATH",
+        "whisper.cpp（whisper-cli 1.9.2）与 ImageMagick 7.1.2-29 portable 预置进 portable 目录",
+        "工具检测自动化：auto-editor/rembg/demucs 改用 venv 模块检测；whisper-cli/magick 自动解析 portable 路径",
+        "新增「能力中心」页面（/capabilities）：按分组展示渲染/抓取/字幕/配音/剪辑增强等能力，可直接用/需配置一目了然，含引导文案",
+        "侧边栏新增「能力中心」入口，与「环境中心」互补：能力中心讲能做什么，环境中心管底层工具"
+      ],
+      "fixes": [
+        "修复 auto-editor/rembg 已随 venv 预置却显示「未安装」（检测从 PATH 改为 venv 模块，不再依赖启动脚本注入 PATH）",
+        "修复 you-get/yt-dlp 需要用户自行安装才能抓取网页视频的问题",
+        "修复普通用户面对一堆技术组件名无从下手的问题（统一为能力视图）"
+      ],
+      "verification": [
+        "you-get 与 yt-dlp 装入 venv 后 import/--version 验证通过",
+        "whisper-cli --help 与 ImageMagick magick -version 在 portable 下运行验证通过",
+        "后端全量测试 147/148 通过；1 项 FfmpegToolTest 混音失败与正在修复的渲染管线相关，由 ZCode 处理",
+        "前端 vite build 通过（含 Capabilities 页面），/api/system/capabilities 端点编译通过"
+      ],
+      "compatibility": "工具检测与调用改为自动解析内置路径，用户自定义 APP_YTDLP_PATH/APP_YOUGET_PATH 仍优先；安装包体积因新增 whisper/imagemagick 增加约 260MB。",
+      "evidence": [
+        "AppProps.java",
+        "CrawlerGateway.java",
+        "BootstrapService.java",
+        "SystemController.java",
+        "Capabilities.vue",
+        "portable/whisper",
+        "portable/imagemagick"
+      ],
+      "id": "release-2-2-39"
+    },
+    {
+      "version": "2.2.38",
+      "releasedAt": "2026-08-14",
+      "kind": "历史开发阶段",
+      "title": "自愈闭环 QC 九维：商品露出/节奏/字幕同步 + 历史记录无上限",
+      "summary": "成片交付质检从六维升级为九维：新增商品有效露出（exposure）、节奏（rhythm）、字幕时间同步（subtitleSync）三个商业交付维度，均为提示性 warn 不拦截，配合 DeliveryRepairService 的 AI 修复与人工决策闭环；历史记录接口取消条数上限，所有历史版本持续可见不截断。",
+      "changes": [
+        "DeliveryQcService 新增 exposure 维度：slot=product 商品素材是否真正露出、露出时长与占比（对接项目 productSec/productSlots 参数）",
+        "DeliveryQcService 新增 rhythm 维度：片段时长分布检测，过碎(<1s)/拖沓(>25s)/单薄(<3段)提示",
+        "DeliveryQcService 新增 subtitleSync 维度：AI 配音字幕时间轴超范围/倒置/重叠检测，保证字幕与画面准确同步",
+        "历史记录接口 /release-notes 默认返回全部（historyLimit<=0 不截断，去掉 500 上限）",
+        "前端本机版本更新记录可无限查看全部历史版本"
+      ],
+      "fixes": [
+        "修复历史记录接口默认只返回 500 条、更早记录不可见的问题",
+        "补齐商业交付质检缺口：商品未有效露出/节奏失衡/字幕不同步此前无检测"
+      ],
+      "verification": [
+        "DeliveryQcServiceTest 更新为九维断言并新增 exposure/rhythm/subtitleSync 三测试，全绿",
+        "全量 Maven 测试 143 项通过（0 失败 0 错误）",
+        "真实出片验证自愈闭环：渲染失败→评估→保留候选版本→awaiting_decision→人工决策→自动重渲染"
+      ],
+      "compatibility": "新增维度均为 warn 提示不拦截；audio/video 仍为可拦截硬门槛；AI 配音字幕缺失时 subtitleSync 正常降级提示。",
+      "evidence": [
+        "DeliveryQcService.java",
+        "SystemController.java",
+        "LocalReleaseHistoryService.java",
+        "DeliveryQcServiceTest.java"
+      ],
+      "id": "release-2-2-38"
+    },
+    {
+      "version": "2.2.37",
+      "releasedAt": "2026-08-14",
+      "kind": "历史开发阶段",
+      "title": "安装器装完即用：Inno Setup 打包 + 便携 MySQL 内置 schema + 一键启动",
+      "summary": "完成 Inno Setup 6.7.3 安装器实际编译与端到端验收；便携 MySQL 8.0.28 数据目录内置 ai_mix_video 全量 17 表 schema 与 mixcut 用户；新增 ensure_env.bat 自动生成配置、start_mysql.bat 自动拉起便携 MySQL；安装器默认装到用户目录（免管理员）、自动创建桌面图标并自动打开网页；修复安装器中文乱码与打包旧 jar 问题。",
+      "changes": [
+        "Inno Setup 6.7.3 安装并实际编译出 Mework-Setup-2.2.36.exe（含便携 JDK/MySQL/FFmpeg/Maven + venv + jar，约 780MB）",
+        "便携 MySQL 数据目录重建并灌入 schema.sql + 12 个迁移，17 张表与开发库一致，创建 mixcut 用户",
+        "新增 start_mysql.bat：端口被占则复用现有 MySQL，否则生成 my.ini 自动拉起便携 MySQL（最多等 60 秒）",
+        "新增 ensure_env.bat：无配置文件时自动生成数据库连接、PORT、MYSQL_PORT 配置",
+        "安装器默认装到用户目录 Programs\\Mework（免管理员、无写权限坑），自动创建桌面图标，启动后自动打开网页",
+        "start.bat 启动前自动 ensure_env + start_mysql，断网可启动（依赖缺失仅警告不阻断）"
+      ],
+      "fixes": [
+        "修复安装包中文乱码（Mework.iss 与 prepare_portable.ps1 缺 UTF-8 BOM，Inno/PowerShell 按 ANSI 解析）",
+        "修复安装包打包旧 mixcut.jar(2.2.35) 而非当前 mixcut-delivery.jar(2.2.36)",
+        "修复便携 mysqldata 为空库导致干净机器连不上数据库",
+        "修复安装到 Program Files 无写权限导致便携 MySQL 无法启动（默认改用户目录）"
+      ],
+      "verification": [
+        "静默安装到临时目录 → 18 项布局检查全过（含 17 个 .ibd 表文件）",
+        "安装目录真实启动：HTTP 200，version=2.2.36，databaseConnected=true",
+        "便携 MySQL 8.0.28 在带空格路径下经 my.ini 启动成功，mixcut 登录 17 表齐全"
+      ],
+      "compatibility": "本机记录与正式应用版本分开管理；本记录仅写 data 目录，不影响安装包源码与运行实例。",
+      "evidence": [
+        "installer/Mework.iss",
+        "start_mysql.bat",
+        "ensure_env.bat",
+        "PACKAGING.md"
+      ],
+      "id": "release-2-2-37"
+    },
+    {
+      "version": "2.2.36",
+      "releasedAt": "2026-08-14",
+      "kind": "历史开发阶段",
+      "title": "修复历史记录默认只显示8条与严格去重默认",
+      "summary": "环境中心历史记录此前默认仅展示最近 8 条（用户误以为 2.2.27 以前记录遗失），已改为默认展示全部 45 条；出片台去重默认升级为严格模式（同源不重叠），提升成片质量。",
+      "changes": [
+        "历史记录接口默认返回条数 8 改为 50（覆盖全部历史，最早到 1.0.0）",
+        "前端历史默认加载 50 条，不再误以为记录遗失",
+        "出片台去重默认改为严格模式（同源不重叠），后端保持 standard 兼容"
+      ],
+      "fixes": [
+        "修复环境中心历史记录只显示到 2.2.27、以前记录看似遗失的问题"
+      ],
+      "verification": [
+        "接口实测返回 45 条完整历史（1.0.0 至 2.2.35）",
+        "后端全量 Maven 测试 140 项通过",
+        "前端 Vite 构建通过"
+      ],
+      "compatibility": "严格去重默认仅作用于前端出片台；直接调用 API 未传 dedupStrictness 时仍为 standard，避免破坏既有调用。",
+      "evidence": [
+        "SystemController.java",
+        "LocalReleaseHistoryService.java",
+        "App.vue",
+        "Studio.vue",
+        "MixParams.java"
+      ],
+      "id": "release-2-2-36"
+    },
+    {
+      "version": "2.2.35",
+      "releasedAt": "2026-08-14",
+      "kind": "历史开发阶段",
+      "title": "修复生成视频卡住与出片性能",
+      "summary": "定位并修复出片线程被素材 OCR 阻塞导致的生成视频卡住；内容感知 OCR 改为共享线程+限流+超时，保留 watchdog 自动接管（无活动/超时自动失败），确保批量出片可交付。",
+      "changes": [
+        "内容感知 OCR 改为共享单线程+每素材 8 秒超时+最多 2 个素材，杜绝出片线程被素材识别长时间阻塞",
+        "明确渲染看门狗接管机制：无活动/总超时自动标记失败并提供可读原因，不挂死"
+      ],
+      "fixes": [
+        "修复批量出片时 materialSummary 对全部素材同步跑 5 帧 OCR 导致的生成视频卡住"
+      ],
+      "verification": [
+        "后端全量 Maven 测试 140 项通过"
+      ],
+      "compatibility": "内容感知在素材无 OCR 结果时降级为名称/标签，不影响口播生成与出片。",
+      "evidence": [
+        "JobService.java"
+      ],
+      "id": "release-2-2-35"
+    },
+    {
+      "version": "2.2.34",
+      "releasedAt": "2026-08-14",
+      "kind": "历史开发阶段",
+      "title": "可选增强全量强制开启与便携预置",
+      "summary": "按老板要求将 whisperCpp/demucs/ImageMagick/OpenCV/autoEditor/rembg 从可选提升为必需，环境中心标红+一键处理，便携打包脚本自动预置媒体增强工具，向全公司装完即用推进。",
+      "changes": [
+        "BootstrapService 将 6 项媒体增强从可选提升为必需（whisperCpp/demucs/imageMagick/autoEditor/rembg + openCv 增加 cv2 检测）",
+        "环境中心新增「媒体增强工具」必需项说明",
+        "prepare_portable.ps1 自动向 venv 预置 demucs/rembg/auto-editor/opencv-python"
+      ],
+      "fixes": [
+        "修复可选增强被忽略、用户无法自行开启的问题",
+        "修复 OpenCV 未纳入检测的问题"
+      ],
+      "verification": [
+        "后端全量 Maven 测试 140 项通过",
+        "前端 Vite 构建通过",
+        "prepare_portable.ps1 语法校验通过"
+      ],
+      "compatibility": "发行包预置媒体增强工具后环境中心对应项变绿；手动环境缺失时红色提示并给出一键处理，基础出片不受影响。",
+      "evidence": [
+        "BootstrapService.java",
+        "prepare_portable.ps1"
+      ],
+      "id": "release-2-2-34"
+    },
+    {
+      "version": "2.2.33",
+      "releasedAt": "2026-08-14",
+      "kind": "历史开发阶段",
+      "title": "识别增强与内容感知、自然口播与便携打包",
+      "summary": "提升字幕/画面识别质量，让口播贴合画面内容且时长可控，接入可选自然口播引擎，并补齐便携打包链路，向交付级批量出片与全公司装完即用推进。",
+      "changes": [
+        "ASR 字幕识别增强：语言自动检测（不再硬编码中文）、词级时间戳、标点提示与 beam 优化",
+        "视频画面 OCR 覆盖增强：由单帧改为 5 帧均匀抽帧，一次模型进程批量识别并聚合去重",
+        "口播时长校准：TTS 按计划时长反推语速 --rate，NarrationService/JobService 全链路传入 plannedSec，降低超时/过短被拒",
+        "口播内容感知：出片前聚合计划素材的 OCR 画面文字与 ASR 口播摘要注入文案 prompt，讲与画面相关的内容",
+        "AI 对话助手增强：完整应用能力人设（素材/抓取/出片/字幕/质检/环境）与项目上下文注入",
+        "出片前自动补齐缺失素材开关：前端开关 + MixParams.autoUseCrawledMaterials，关闭可人工干预",
+        "可选自然口播引擎：natural_tts.py 接入 ChatTTS（装后自动启用），edge-tts 兜底",
+        "便携打包链路：prepare_portable.ps1 准备 JDK17/MySQL8/FFmpeg/Maven 到 portable，setup_runtime.bat 增加便携 MySQL 检测，PACKAGING.md 打包指南"
+      ],
+      "fixes": [
+        "修复口播与画面内容不相干：脚本注入素材画面/口播摘要",
+        "修复口播时长与计划不符被拒：TTS 语速主动贴合 plannedSec",
+        "修复视频画面文字识别覆盖不足：单帧改 5 帧 OCR",
+        "修复 ASR 对非中文素材识别失败：语言自动检测"
+      ],
+      "verification": [
+        "后端全量 Maven 测试 140 项通过，BUILD SUCCESS",
+        "前端 Vite 构建通过（含素材自动补齐开关）",
+        "media_diagnose.py / natural_tts.py 语法校验通过，无 BOM"
+      ],
+      "compatibility": "默认声音模式仍为仅素材音轨；AI 人声模式在 venv 安装 ChatTTS 后自动启用自然口播，否则回退 edge-tts。出片前自动补齐开关默认开启，可关闭人工干预。便携 MySQL 为可选发行项，缺失时基础功能不受影响。",
+      "evidence": [
+        "media_diagnose.py",
+        "MaterialDiagnosisService.java",
+        "TtsService.java",
+        "NarrationService.java",
+        "JobService.java",
+        "CopyService.java",
+        "AiController.java",
+        "MixParams.java",
+        "Studio.vue",
+        "natural_tts.py",
+        "prepare_portable.ps1",
+        "setup_runtime.bat",
+        "PACKAGING.md"
+      ],
+      "id": "release-2-2-33"
+    },
+    {
+      "version": "2.2.32",
+      "releasedAt": "2026-08-14",
+      "kind": "历史开发阶段",
+      "title": "指定口播跨模式兼容保护",
+      "summary": "补齐旧任务、项目默认参数和直接 API 调用的兼容边界：只要指定了口播素材，就始终按素材口播模式执行，避免原声或 AI 模式忽略用户选择。",
+      "changes": [
+        "在后端参数规范化阶段将非空 voiceMaterialId 固定映射为 material-audio，不依赖前端互斥状态。"
+      ],
+      "fixes": [
+        "修复历史任务或旧客户端同时传入口播素材与 original/ai-voice 模式时，用户指定口播可能被忽略的问题。"
+      ],
+      "verification": [
+        "后端 Maven 全量测试通过：140 个测试，0 失败，0 错误。",
+        "新增 MixParams 回归：指定口播与 AI 人声、保留原声冲突时均收敛为素材口播模式。"
+      ],
+      "compatibility": "不修改用户已有素材、口播文件、任务参数、成片或数据库记录；历史任务重新执行时才应用该优先级规则。",
+      "evidence": [
+        "MixParams.java",
+        "MixParamsTest.java",
+        "release-notes.json"
+      ],
+      "id": "release-2-2-32"
+    },
+    {
+      "version": "2.2.31",
+      "releasedAt": "2026-08-13",
+      "kind": "历史开发阶段",
+      "title": "人工口播优先与 AI 配音交付边界",
+      "summary": "指定素材口播现在是不可被 AI 覆盖的交付约束；AI 配音按每条实际画面计划生成并校验时长与批次差异，质检拦截会保留完整原因供复核而不会留下不合格成片。",
+      "changes": [
+        "指定口播人声会强制使用素材音轨模式；前端与后端都禁止同时生成或叠加 AI 人声。",
+        "钩子声音改为仅接受用户显式选择，不再从人声池自动加入第二条口播；自动生成的 AI 语音不会成为后续任务的默认口播候选。",
+        "AI 口播在画面计划得到实际时长后才生成；同批脚本文案使用规范化指纹去重，无法生成不同文本时明确失败而不复用。",
+        "AI 人声实测时长明显偏离计划时会拒绝渲染，避免视频结束后仍在朗读或静默截断尾句。",
+        "成品质检失败会持久化六维结构化报告作为诊断记录，成片库和任务详情会显示拦截原因且不提供不存在文件的播放或下载入口。"
+      ],
+      "fixes": [
+        "修复已选择口播人声时仍生成 AI 语音、覆盖素材 ID 或把另一条人声作为自动钩子音轨的问题。",
+        "修复大批量任务因共享钩子与弱变体而复用同一 AI 口播文案和音频的问题。",
+        "修复 AI 口播时长与最终画面脱节、尾句被 FFmpeg 静默截断的问题。",
+        "修复质检失败时仅保留首条错误、前端再压缩成泛化提示、成片库无法查看完整拦截详情的问题。"
+      ],
+      "verification": [
+        "后端 Maven 全量测试通过：139 个测试，0 失败，0 错误。",
+        "新增回归覆盖指定人工口播锁定、自动钩子不叠加第二条人声、自动生成语音不作为后续默认口播，以及 AI 口播超时长拒绝截断。",
+        "前端 Vite 生产构建和静态资源引用校验通过。",
+        "本次未提交真实联网 TTS 或真实渲染任务；新规则会在真实任务中保留失败原因，不会自动改用其他声音。"
+      ],
+      "compatibility": "不删除、移动、覆盖或替换用户的口播、素材、任务、成片和历史记录。旧任务若同时保存了 AI 模式与指定口播，重新执行时按指定口播优先；质检拦截记录没有视频文件，仅保存诊断信息。",
+      "evidence": [
+        "MixPlanner.java",
+        "JobService.java",
+        "CopyService.java",
+        "NarrationService.java",
+        "NarrationCaptionStore.java",
+        "RenderService.java",
+        "Studio.vue",
+        "Outputs.vue",
+        "MixPlannerTest.java",
+        "RenderServiceTest.java"
+      ],
+      "id": "release-2-2-31"
+    },
+    {
+      "version": "2.2.30",
+      "releasedAt": "2026-08-13",
+      "kind": "历史开发阶段",
+      "title": "音频分层、导入分流与任务状态优化",
+      "summary": "完成 2.2.30 全栈收口：口播与 BGM 保持独立职责，素材音频可稳定试听，任务状态可解释，工作流与 Skill 包安全导入，并让停用文件夹和应用自生成目录不再污染素材筛选。",
+      "changes": [
+        "素材预览新增音频稳定 URL 与浏览器 Range/206 支持；素材库和公开抓取页提供本地试听失败提示。",
+        "口播与 BGM 维持独立音轨；显式指定旧人声文件作为 BGM 仍兼容，但不会同时自动叠成口播；无独立钩子音频时不再重复叠加主口播。",
+        "口播脚本生成带入当前钩子、钩子策略和变体编号，连续出片不再固定使用第 0 套钩子；AI 人声继续以生成音频的真实 ASR 时间轴为字幕依据。",
+        "任务详情新增总体进度、当前阶段进度、产出数、阶段标签和连续模式语义；连续任务不伪造总体百分比或 ETA。",
+        "全局拖拽按工作流/Skill JSON、媒体和未知文件分流；工作流页支持包拖入与安全校验导入，不执行包内命令、网络或脚本。",
+        "停用素材文件夹从筛选和授权下拉中排除；扫描跳过应用管理的素材、缓存、切片、下载和输出派生目录，避免自繁殖导入。"
+      ],
+      "fixes": [
+        "修复音频预览入口缺少 audio previewUrl、Range 响应和直链失败状态的问题。",
+        "修复 voice/BGM 同源文件被重复占用、钩子音频回退主口播和 BGM 混音淡出参数不完整的问题。",
+        "修复连续出片钩子策略与口播上下文重复、任务进度显示虚假 100% 的问题。",
+        "修复全局拖拽把工作流或 Skill JSON 误送入素材上传接口的问题。"
+      ],
+      "verification": [
+        "后端完整 Maven 测试通过：136 个测试，0 失败，0 错误。",
+        "MixPlanner 定向音频回归通过：显式旧人声 BGM 兼容、自动人声 BGM 回退被拒绝、同源口播/BGM 不重复。",
+        "Vue 生产构建与静态资源引用校验通过。",
+        "本次未执行外部服务重启、数据库连接或真实联网 TTS/抓取验证；部署后需在本机环境中心复核。"
+      ],
+      "compatibility": "不删除、移动或覆盖用户素材、外部扫描源文件、任务、历史成片或数据库记录。保留旧音频显式 BGM 选择与既有导入接口；未完成的文件夹相对目录树分类确认、批量 AI 分类、项目 AI rewrite 和抓取计划接口不在本版本记录中。",
+      "evidence": [
+        "FfmpegTool.java",
+        "MixPlanner.java",
+        "CopyService.java",
+        "JobService.java",
+        "JobController.java",
+        "MaterialController.java",
+        "MaterialService.java",
+        "Materials.vue",
+        "Crawl.vue",
+        "Studio.vue",
+        "App.vue",
+        "Workflows.vue",
+        "MixPlannerTest.java",
+        "release-notes.json"
+      ],
+      "id": "release-2-2-30"
+    },
+    {
+      "source": "backend/src/main/resources/release-notes.json",
+      "version": "2.2.29",
+      "releasedAt": "2026-08-13",
+      "kind": "当前本机构建",
+      "title": "可解释交付质检与有限返工",
+      "summary": "完成专业混剪升级第四阶段：成片具备音频、画面、字幕、重复、语义和钩子六维可解释质检；仅对可替换问题执行最多两次返工，并在成片库保留策略、降级、重试与素材时间线。",
+      "changes": [
+        "新增六维结构化交付质检：音频与画面为硬门槛，字幕、重复、语义匹配和开头差异化以可解释警告写入报告",
+        "新增每条最多两次的有限返工；仅对重复、同源重叠、变体、钩子和 BGM 等可替换问题调整策略、切点与候选素材",
+        "成片输出持久化质检 JSON、返工次数、钩子策略、降级信息和使用素材时间线",
+        "成片库新增质检详情，展示各维度检查、问题、重试次数、策略、降级项和可复查镜头使用明细"
+      ],
+      "fixes": [
+        "修复成片只显示简短 QC 文本、无法追溯音频画面字幕或重复风险来源的问题",
+        "修复可替换的重复/钩子/BGM问题直接终止或无上限重试、无法形成有限返工闭环的问题",
+        "修复硬失败与可替换失败没有明确区分、媒体损坏或无音频时可能进入无意义重试的问题"
+      ],
+      "verification": [
+        "后端完整 Maven 测试通过，覆盖六维质检、硬/可替换失败分类、有限重试和既有渲染质检兼容",
+        "Vue 生产构建与静态资源引用校验通过",
+        "最终 2.2.29 后端已重启，数据库迁移完成且 /actuator/health 返回 UP",
+        "项目 #5 已完成 120–150 秒严格去重语义干跑：135 秒目标、44 个镜头段、结果前置钩子与中段再钩子均被纳入计划",
+        "真实渲染任务 #56 成功生成成片 #108：135.267 秒、1080x1920 H.264/AAC；六维 QC 为 4 项通过、2 项提示，返工次数为 0，33 条未分析素材按网格切片降级并已记录"
+      ],
+      "compatibility": "现有静音、黑屏、音画同步和时长硬门槛不放宽。不可读媒体、无音频、素材不足、未授权内容、超时或缺 FFmpeg 会直接失败，不会重试。未知失败默认不重试，避免隐藏真实错误。",
+      "evidence": [
+        "DeliveryQc.java",
+        "DeliveryQcService.java",
+        "RetryClassifier.java",
+        "JobOutput.java",
+        "JobService.java",
+        "RenderService.java",
+        "Outputs.vue",
+        "output-delivery-qc-migration.sql",
+        "DeliveryQcServiceTest.java",
+        "RetryClassifierTest.java"
+      ],
+      "id": "release-2-2-29"
+    },
+    {
+      "version": "2.2.28",
+      "releasedAt": "2026-08-13",
+      "kind": "历史开发阶段",
+      "title": "语义选镜、多钩子与长片去重",
+      "summary": "完成专业混剪升级第三阶段：已分析素材的场景镜头段优先进入选片，增加项目驱动的多类型开头与中段再钩子，支持 120–150 秒专业长混剪及分层同源去重。",
+      "changes": [
+        "规划器优先使用完成场景分析的镜头段作为主体/达人候选；未分析或分析失败素材自动回退旧网格切片，并在干跑中公开语义候选数与降级数",
+        "新增冲突、结果前置、悬念、爽点、反常识、问题和视觉冲击七类钩子策略，同批任务按变体轮换，避免开头同质化",
+        "新增中段再钩子时间窗、策略感知文案和烧录，默认约在成片 45% 处承接信息密度或情绪转折",
+        "Studio 新增专业长混剪 120–150 秒预设、严格去重、同源非重叠和自动再钩子控制；干跑展示策略、再钩子窗口和选镜来源"
+      ],
+      "fixes": [
+        "修复自动混剪只能按原素材固定网格取片、无法优先利用已识别镜头边界的问题",
+        "修复同批长片可能使用相同钩子结构、同源重叠镜头或只在开头一次性留人的问题",
+        "修复严格去重素材不足时只返回笼统失败、无法说明语义片段耗尽与网格降级原因的问题"
+      ],
+      "verification": [
+        "后端 Maven 测试通过，覆盖钩子策略轮换、语义镜头优先、同源非重叠、长片严格去重与旧参数兼容",
+        "Vue 生产构建与静态资源引用校验通过",
+        "将发布 2.2.28 并在最终集成验证中执行长片干跑、真实渲染与成片质检"
+      ],
+      "compatibility": "不要求旧素材必须先完成分析：未分析素材继续可出片并显示网格降级。hook/product/endcard 的定点画面继续兼容既有角色逻辑；严格去重无法满足时会明确提示缺口，不会把重复镜头伪装成多样化。",
+      "evidence": [
+        "HookStrategy.java",
+        "MixPlanner.java",
+        "MixParams.java",
+        "SkillEngine.java",
+        "JobService.java",
+        "RenderService.java",
+        "CopyService.java",
+        "Studio.vue",
+        "hook-strategy-migration.sql",
+        "HookStrategyTest.java",
+        "MixPlannerTest.java"
+      ],
+      "id": "release-2-2-28"
+    },
+    {
+      "version": "2.2.27",
+      "releasedAt": "2026-08-13",
+      "kind": "历史开发阶段",
+      "title": "内容驱动音频与真实配音字幕",
+      "summary": "完成专业混剪升级第二阶段：AI 配音以生成后的真实音频转写时间轴驱动字幕，项目内容形成可追溯剪辑简报并用于背景音乐情绪匹配和人声优先混音。",
+      "changes": [
+        "新增剪辑简报：根据项目品类、卖点、语气与受众生成可解释的情绪关键词、人声优先和 BGM ducking 意图，并按任务持久化",
+        "背景音乐优先按剪辑简报的情绪/场景关键词匹配；未命中时继续使用已有轮换与最长可读音频兜底，不允许静音成片",
+        "AI 配音生成后对实际生成音频执行 ASR，真实 cue 才会进入自动字幕；不再按脚本文字猜测字幕时间",
+        "新增任务级配音字幕记录与安全区域分行烧录，长字幕会断行并保持既有原素材授权字幕规则"
+      ],
+      "fixes": [
+        "修复 AI 人声已有生成音频但字幕没有对应真实音频时间轴的问题",
+        "修复 BGM 只按角色轮换、不考虑项目情绪和产品内容的问题",
+        "修复较长字幕单行烧录可能超出安全区域的问题"
+      ],
+      "verification": [
+        "后端完整 Maven 测试通过，覆盖剪辑简报、情绪 BGM 选择、生成音频 ASR、字幕 cue 映射和分行滤镜",
+        "Vue 生产构建与静态资源引用校验通过",
+        "将重启 2.2.27 后端，并以当前项目提交 AI 人声真实渲染验证字幕时间轴与成片 QC"
+      ],
+      "compatibility": "原始素材字幕仍仅使用用户明确授权转录的时间轴。生成配音的 ASR 不可用时仅关闭该条自动字幕，不会伪造时间轴或中断可用配音。现有静音、黑屏、音画同步和时长质检不放宽。",
+      "evidence": [
+        "EditorialBrief.java",
+        "EditorialBriefService.java",
+        "NarrationCaption.java",
+        "NarrationService.java",
+        "MaterialDiagnosisService.java",
+        "MixPlanner.java",
+        "RenderService.java",
+        "FfmpegTool.java",
+        "narration-migration.sql",
+        "NarrationServiceTest.java",
+        "MixPlannerAudioIntentTest.java"
+      ],
+      "id": "release-2-2-27"
+    },
+    {
+      "version": "2.2.26",
+      "releasedAt": "2026-08-13",
+      "kind": "历史开发阶段",
+      "title": "素材智能分析与双确认永久删除",
+      "summary": "完成专业混剪升级第一阶段：素材从文件名与固定秒数切片升级为可追溯的场景切点、结构化镜头段和语义分析记录；新增只作用于应用管理目录的双确认永久删除。",
+      "changes": [
+        "新增素材分析与镜头段持久化：记录分析状态、切点来源、结构化标签、OCR 文字、转写状态、摘要、风险项及可复用的时间区间",
+        "新增异步分析链路：优先使用 FFmpeg 场景变化检测，失败时回退为均匀镜头段；复用已有 OCR、已授权转写和 AI 标签路由，AI 不可用时保留可解释的降级结果",
+        "素材库新增查看/重新分析入口，可展示分析状态、语义标签、OCR 风险与镜头时间段",
+        "新增永久删除影响预览与双确认：仅删除应用管理目录中的上传、抓取、生成素材及其缩略图、转写、分析、镜头段和数据库记录"
+      ],
+      "fixes": [
+        "修复素材只能按固定秒数机械切片、无法保留可供后续剪辑决策使用的场景边界问题",
+        "修复删除按钮只移除数据库记录、用户无法选择真正清理受控素材与派生缓存的问题",
+        "修复外部扫描素材与应用受控上传素材缺少删除边界提示的问题"
+      ],
+      "verification": [
+        "后端完整 Maven 测试通过，新增素材分析、镜头段、受控路径保护、活动任务引用拦截和永久删除测试",
+        "Vue 生产构建与静态资源引用校验通过",
+        "将重启本机构建，核对数据库迁移、真实素材分析、镜头段查询与永久删除影响预览"
+      ],
+      "compatibility": "保留原有“移出素材库但保留原文件”操作。永久删除必须经过前端勾选和服务端确认字段两次验证；外部扫描目录、历史成片与进行中任务引用的素材不会被删除。旧字幕、贴纸与水印当前只会被识别为风险，未配置可靠修复模型时不会伪称已无痕去除。",
+      "evidence": [
+        "MaterialAnalysis.java",
+        "MaterialSegment.java",
+        "MaterialAnalysisService.java",
+        "MaterialDeleteService.java",
+        "MaterialAnalysisController.java",
+        "material-analysis-migration.sql",
+        "FfmpegTool.java",
+        "Materials.vue",
+        "MaterialAnalysisServiceTest.java",
+        "MaterialDeleteServiceTest.java"
+      ],
+      "id": "release-2-2-26"
+    },
+    {
+      "version": "2.2.25",
+      "releasedAt": "2026-08-13",
+      "kind": "历史开发阶段",
+      "title": "版本日结与技能资料归档",
+      "summary": "完成当日版本日结，核对本机历史与交付版本一致；已接收防止 AI 无依据改写代码的技能资料压缩包，保留待后续在可读取归档内容后审查并决定是否集成。",
+      "changes": [
+        "当日发布状态已核对：当前可运行交付版本为 2.2.24，完整历史共 35 条，版本范围 1.0.0 至 2.2.24",
+        "已将附件 防ai瞎写代码-skills(1).rar 保留为待审查本机资料，不会在未检查内容时改动工作流、代码或安全规则",
+        "创建独立 2.2.25 日结记录，确保今天结束动作也具有可追溯版本号"
+      ],
+      "fixes": [
+        "无代码行为修复；本次为版本日结与资料归档，未改动渲染、素材、任务或成片数据"
+      ],
+      "verification": [
+        "已读取本机发布状态：2.2.24 交付版本与本机记录版本一致，历史完整状态为 true",
+        "已确认今日发布记录此前仅有 2.2.24；本记录将作为今日独立 2.2.25 版本",
+        "已确认附件文件存在且未被解压、执行或覆盖项目文件"
+      ],
+      "compatibility": "不删除、移动或覆盖项目源码、素材、任务、成片或历史记录。附件未被纳入运行时；待具备可用的 RAR 读取工具并完成内容审查后，才可能创建后续独立版本集成。",
+      "evidence": [
+        "LocalReleaseHistoryService.java",
+        "ReleaseNotesService.java",
+        "release_notes.py",
+        "data/release-history/local-release-notes.json",
+        "防ai瞎写代码-skills(1).rar"
+      ],
+      "id": "release-2-2-25"
+    },
+    {
+      "version": "2.2.24",
+      "releasedAt": "2026-08-13",
+      "kind": "历史开发阶段",
+      "title": "带货交付标准、素材角色兜底与历史审计",
+      "summary": "将十年抖音带货剪辑师的可执行标准写入钩子、口播、镜头节奏和素材规划；修复未标注产品/片尾/达人角色与跨任务切片重叠导致连续出片被错误中止的问题，并核对今天每一次更新均有独立版本记录。",
+      "changes": [
+        "钩子和 AI 口播改为带货交付标准：前 3 秒利益点或冲突、痛点到场景到卖点的递进、自然行动引导、真人可朗读节奏和平台合规措辞",
+        "产品、片尾和达人角色未标注时，时间线自动用项目相关主体画面补位并保留可审计提示，不再直接放弃可交付成片",
+        "默认同素材切片上限调整为 5 段，匹配 15 秒素材拆成 5 个三秒画面的业务规则；工作流向导与 Studio 参数同步",
+        "环境中心每次打开都会重新读取环境和发布历史；成片库按真实任务序号显示输出",
+        "已审计本机历史：2026-08-12 包含 2.2.9 至 2.2.23 共 15 个独立版本，记录总数 34 条"
+      ],
+      "fixes": [
+        "修复跨项目近似镜头去重在所有变体均重叠时清空可用时间线、误报素材切片耗尽的问题；现在保留最佳可交付变体并提示差异化风险",
+        "修复缺少 product、endcard 或 celebrity 标签时连续出片误判为素材无法满足要求的问题",
+        "修复环境中心在后端升级后仍显示旧应用版本和旧历史状态的问题",
+        "修复成片库把数据库从 1 开始的输出索引再次加一、显示错误序号的问题"
+      ],
+      "verification": [
+        "将执行 MixPlanner 角色兜底与默认切片容量回归测试、完整 Maven 测试和 Vue 生产构建",
+        "将重启 2.2.24 后端，核对环境中心版本与历史总数，并以当前项目执行干跑和单条真实渲染验证"
+      ],
+      "compatibility": "不删除旧素材、任务、成片或历史记录；静音、黑屏、音画同步、时长质检继续作为交付硬门槛。旧字幕/水印的无痕去除需要视觉检测与修复模型，当前运行时未具备该能力，因此不会声称已完成。自动字幕仍只处理用户明确授权转录的素材。",
+      "evidence": [
+        "CopyService.java",
+        "MixPlanner.java",
+        "JobService.java",
+        "MixParams.java",
+        "Studio.vue",
+        "Workflows.vue",
+        "Outputs.vue",
+        "App.vue",
+        "MixPlannerTest.java",
+        "MixParamsTest.java",
+        "LocalReleaseHistoryService.java"
+      ],
+      "id": "release-2-2-24"
+    },
+    {
+      "version": "2.2.23",
+      "releasedAt": "2026-08-12",
+      "kind": "历史开发阶段",
+      "title": "AI 人声与循环背景声时长对齐修复",
+      "summary": "修复短 AI 人声与循环背景声混音时错误按人声长度截断最终音频、导致音频比画面短而被质检拒绝的问题。",
+      "changes": [
+        "AI 人声与背景音乐同时存在时，以循环背景声作为完整成片音频时间线，人声可以自然结束但不会截断输出",
+        "新增短人声、循环 BGM 与长视频的 FFmpeg 集成测试，验证最终容器和音频时长均对齐画面"
+      ],
+      "fixes": [
+        "修复 AI 人声任务在最终音频比画面短数秒时被成品质检拒绝的问题",
+        "修复 amix 输入顺序使短人声意外成为输出时长基准的问题"
+      ],
+      "verification": [
+        "已执行 FFmpeg 音频时长回归测试、计划器和渲染器定向测试",
+        "将执行完整 Maven 测试、前端构建并以当前 AI 人声参数提交真实单条成片验证"
+      ],
+      "compatibility": "不放宽音频时长、静音、黑屏或音画同步质检；仅修正已存在循环 BGM 时的混音时间基准。",
+      "evidence": [
+        "FfmpegTool.java",
+        "FfmpegToolTest.java",
+        "RenderService.java",
+        "任务 #47"
+      ],
+      "id": "release-2-2-23"
+    },
+    {
+      "version": "2.2.22",
+      "releasedAt": "2026-08-12",
+      "kind": "历史开发阶段",
+      "title": "AI 人声画面池补回与自动背景声兜底",
+      "summary": "修复 AI 人声工作流只留下新音频后丢失画面素材的问题，并在没有 BGM 角色时自动使用最长可读音频作循环背景声，保证已有素材可直接形成成片。",
+      "changes": [
+        "工作流执行结束后若素材池只有音频，自动补回素材库中的可读画面用于时间线排版",
+        "没有 BGM 角色且用户未指定背景声时，自动选择最长可读音频作为循环背景声，并在干跑日志中明确说明"
+      ],
+      "fixes": [
+        "修复 AI 自然人声生成成功后工作流池非空却没有任何画面，导致连续出片错误报告素材不足的问题",
+        "修复导入音频未标为 BGM 时需要人工重分类才可避免长静音出片失败的问题"
+      ],
+      "verification": [
+        "将执行计划器自动背景声回归测试、完整 Maven 测试和前端构建",
+        "将以当前 AI 人声参数验证干跑返回可用画面与自动背景声，并重启本地服务复核"
+      ],
+      "compatibility": "不删除或重分类旧素材；仅在未选择 BGM、库中没有 BGM 角色时使用最长已导入音频作为循环背景声。静音、黑屏、时长和音画同步质检保持不变。",
+      "evidence": [
+        "SkillEngine.java",
+        "MixPlanner.java",
+        "MixPlannerTest.java",
+        "Studio.vue"
+      ],
+      "id": "release-2-2-22"
+    },
+    {
+      "version": "2.2.21",
+      "releasedAt": "2026-08-12",
+      "kind": "历史开发阶段",
+      "title": "Studio 重启后自动恢复与成片可见性修复",
+      "summary": "修复后端重启期间 Studio 首次加载失败后永久停留在数据库未连接、FFmpeg 未检测到、素材与任务为空的状态，使控制台自动恢复到当前真实运行环境。",
+      "changes": [
+        "Studio 自动刷新检测到初始化失败或运行时不可用时，会完整重新加载环境、素材、项目、工作流、文件夹和任务",
+        "首次加载、手动重载和自动恢复共用同一个初始化请求，避免重复请求和状态相互覆盖"
+      ],
+      "fixes": [
+        "修复顶部显示后端已连接，但 Studio 长期显示数据库未连接、FFmpeg 未检测到和 0 条素材的问题",
+        "修复后端重启后成功任务与成片已在数据库中，但当前 Studio 页面不重新拉取任务列表的问题"
+      ],
+      "verification": [
+        "将执行前端生产构建、完整 Maven 测试和版本化交付包构建",
+        "将重启本地服务并在浏览器确认 Studio 恢复数据库、FFmpeg、素材和任务状态，成片库显示通过 QC 的输出"
+      ],
+      "compatibility": "不删除素材、任务、成片或历史失败记录；仅增加 Studio 页面在后端恢复后的自动重载。",
+      "evidence": [
+        "Studio.vue",
+        "任务 #42 与成片 #24",
+        "mixcut-delivery-2.2.21.jar"
+      ],
+      "id": "release-2-2-21"
+    },
+    {
+      "version": "2.2.20",
+      "releasedAt": "2026-08-12",
+      "kind": "历史开发阶段",
+      "title": "真实素材出片与版本历史同步修复",
+      "summary": "让已导入的真实画面和音频按用户选择稳定出片，修复短口播被补成长静音、连续模式丢失参数、空文件夹筛选误挡出片，并补齐本机历史同步与正式版本记录。",
+      "changes": [
+        "背景音乐选择可直接使用任意可读音频；旧素材即使标为人声口播，也会按用户明确选择循环覆盖整条成片",
+        "Studio 空文件夹筛选自动回退全部可读画面素材，背景音乐下拉显示全部可读音频，首次进入默认固定数量出片",
+        "环境中心增加完整历史同步与版本范围、条数校验，交付包内的历史记录可安全合并到本机 data 目录"
+      ],
+      "fixes": [
+        "修复短口播通过存在性检查后被 FFmpeg apad 填成长静音、整条渲染完成才被质检删除的问题",
+        "修复连续出片把 continuous 元数据混入严格参数解析后回退项目默认值，导致干跑与正式任务不一致的问题",
+        "修复前端仅认可 ready 素材、空文件夹筛选清空未归档素材，造成已有计划却无法提交的问题"
+      ],
+      "verification": [
+        "将执行 Maven 后端测试、Vue 生产构建和交付 Jar 构建",
+        "将以当前本机素材库验证 50–150 秒干跑、指定音频混音、短口播提前拦截和版本历史同步状态"
+      ],
+      "compatibility": "不删除素材、任务、成片或旧版本记录；不放宽静音、黑屏、时长与音画同步质检。用户明确选择的可读音频现在可直接作为循环 BGM 使用。",
+      "evidence": [
+        "MixPlanner.java",
+        "RenderService.java",
+        "FfmpegTool.java",
+        "JobService.java",
+        "SkillEngine.java",
+        "Studio.vue",
+        "LocalReleaseHistoryService.java",
+        "App.vue"
+      ],
+      "id": "release-2-2-20"
+    },
+    {
+      "version": "2.2.19",
+      "releasedAt": "2026-08-12",
+      "kind": "历史开发阶段",
+      "title": "局域网令牌保护本机访问修复",
+      "summary": "修复开启局域网令牌保护后电脑本机浏览器也被拒绝访问的问题。",
+      "changes": [
+        "访问令牌过滤器会自动放行来自 IPv4/IPv6 回环地址的本机浏览器请求，同时继续要求局域网设备携带令牌"
+      ],
+      "fixes": [
+        "修复本机打开 127.0.0.1 页面时成片库等受保护 API 返回 Unauthorized 的问题"
+      ],
+      "verification": [
+        "后端 Maven 测试通过",
+        "启动后将验证本机 API 返回 200，非回环无令牌请求仍返回 401"
+      ],
+      "compatibility": "仅对同一台电脑的 loopback 请求免令牌；手机和其他局域网设备仍必须提供 APP_ACCESS_TOKEN。",
+      "evidence": [
+        "AccessTokenFilter.java"
+      ],
+      "id": "release-2-2-19"
+    },
+    {
+      "version": "2.2.18",
+      "releasedAt": "2026-08-12",
+      "kind": "历史开发阶段",
+      "title": "局域网模式本机管理接口纠正",
+      "summary": "修正令牌保护局域网模式下本机仍无法打开环境管理与重启入口的问题，同时继续拒绝来自手机和局域网的管理请求。",
+      "changes": [
+        "本机配置接口改为按请求来源判断，仅接受 127.0.0.1 或 IPv6 回环地址；应用监听 0.0.0.0 时，电脑本机仍可安全使用数据库配置、发布记录和重启操作"
+      ],
+      "fixes": [
+        "修复 APP_BIND_ADDRESS=0.0.0.0 时本机配置接口因绑定地址判断而同时拒绝电脑本机请求的问题"
+      ],
+      "verification": [
+        "后端 Maven 测试 81 项通过，0 failures，0 errors",
+        "令牌保护 smoke check：未带令牌访问 API 返回 401，携带令牌访问环境接口返回 200 且版本为 2.2.17"
+      ],
+      "compatibility": "仅修正电脑本机管理入口；来自手机或局域网的 /api/local-config/** 请求仍被拒绝，局域网业务 API 继续要求 APP_ACCESS_TOKEN。",
+      "evidence": [
+        "LocalConfigController.java",
+        "AccessTokenFilter.java",
+        "start.bat"
+      ],
+      "id": "release-2-2-18"
+    },
+    {
+      "version": "2.2.17",
+      "releasedAt": "2026-08-12",
+      "kind": "历史开发阶段",
+      "title": "令牌局域网访问、手机适配与授权转写交付",
+      "summary": "为同一 Wi-Fi 的手机提供令牌保护的局域网访问和最小屏幕布局，并将逐素材静音、语音转写和字幕烧录改为用户明确授权后才执行。",
+      "changes": [
+        "启动器支持显式 APP_BIND_ADDRESS=0.0.0.0 的局域网监听；非回环监听必须配置 APP_ACCESS_TOKEN，手机分享链接令牌仅保存在当前浏览器会话",
+        "侧栏在手机宽度变为可关闭的抽屉菜单，通用网格、卡片、工具栏和 AI 对话窗口适配最小手机屏幕",
+        "素材库支持逐条明确开启原声静音和转录字幕，转写结果带语言、模型、状态、错误与时间轴的持久化审计记录",
+        "项目和工作流增加可选 AI 草稿：用户先审阅并明确接受，随后仍需手动保存，AI 不可用时提供本地草稿兜底"
+      ],
+      "fixes": [
+        "修复 media_diagnose.py 依赖 user.dir 导致从项目根目录启动时 OCR/ASR 静默失败的问题，并将脚本纳入安装器",
+        "修复逐素材静音不能覆盖全局保留原片声音、未授权素材也会自动进行语音识别和字幕烧录的问题",
+        "加固本机重启接口：只接受规范化、非符号链接且位于固定项目根目录的 start.bat",
+        "清洗素材和输出文件名中的控制字符、Windows 保留设备名及尾随点/空格，避免 nul 等设备名造成假成功或不可读素材"
+      ],
+      "verification": [
+        "后端 Maven 测试 81 项通过，0 failures，0 errors",
+        "前端 Vite 构建与静态资源引用校验通过",
+        "Python 发行工具单测 4 项通过，待发布记录校验通过",
+        "已验证应用版本、application.yml 与安装器版本同步；已确认 D:\\zcode\\nul 不存在"
+      ],
+      "compatibility": "默认继续仅监听 127.0.0.1；局域网访问需要用户在 .env 明确选择并使用访问令牌，敏感本机配置接口仍拒绝手机调用。自动字幕默认关闭，既有项目只有在明确开启 autoSubtitles 且素材明确授权转录后才烧录字幕。",
+      "evidence": [
+        "start.bat",
+        "App.vue",
+        "styles.css",
+        "MaterialDiagnosisService.java",
+        "MaterialTranscript.java",
+        "RenderService.java",
+        "MaterialController.java",
+        "ProjectController.java",
+        "Projects.vue",
+        "Workflows.vue",
+        "LocalConfigController.java",
+        "Mework.iss"
+      ],
+      "id": "release-2-2-17"
+    },
+    {
+      "version": "2.2.16",
+      "releasedAt": "2026-08-12",
+      "kind": "历史开发阶段",
+      "title": "素材导入、公开补齐与混剪交付稳定性修复",
+      "summary": "将本机桌面素材导入、大型上传、公开许可素材补齐、跨任务去重和 Windows 运行时修复成可验证的交付链路。",
+      "changes": [
+        "素材上传的 Spring 与 Tomcat 请求体限制统一为 2GB；目录扫描会去除外层引号、拒绝符号链接，并在无权限、锁定、非媒体或文件过多时保留可读的跳过/失败原因后继续扫描",
+        "出片控制台新增素材缺口分析与公开源补齐入口：仅从 Wikimedia Commons、Internet Archive 和 Mixkit 的现有受控队列提交候选，不读 Cookie、不使用登录源、不绕过 URL Guard",
+        "混剪计划新增结构角色审计、近似切片去重、跨项目历史去重、节奏平滑、音频轮换和 AI 配音失败后的素材音轨回退提示",
+        "安装器版本、应用版本和发行工具同步；运行环境准备可在缺少项目 venv 时使用系统 Python 创建 venv 并补齐可选媒体依赖"
+      ],
+      "fixes": [
+        "修复拖入大于默认 Tomcat form-post 限制的媒体时连接被提前中断的问题",
+        "修复缺少产品段、片尾、达人或音频时静默退化成主体拼接而未提示的问题",
+        "修复不同任务从相同变体起点重复使用相近镜头、钩子音频与主口播重叠、AI 人声临时不可用时直接中断任务的问题",
+        "修复 Inno Setup 安装器版本停留在 2.2.13、缺失 venv 时只能人工处理、启动端口冲突和异常退出没有明确提示的问题"
+      ],
+      "verification": [
+        "后端 Maven 测试 53 项通过，覆盖公开源缺口分析、混剪计划结构审计、近似去重、节奏和音频轮换",
+        "前端 Vite 构建及静态资源引用校验通过",
+        "Python 发行工具单测 4 项通过，release_notes.py check 验证待记录完整",
+        "静态验证应用与安装器均为同一版本，Tomcat 2GB 请求限制和 Windows 运行脚本 UTF-8 可读"
+      ],
+      "compatibility": "公开源自动补齐只排入已有后台采集队列，未找到项目相关、公开许可的候选时明确返回未补齐；不会下载私网地址、登录源或带密钥来源。历史成片缺少切片键时保持兼容，新输出继续保存去重键。",
+      "evidence": [
+        "MaterialService.java",
+        "MaterialGapService.java",
+        "MaterialGapController.java",
+        "MixPlanner.java",
+        "JobService.java",
+        "Studio.vue",
+        "application.yml",
+        "setup_runtime.bat",
+        "start.bat",
+        "Mework.iss",
+        "MixPlannerTest.java",
+        "MaterialGapControllerTest.java"
+      ],
+      "id": "release-2-2-16"
+    },
+    {
+      "version": "2.2.15",
+      "releasedAt": "2026-08-12",
+      "kind": "历史开发阶段",
+      "title": "旧数据库输出库迁移与 Windows 启动修复",
+      "summary": "修复升级后成片库因缺少 segment_keys 列无法加载的问题，并将 Windows 启动器改为可被 cmd.exe 稳定执行的 ASCII 批处理脚本。",
+      "changes": [
+        "应用启动时会检查 job_output.segment_keys，旧库缺列时自动执行固定的幂等迁移",
+        "start.bat 使用项目根目录、.env、APP_DATA_DIR、本机 Python 与媒体路径启动后端"
+      ],
+      "fixes": [
+        "修复成片库查询 job_output.segment_keys 时出现 Unknown column 的 SQL 错误",
+        "修复 Windows 批处理脚本因编码和 Git Bash 解析导致路径、变量和中文注释被当作命令执行的问题"
+      ],
+      "verification": [
+        "后端 Maven 测试 32 项通过",
+        "前端 Vite 构建与静态资源校验通过",
+        "实际启动旧数据库并请求 /api/jobs/outputs/all，成功返回 21 条成片记录",
+        "内嵌浏览器实际验证成片库页面加载 21 条记录"
+      ],
+      "compatibility": "已有 job_output 记录的 segmentKeys 为空时按历史兼容处理；新成功输出会继续写入稳定切片键。迁移仅新增缺失列，不修改历史成片文件或记录。",
+      "evidence": [
+        "BootstrapService.java",
+        "output-segment-keys-migration.sql",
+        "start.bat",
+        "JobOutput.java",
+        "Outputs.vue"
+      ],
+      "id": "release-2-2-15"
+    },
+    {
+      "version": "2.2.14",
+      "releasedAt": "2026-08-12",
+      "kind": "历史开发阶段",
+      "title": "项目关联素材检索与交付相关性纠错",
+      "summary": "修正公开素材搜索的随机兜底行为，为音频和视频搜索增加项目关联、可解释评分和行业关键词扩展，避免无关素材进入面向甲方交付的混剪候选池。",
+      "changes": [
+        "公开音频和视频搜索支持选择关联项目，按品牌、品类、产品、卖点和受众术语在标题、标签与来源页信息中本地评分",
+        "搜索结果展示命中关键词、相关性分数、媒体类型和许可证；这些元数据随 RemoteItem 保存到后台导入任务参数，便于追踪来源和命中依据",
+        "补齐食品、保健品、香水和数码的中英文意图扩展，并同步到音频和视频搜索及前端快捷关键词",
+        "项目切换会清空对应的旧搜索结果和勾选项，避免跨项目误导入"
+      ],
+      "fixes": [
+        "删除所选来源无结果时静默追加 Mixkit 的自动兜底，未找到结果不再以随机素材填充",
+        "项目搜索会过滤命中禁用词或没有任何项目/关键词依据的公开素材，全部不匹配时明确返回未找到"
+      ],
+      "verification": [
+        "新增 CrawlerGatewayRelevanceTest，覆盖项目命中依据、禁用词排除和无项目关键词相关性",
+        "后端 Maven 测试 32 项通过",
+        "前端 Vite 构建及静态资源引用校验通过"
+      ],
+      "compatibility": "未选择项目时仍按用户输入关键词检索，不会因为项目筛选丢弃来源结果；选择项目后仅显示有关键词或项目术语依据且未命中禁用词的条目。Pixabay/Freesound 凭据仍仅从环境变量读取。",
+      "evidence": [
+        "CrawlerGateway.java",
+        "CrawlerGatewayRelevanceTest.java",
+        "CrawlController.java",
+        "Crawl.vue",
+        "CrawlJobService.java"
+      ],
+      "id": "release-2-2-14"
+    },
+    {
+      "version": "2.2.13",
+      "releasedAt": "2026-08-12",
+      "kind": "历史开发阶段",
+      "title": "公开素材检索、恢复去重与便携运行时交付",
+      "summary": "完善公开音频和视频素材的可用入口，持久化连续出片的源切片去重状态，并补齐无需依赖系统环境的便携运行时与安装脚本约定。",
+      "changes": [
+        "公开素材页新增关键词公开视频检索和导入队列，支持 Pixabay 官方 API、Wikimedia Commons 与 Internet Archive；Commons 和 Archive 仅展示 CC 或公有领域声明的可下载条目",
+        "Mixkit 无关键词命中时不再回退随机音乐；音频和视频的导入任务统一保存 RemoteItem 元数据并沿用 URL Guard 受控下载",
+        "内置美妆测评、食品种草、3C 数码开箱三条项目模板，默认启用项目相关素材范围",
+        "job_output 记录稳定 source-slice keys，暂停、恢复及服务重启后会恢复已用切片并避开重复素材",
+        "新增 setup_runtime.bat 与 Inno Setup 安装脚本，优先识别 portable JDK、FFmpeg 和 Python venv"
+      ],
+      "fixes": [
+        "修复 start.bat 在自定义 APP_DATA_DIR 时仍把启动日志写到默认 data 目录的问题",
+        "修复默认媒体依赖状态与日志目录未继承 APP_DATA_DIR 的问题",
+        "修复公开远程视频进入导入队列时只能按网页抓取路径处理的问题",
+        "批量删除素材记录保持事务性且不删除原始磁盘文件"
+      ],
+      "verification": [
+        "后端 Maven 测试 29 项通过",
+        "前端 Vite 构建和静态资源引用校验通过",
+        "已静态检查 Inno Setup 脚本的发布文件和可选便携运行时目录约定；当前机器未安装 ISCC，未生成安装 EXE"
+      ],
+      "compatibility": "Pixabay 视频搜索需要使用者自己的 APP_PIXABAY_API_KEY；Wikimedia Commons 与 Internet Archive 只返回许可证可见的公开条目。缺少 Python 媒体依赖时基础界面仍可启动，ASR、OCR、AI 配音和响度统一在环境检查中提示降级。",
+      "evidence": [
+        "CrawlerGateway.java",
+        "CrawlJobService.java",
+        "CrawlController.java",
+        "Crawl.vue",
+        "JobService.java",
+        "JobOutput.java",
+        "BootstrapService.java",
+        "start.bat",
+        "setup_runtime.bat",
+        "installer/Mework.iss"
+      ],
+      "id": "release-2-2-13"
+    },
+    {
+      "version": "2.2.12",
+      "releasedAt": "2026-08-12",
+      "kind": "历史开发阶段",
+      "title": "原声混音与字幕链路稳定性修复",
+      "summary": "补齐原声保留、图片静帧音轨、全片字幕映射和测试验证中的边界问题，保持跨电脑交付不依赖新增强制模型。",
+      "changes": [
+        "原声模式的图片片段自动补齐静音轨，视频片段统一 AAC 采样率和声道后参与拼接",
+        "全片自动字幕独立于钩子字幕开关，复用已有 ASR 时间轴映射到成片并在画面下方烧录",
+        "新增原声+BGM 混音和字幕过滤器回归测试，验证时长、音轨和时间窗"
+      ],
+      "fixes": [
+        "修复原声模式变量作用域和拼接参数构造问题",
+        "修复全片字幕在关闭钩子字幕时被一并跳过的问题",
+        "修复安装包版本与本机版本相同但读取时被错误覆盖的问题"
+      ],
+      "verification": [
+        "后端 Maven 测试 27 项通过",
+        "真实项目‘药 / 保健品’干跑通过，确认人工画面范围、项目规则、BGM 和人声同时生效",
+        "真实干跑计划输出项目相关素材并显示可追踪的执行日志"
+      ],
+      "compatibility": "默认声音模式仍为仅素材音轨；原声保留为可选模式。全片字幕依赖已有本机 ASR，无法识别的片段会跳过字幕而不阻断出片。",
+      "evidence": [
+        "FfmpegTool.java",
+        "RenderService.java",
+        "MaterialDiagnosisService.java",
+        "FfmpegToolTest.java",
+        "Studio.vue",
+        "SkillEngine.java",
+        "LocalReleaseHistoryService.java"
+      ],
+      "id": "release-2-2-12"
+    },
+    {
+      "version": "2.2.11",
+      "releasedAt": "2026-08-12",
+      "kind": "历史开发阶段",
+      "title": "项目相关混剪、去重与声音字幕控制",
+      "summary": "将混剪规划从单条随机切片提升为同任务去重、项目相关素材优先，并增加原片声音、AI 人声和全片口播字幕控制。",
+      "changes": [
+        "同一批次和持续任务的成功成片会登记实际源切片；后续计划自动换变体避开重复，素材耗尽时明确停止并提示补充素材",
+        "有项目时默认按品牌、品类、卖点、受众、禁用词和素材名称/标签过滤明显无关画面；人工指定素材保持优先级",
+        "出片台新增声音模式：仅素材音轨、保留原片声音、AI 自然人声，并可调整原片声音音量",
+        "保留原片声音模式会对视频切片保留统一 AAC 音轨，图片片段补静音轨，再与 BGM 做时长受控混音",
+        "全片自动字幕可按已有本机语音识别时间轴映射到成片时间线并烧录；钩子字幕与口播字幕分区显示",
+        "AI 人声模式使用项目口播稿与已配置神经配音生成 voice 素材，原片讲话声不进入最终混音"
+      ],
+      "fixes": [
+        "修复同一任务连续出片仅依赖随机位移、仍可能复用相同源切片的问题",
+        "修复指定画面素材后错误排除 BGM/人声素材、导致声音模式失效的问题",
+        "修复视频切片阶段固定移除原片声音、界面无法选择保留原声的问题",
+        "修复已有 ASR 逐句时间轴只在素材检查页面展示、不能进入最终成片字幕的问题",
+        "修复香水等项目在未分类素材中可能混入喜羊羊、灰太狼等明显无关动画画面的问题"
+      ],
+      "verification": [
+        "MixPlannerTest 增加变体源切片差异验证",
+        "后端 Maven 测试 25 项通过",
+        "前端 Vite 构建和静态资源引用校验通过",
+        "FFmpeg 单元测试持续覆盖音频、静音、黑屏和正常画面检测"
+      ],
+      "compatibility": "默认声音模式保持仅素材音轨；项目相关性默认开启但人工指定画面优先保留。AI 自然人声依赖现有 edge-tts 神经配音服务和网络，服务不可用时会显式失败，建议改用原片声音或素材音轨。人声分离和视觉向量模型仍为可选本机适配项，未安装不会阻断基础出片。",
+      "evidence": [
+        "MixPlanner.java",
+        "JobService.java",
+        "SkillEngine.java",
+        "MixParams.java",
+        "RenderService.java",
+        "FfmpegTool.java",
+        "Studio.vue",
+        "MixPlannerTest.java"
+      ],
+      "id": "release-2-2-11"
+    },
+    {
+      "version": "2.2.10",
+      "releasedAt": "2026-08-12",
+      "kind": "历史开发阶段",
+      "title": "跨电脑可用的应用内版本记录",
+      "summary": "将版本更新流程加入环境中心，并将本机记录持久化到 data 目录，安装包在任意电脑上均可独立管理记录，不依赖源码、Maven 或 Python。",
+      "changes": [
+        "环境中心新增本机版本更新记录面板，可填写更新内容、纠错修复、验证结果、兼容性和证据来源",
+        "版本记录首次启动自动从安装包初始化到 data/release-history，后续草稿、校验和归档只写本机数据目录",
+        "应用内支持保存待记录、校验记录、自动归档旧本机记录并生成连续补丁版本",
+        "界面明确区分正式应用版本与本机记录版本，避免不同电脑的本地记录被误认为统一安装包版本"
+      ],
+      "fixes": [
+        "修复版本记录功能依赖源码目录、重新打包或 Python 工具，导致交付到其他电脑无法使用的问题",
+        "修复应用内发布可能改写安装包或源码、不同电脑之间互相干扰版本记录的问题"
+      ],
+      "verification": [
+        "LocalReleaseHistoryServiceTest 验证空数据目录自动初始化、本机归档和敏感证据拒绝",
+        "临时 APP_DATA_DIR 启动实例验证：未依赖源码目录也自动生成 data/release-history/local-release-notes.json",
+        "临时实例 API 验证保存待记录、校验和应用本机记录可用",
+        "前端 Vite 构建和后端 Maven 测试通过"
+      ],
+      "compatibility": "正式应用版本仍由安装包自带记录决定；本机记录仅保存在当前电脑的 APP_DATA_DIR/release-history，不影响其他电脑或安装包。",
+      "evidence": [
+        "LocalReleaseHistoryService.java",
+        "LocalConfigController.java",
+        "SystemController.java",
+        "App.vue",
+        "api.js",
+        "LocalReleaseHistoryServiceTest.java"
+      ],
+      "id": "release-2-2-10"
+    },
+    {
+      "version": "2.2.9",
+      "releasedAt": "2026-08-12",
+      "kind": "历史开发阶段",
+      "title": "猫作品牌统一与发行历史纠错",
+      "summary": "本次仅记录今天完成的品牌统一、旧静态资源缓存修复，以及发行历史按真实日期和版本重建的机制。昨天的媒体功能和质检修复已分别归档到 2.2.5 至 2.2.8。",
+      "changes": [
+        "品牌统一更新为猫作 · Mework，浏览器标题、侧栏、AI 助手、教程、PWA 清单和工作流来源文案同步更新",
+        "新增版本记录发布工具与待记录门禁：自动归档当前版本、生成新版本、同步 app.version，并在构建前检查未应用记录",
+        "发行历史统一为纯 x.y.z 版本号，按真实发布日期和版本顺序展示；昨天后半段更新拆分归档为 2.2.5 至 2.2.8"
+      ],
+      "fixes": [
+        "修复浏览器缓存旧指纹脚本后仍显示旧品牌名称的问题",
+        "修复昨天后半段的功能更新被错误合并进今天当前记录、历史版本缺少对应条目的问题",
+        "修复历史记录混用 v 前缀、阶段后缀和日汇总版本，导致时间线不可追溯的问题"
+      ],
+      "verification": [
+        "前端 Vite 构建和静态资源引用校验通过",
+        "后端 Maven 测试通过，发行记录在启动时与 app.version 一致",
+        "版本接口确认当前 2.2.9，历史顶部依次为 2.2.8、2.2.7、2.2.6、2.2.5、2.2.4"
+      ],
+      "compatibility": "新增 release-notes.pending.json 发布门禁；后续每次更新必须先登记待记录，再运行 release_notes.py check 和 apply。Maven/Jar 构建坐标仍与应用发布版本分开管理。",
+      "evidence": [
+        "App.vue",
+        "AiChat.vue",
+        "Tutorial.vue",
+        "Workflows.vue",
+        "WebConfig.java",
+        "ReleaseNotesService.java",
+        "release_notes.py",
+        "ReleaseNotesSchemaTest.java",
+        "ReleaseNotesPendingTest.java",
+        "RELEASE_HISTORY_RULES.md"
+      ],
+      "id": "release-2-2-9"
+    },
+    {
+      "id": "release-2-2-8",
+      "version": "2.2.8",
+      "kind": "历史开发阶段",
+      "releasedAt": "2026-08-11",
+      "title": "成片交付质检与真实媒体链路修复",
+      "summary": "为成片增加可发布交付闸门，并以真实素材、真实音轨和真实输出修复混音与检测误判。",
+      "changes": [
+        "成片库增加可发布、建议复核、已拦截状态及质检详情，记录音频时长、最长静音、黑屏和音画起始偏移",
+        "成片最终保存前增加声音、长静音、黑屏和音画同步交付闸门；不合格文件直接拦截，不进入成片库"
+      ],
+      "fixes": [
+        "修复 voice 与 BGM 同时混音时错误使用 sidechain 滤镜导致混音失败、随后被静音轨掩盖的问题",
+        "修复静音检测解析 FFmpeg 日志时误把末尾音频算成几十秒静音的问题",
+        "修复黑屏检测阈值过宽、将正常真实素材误判为黑屏的问题",
+        "修复手工限定画面素材时音频素材不在范围内，造成计划无法选择已指定口播或 BGM 的问题"
+      ],
+      "verification": [
+        "FFmpeg 集成测试验证正常音频、纯静音、黑屏和正常画面的质量检测结果",
+        "真实成片 qc_34_01_7095.mp4 通过质检：音频 50.467 秒、最长静音 0 秒、黑屏 0 秒、音画起始偏移 0 秒",
+        "后端 Maven 测试共 18 项通过"
+      ],
+      "compatibility": "新增 job_output 质检字段已通过幂等迁移补齐；默认拒绝无声、长静音、明显黑屏或音画不同步的输出。",
+      "evidence": [
+        "RenderService.java",
+        "FfmpegTool.java",
+        "JobOutput.java",
+        "JobService.java",
+        "Outputs.vue",
+        "output-qc-migration.sql",
+        "FfmpegToolTest.java",
+        "AppProps.java"
+      ]
+    },
+    {
+      "id": "release-2-2-7",
+      "version": "2.2.7",
+      "kind": "历史开发阶段",
+      "releasedAt": "2026-08-11",
+      "title": "本机 OCR、语音识别与素材 AI 检查",
+      "summary": "将本机画面文字和口播识别接入素材检查，输出可用于剪辑的时间信息和风险提示。",
+      "changes": [
+        "接入 RapidOCR、faster-whisper 和神经配音环境检测",
+        "素材 AI 检查可返回画面文字、口播逐句时间、建议用途和风险提示"
+      ],
+      "fixes": [
+        "修复素材检查只依赖文件名和基础媒体信息、无法提供画面与口播依据的问题"
+      ],
+      "verification": [
+        "真实语音识别验证返回逐句开始、结束时间和中文口播文本"
+      ],
+      "compatibility": "RapidOCR、faster-whisper 和神经配音使用项目私有 .venv；首次语音识别会下载并缓存模型。",
+      "evidence": [
+        "MaterialDiagnosisService.java",
+        "media_diagnose.py",
+        "BootstrapService.java",
+        "Materials.vue"
+      ]
+    },
+    {
+      "id": "release-2-2-6",
+      "version": "2.2.6",
+      "kind": "历史开发阶段",
+      "releasedAt": "2026-08-11",
+      "title": "素材库自动切片与自动配音",
+      "summary": "把原始视频和文案转成可直接参与出片的短片与人声素材，并在入库前验证媒体质量。",
+      "changes": [
+        "原视频按 1 至 15 秒切成独立短片，自动生成缩略图、入库并标记为主体素材，原文件不覆盖",
+        "本机神经语音生成后先检查时长、可解码和异常静音，再作为人声素材入库供出片选择"
+      ],
+      "fixes": [
+        "修复自动配音或生成音频未经过有效时长、可解码和静音检查就入库的问题"
+      ],
+      "verification": [
+        "真实竖屏素材自动切片验证生成 5 秒、5 秒和 2.1 秒片段并自动入库",
+        "真实中文自动配音已生成并入库为人声素材，时长 7.368 秒"
+      ],
+      "compatibility": "自动切片只新增素材，不覆盖原始文件；自动配音失败不会写入无效人声素材。",
+      "evidence": [
+        "MaterialService.java",
+        "TtsService.java",
+        "MaterialController.java",
+        "Materials.vue"
+      ]
+    },
+    {
+      "id": "release-2-2-5",
+      "version": "2.2.5",
+      "kind": "历史开发阶段",
+      "releasedAt": "2026-08-11",
+      "title": "竖屏成片全屏播放适配",
+      "summary": "修正浏览器原生全屏时的画面适配策略，使竖屏成片完整显示。",
+      "changes": [
+        "成片全屏播放改为完整适配竖屏画面，不再因 cover 放大导致只显示中间部分"
+      ],
+      "fixes": [
+        "修复竖屏视频进入浏览器全屏后被放大裁切、只能看到中间区域的问题"
+      ],
+      "verification": [
+        "浏览器全屏播放竖屏成片验证通过",
+        "前端 Vite 构建通过"
+      ],
+      "compatibility": "仅调整浏览器全屏样式，不改变导出视频文件、时间线或素材数据。",
+      "evidence": [
+        "styles.css",
+        "Outputs.vue"
+      ]
+    },
+    {
+      "id": "release-2-2-4",
+      "version": "2.2.4",
+      "kind": "历史开发阶段",
+      "releasedAt": "2026-08-11",
+      "title": "本机环境配置与自动应用",
+      "summary": "解决“有提示但无法处理”和保存后旧进程不加载配置的问题。",
+      "changes": [
+        "增加环境中心配置说明、版本历史、依赖处理按钮和 MySQL 本机向导",
+        "新增数据库临时测试、.env 安全保存、备份、自动重启和连接轮询",
+        "数据库不可用时后端进入降级配置模式，仍可打开环境中心"
+      ],
+      "fixes": [
+        "修复浏览器刷新不能让 Java 进程重新读取 .env",
+        "修复直接 java -jar 与 start.bat 的配置加载不一致",
+        "修复数据库不可用时 overview、queue、watchdog 反复报错"
+      ],
+      "verification": [
+        "7 项后端测试通过",
+        "环境接口确认数据库与 FFmpeg 可用"
+      ],
+      "compatibility": "正式 Maven/Jar 版本仍为 1.0.0；仅新增本机 .env 读取与配置向导，不改数据库结构。",
+      "evidence": [
+        "LocalConfigController.java",
+        "application.yml",
+        "start.bat",
+        "App.vue"
+      ]
+    },
+    {
+      "id": "release-2-2-3",
+      "version": "2.2.3",
+      "kind": "历史开发阶段",
+      "releasedAt": "2026-08-11",
+      "title": "采集失败与素材源操作化",
+      "summary": "将来源状态、失败原因和下一步处理变成可点击动作。",
+      "changes": [
+        "采集任务显示原始链接、失败摘要和“处理此问题”",
+        "增加 yt-dlp 安装入口、API Key 官方申请入口和登录授权边界",
+        "淘声网作为公开音效入口预置；公开来源加入实际检索选择"
+      ],
+      "fixes": [
+        "修复手动来源只显示说明、用户无法知道去哪里配置",
+        "修复 Pixabay 未接入检索却提示可配置 Key 的误导状态",
+        "修复私网/保留 URL 拒绝后没有处理说明"
+      ],
+      "verification": [
+        "浏览器验证失败任务处理按钮、来源官网跳转和公开来源列表"
+      ],
+      "compatibility": "不读取第三方 Cookie、账号或密码；登录来源仍需用户在官网授权后下载并导入本地文件。",
+      "evidence": [
+        "Crawl.vue",
+        "CrawlController.java",
+        "CrawlerGateway.java"
+      ]
+    },
+    {
+      "id": "release-2-2-2",
+      "version": "2.2.2",
+      "kind": "历史开发阶段",
+      "releasedAt": "2026-08-11",
+      "title": "控制台可读性与出片预检",
+      "summary": "减少密集页面与隐蔽参数，让新手可从主流程完成预览和批量出片。",
+      "changes": [
+        "全局字号、侧栏宽度、底部留白和工作流列表滚动优化",
+        "工作流/技能和高级设置折叠，降低首次使用信息密度",
+        "出片控制台增加 FFmpeg、素材时长、画面素材预检和任务轮询优化",
+        "总时长提升为主控项，统一 5–300 秒范围和超限反馈"
+      ],
+      "fixes": [
+        "修复总时长与时长区间冲突、后端静默收敛不可见",
+        "修复路由切换导致导入状态被销毁",
+        "修复成片目录扫描候选的异常时长误补录风险"
+      ],
+      "verification": [
+        "浏览器验证出片预检、候选补录对话框、时长控制与任务页"
+      ],
+      "compatibility": "旧项目的 targetSec 保留兼容读取；新任务优先使用 targetDurationSec。",
+      "evidence": [
+        "Studio.vue",
+        "Outputs.vue",
+        "App.vue",
+        "styles.css",
+        "MixParams.java"
+      ]
+    },
+    {
+      "id": "release-2-2-1",
+      "version": "2.2.1",
+      "kind": "历史开发阶段",
+      "releasedAt": "2026-08-11",
+      "title": "导入稳定性与成片索引",
+      "summary": "强化真实文件上传、失败重试和磁盘成片补录。",
+      "changes": [
+        "XHR 上传显示真实进度、非 JSON/413/空响应诊断",
+        "文件夹、全局拖拽采用受控并发，失败条目保留重试依据",
+        "成片库增加输出目录扫描、候选预览、用户确认补录"
+      ],
+      "fixes": [
+        "修复大文件上传只显示笼统失败",
+        "修复输出在磁盘存在但数据库没有记录时无法在成片库查看",
+        "修复异常超长输出被默认选中补录"
+      ],
+      "verification": [
+        "构建通过；候选扫描对正常与异常视频分别标记"
+      ],
+      "compatibility": "补录不移动、不删除磁盘文件；只在用户确认后写入成片记录。",
+      "evidence": [
+        "api.js",
+        "Materials.vue",
+        "Outputs.vue",
+        "JobController.java"
+      ]
+    },
+    {
+      "id": "release-2-2-0",
+      "version": "2.2.0",
+      "kind": "历史开发阶段",
+      "releasedAt": "2026-08-11",
+      "title": "凭据安全、来源真实状态与工具三态",
+      "summary": "收敛第三方密钥、抓取边界和未接入能力的展示。",
+      "changes": [
+        "AI Provider 密钥使用 APP_MASTER_KEY 的 AES-GCM 加密，接口只返回掩码与状态",
+        "素材源区分 ready、missing_key、unsupported、login-disabled",
+        "FFmpeg 以外工具区分未安装、仅检测到、已接入",
+        "URL Guard 拒绝本机、私网、保留地址和危险重定向"
+      ],
+      "fixes": [
+        "修复 API 返回实体可能泄露 provider 密钥",
+        "修复检测到命令就被显示为已接入",
+        "修复 OAuth/登录来源仅打开官网却显示已启用的假状态"
+      ],
+      "verification": [
+        "UrlGuardTest 与 SkillDslValidationTest 通过",
+        "环境接口及素材源状态在浏览器验证"
+      ],
+      "compatibility": "新增 Provider 密钥前需要 APP_MASTER_KEY；未配置时拒绝保存新密钥。",
+      "evidence": [
+        "CredentialCipher.java",
+        "AiController.java",
+        "BootstrapService.java",
+        "CrawlController.java"
+      ]
+    },
+    {
+      "id": "release-2-1-3",
+      "version": "2.1.3",
+      "kind": "历史开发阶段",
+      "releasedAt": "2026-08-10",
+      "title": "全站中文化与内部字段兼容修复",
+      "summary": "将运营可见界面和后端用户提示中文化，同时保留 API、DSL 与模型协议兼容。",
+      "changes": [
+        "完成 App、概览、素材库、素材抓取、项目、工作流、出片控制台、AI 设置等主页面中文化",
+        "工作流展示改用“技能、规则定义、规则转步骤”等中文业务表达",
+        "后端 WorkflowController 的规则校验、空请求、技能不存在和名称提示中文化",
+        "示例关键词、本机路径、参数提示和服务商说明改为中文"
+      ],
+      "fixes": [
+        "修复批量中文替换误伤 apiKey、promptTokens、completionTokens 的兼容性问题",
+        "确认 API 路径、running/failed/bgm/voice 枚举、模型 ID、URL、环境变量和 DSL 操作键保持不变",
+        "重新读取并应用 Studio.vue 的并发修改，避免覆盖其他会话的编辑"
+      ],
+      "verification": [
+        "前端 npm run build 通过，Vite 转换 1663 modules",
+        "后端 mvn -DskipTests compile 通过",
+        "静态字段检查未再发现被中文化误伤的内部字段",
+        "当次浏览器验收没有保留完整截图或点击轨迹，因此不将其标记为完整交互验收"
+      ],
+      "compatibility": "仅改变用户可见文本与后端人类可读错误消息；程序字段、接口契约和序列化枚举保持兼容。",
+      "evidence": [
+        "会话 sess_e2559d60-3a75-48a6-8a11-c8cf7673e180",
+        "App.vue",
+        "AiSettings.vue",
+        "Workflows.vue",
+        "Crawl.vue",
+        "Projects.vue",
+        "Studio.vue",
+        "Materials.vue",
+        "Dashboard.vue",
+        "WorkflowController.java"
+      ]
+    },
+    {
+      "id": "release-2-1-2",
+      "version": "2.1.2",
+      "kind": "交付构建",
+      "releasedAt": "2026-08-10",
+      "title": "可启动交付包与使用文档",
+      "summary": "形成阶段交付构建 mixcut-delivery.jar 和运营可执行的启动入口。",
+      "changes": [
+        "提供 start.bat、README、架构文档和 8 个中文标注样例素材",
+        "将前端构建产物内嵌到 Spring Boot 静态资源",
+        "形成 mixcut.jar → mixcut-delivery.jar → mixcut-phase1.jar 的兼容回退链"
+      ],
+      "fixes": [
+        "修复 Windows jar 被运行进程锁定时无法重新打包的交付流程",
+        "修复启动端口受外部环境变量覆盖的问题"
+      ],
+      "verification": [
+        "mixcut-delivery.jar 构建于 2026-08-10 21:50",
+        "README 与架构文档同步完成"
+      ],
+      "compatibility": "旧 phase jar 仅作为最后兼容回退；新项目优先使用 mixcut.jar。",
+      "evidence": [
+        "start.bat",
+        "README.md",
+        "docs/ARCHITECTURE.md",
+        "backend/target/mixcut-delivery.jar"
+      ]
+    },
+    {
+      "id": "release-2-1-1",
+      "version": "2.1.1",
+      "kind": "数据库演进阶段",
+      "releasedAt": "2026-08-10",
+      "title": "抓取、可靠性、文件夹与渲染进度数据模型",
+      "summary": "将短视频生产流程的任务、输出和素材组织状态落库。",
+      "changes": [
+        "增加 crawl_job/crawl_task",
+        "增加任务 timeout、staleAfter、lastActivity 与输出唯一索引",
+        "增加 material_folder 描述、启用状态和排序",
+        "增加 job.current_step、phase_progress 和全量幂等 schema"
+      ],
+      "fixes": [
+        "修复重复输出索引和任务失去活动状态后无法追踪",
+        "以信息架构检查替代不安全的重复 DDL"
+      ],
+      "verification": [
+        "crawl-migration、reliability、folder、render-progress SQL 已归档",
+        "UPGRADE_V1_TO_V2.sql 为已有 V1 数据库的合并升级入口"
+      ],
+      "compatibility": "升级已有数据库前备份；升级脚本只增加字段/索引，不删除表或数据。",
+      "evidence": [
+        "db/crawl-migration.sql",
+        "db/folder-migration.sql",
+        "db/render-progress-migration.sql",
+        "docs/UPGRADE_V1_TO_V2.sql"
+      ]
+    },
+    {
+      "id": "release-2-1-0",
+      "version": "2.1.0",
+      "kind": "阶段验收",
+      "releasedAt": "2026-08-10",
+      "title": "素材扫描、媒体安全与真实数据库能力验收",
+      "summary": "完成阶段 1 验收，素材扫描、媒体切片、图片安全预览和 MySQL 存储进入可用状态。",
+      "changes": [
+        "引入 MyBatis-Plus MaterialMapper / MaterialStore",
+        "增加 /api/materials/scan 和本机素材查询",
+        "完成 FFmpeg cutNormalize 实测、schema 和真实 MySQL 接入",
+        "补齐 URL 安全、外置配置、访问保护、受约束 Skill DSL、任务恢复和队列边界",
+        "扩展 MixParams/MixPlanner 及 Hyperframes 相关入口"
+      ],
+      "fixes": [
+        "修复历史 MySQL 1045 认证问题并记录验收结论",
+        "修复基础素材扫描、切片和落库链路缺口",
+        "修复图片路径泄露、符号链接/不可读文件和预览鉴权边界"
+      ],
+      "verification": [
+        "PHASE1_ACCEPTANCE.md 记录 Maven 构建、6 项测试、真实 FFmpeg 切片、前端 1660 模块构建和 8760 服务验收",
+        "图片 smoke test 在 8762 完成 1080×1920 导入、缩略图和预览 HTTP 200 验证",
+        "UrlGuardTest 验证本机/私网/保留地址拒绝，SkillDslValidationTest 验证命令、URL、下载等危险字段拒绝"
+      ],
+      "compatibility": "数据库名从早期 mixcut 演进至 ai_mix_video；新安装执行 schema.sql。Hyperframes 仅保留可选入口，Remotion、趋势雷达与剪映交接包当时未接入。",
+      "evidence": [
+        "docs/PHASE1_ACCEPTANCE.md",
+        "db/schema.sql",
+        "MaterialMapper.java",
+        "MaterialStore.java",
+        "MaterialController.java",
+        "FfmpegTool.java",
+        "UrlGuardTest.java",
+        "SkillDslValidationTest.java",
+        "会话 sess_ed52fbc8-61a2-4875-8d94-076531107129"
+      ]
+    },
+    {
+      "id": "release-2-0-4",
+      "version": "2.0.4",
+      "kind": "历史开发阶段",
+      "releasedAt": "2026-08-10",
+      "title": "图片素材安全预览与时间线接入",
+      "summary": "将图片从文件附件升级为可安全扫描、可预览、可参与混剪时间线的素材类型。",
+      "changes": [
+        "Material 增加稳定 previewUrl、thumbnailUrl，前端不再依赖或暴露本机绝对路径",
+        "素材路径绝对规范化，只接受普通、可读取、非符号链接文件",
+        "图片由 ffprobe 检测可读性、尺寸和媒体信息，默认按 3.0 秒静帧参与时间线",
+        "图片/视频统一生成缩略图，按素材 ID 提供预览接口并返回正确 MIME、缓存和字节范围支持",
+        "素材库增加图片和视频预览弹窗、加载失败提示与预览状态管理"
+      ],
+      "fixes": [
+        "将 WinGet FFmpeg 在 Git Bash / Fontconfig 下的 drawtext 崩溃识别为环境构建问题，而非图片链路代码问题",
+        "改用无字体依赖 BMP 生成 smoke test，避免用失败的文字图片掩盖媒体探测问题",
+        "修复 Windows 路径传给扫描接口时 JSON 反斜杠转义导致的请求失败"
+      ],
+      "verification": [
+        "1080×1920 BMP 扫描成功：scanned=1、imported=1、status=ready、durationSec=3.0",
+        "素材记录返回缩略图 /files/thumbs/m18.jpg 与预览 /api/materials/18/preview",
+        "预览 image/bmp、缩略图 image/jpeg 均 HTTP 200，ffprobe 识别 1080×1920 图像流",
+        "后端 package 与前端 npm run build 通过"
+      ],
+      "compatibility": "图片作为独立 MixPlanner Segment，遵循 variant、3 秒切片与产品段均匀插入；Hyperframes、Remotion、趋势雷达和剪映交接包在该阶段仅是探索/规划，未标记为已接入。",
+      "evidence": [
+        "会话 sess_ed52fbc8-61a2-4875-8d94-076531107129",
+        "Material.java",
+        "MaterialService.java",
+        "FfmpegTool.java",
+        "MaterialController.java",
+        "AccessTokenFilter.java",
+        "Materials.vue",
+        "FfmpegToolTest.java"
+      ]
+    },
+    {
+      "id": "release-2-0-3",
+      "version": "2.0.3",
+      "kind": "历史开发阶段",
+      "releasedAt": "2026-08-09",
+      "title": "音频检索与素材操作体验补强",
+      "summary": "使公开音乐检索和本地素材刷新更接近真实运营流程。",
+      "changes": [
+        "Mixkit 从主列表卡片解析标签、时长与可读标题",
+        "缺 Key 返回可见 notice 并用 Mixkit 公开音乐兜底",
+        "下载文件名清洗 Windows/FFmpeg 敏感字符",
+        "已存在素材在 size/mtime 变化时刷新元数据和缩略图",
+        "Vite 构建改为显式清理策略"
+      ],
+      "fixes": [
+        "修复 Mixkit 分类页 301 只解析到一条素材和数字标题",
+        "修复缺 Key 静默空结果",
+        "修复特殊字符文件名导致 FFmpeg/Windows 风险",
+        "修复替换文件后扫描不更新"
+      ],
+      "verification": [
+        "真实 Mixkit BGM 入库并参与渲染；音轨波形相关性 0.51"
+      ],
+      "compatibility": "登录态来源默认关闭，商用素材仍须逐条核对许可。",
+      "evidence": [
+        "CrawlerGateway.java",
+        "MaterialService.java",
+        "vite.config.js"
+      ]
+    },
+    {
+      "id": "release-2-0-2",
+      "version": "2.0.2",
+      "kind": "历史开发阶段",
+      "releasedAt": "2026-08-09",
+      "title": "异步渲染、切片算法与钩子优先级修复",
+      "summary": "消除任务卡住、片段重复和用户手填文案被覆盖的交付级问题。",
+      "changes": [
+        "任务派发改为事务 afterCommit 后执行，并增加 safeRun 状态回写",
+        "MixPlanner 使用 Cursor 游标，每段新建 Segment 并校验来源时长",
+        "确保相邻素材不同、明星比例交错、产品段均匀插入",
+        "用户填写 hookText 时跳过 AI 覆盖"
+      ],
+      "fixes": [
+        "修复任务永久 pending",
+        "修复 Segment 对象复用导致重复片段、index 覆盖和越界",
+        "修复 AI 覆盖手填钩子"
+      ],
+      "verification": [
+        "dry-run 30 段：重复 0、相邻同素材 0、越界 0；批量成片 81.4s/84.3s 均在目标区间"
+      ],
+      "compatibility": "该阶段未改变核心素材文件；对已有任务按新逻辑重新提交即可。",
+      "evidence": [
+        "JobService.java",
+        "MixPlanner.java",
+        "SkillEngine.java",
+        "RenderService.java"
+      ]
+    },
+    {
+      "id": "release-2-0-1",
+      "version": "2.0.1",
+      "kind": "历史开发阶段",
+      "releasedAt": "2026-08-09",
+      "title": "正式栈启动修复",
+      "summary": "修复 Java / MySQL 正式栈无法稳定启动的基础问题。",
+      "changes": [
+        "JDBC URL 使用 UTF-8 + utf8mb4 collation",
+        "显式 Hibernate MySQLDialect 与 ddl-auto:none",
+        "开启嵌套 JPA Repository 扫描",
+        "start.bat 命令行锁定 8760 端口"
+      ],
+      "fixes": [
+        "修复 utf8mb4 被当作非法 Java 字符集并被 Hibernate NPE 掩盖",
+        "修复嵌套 Repository 未扫描",
+        "修复 SERVER__PORT 环境变量将服务启动到随机端口"
+      ],
+      "verification": [
+        "Spring Boot 后端稳定启动并提供首页 200"
+      ],
+      "compatibility": "启动端口固定为 8760；数据库仍需按本机环境设置。",
+      "evidence": [
+        "application.yml",
+        "DouyinMixcutApplication.java",
+        "start.bat"
+      ]
+    },
+    {
+      "id": "release-2-0-0",
+      "version": "2.0.0",
+      "kind": "正式技术栈重写",
+      "releasedAt": "2026-08-09",
+      "title": "Vue + Spring Boot + MySQL 交付重写",
+      "summary": "满足前端 Vue、后端 Java、数据库 MySQL 的硬性技术栈要求。",
+      "changes": [
+        "将老板混剪算法参数化为 MixParams 与 MixPlanner",
+        "实现 SkillEngine、内置技能和受限 AI 规划",
+        "搭建 Vue 3 + Element Plus 页面，覆盖素材、项目、工作流、出片和成片库",
+        "接入 Spring Boot、JPA、MySQL、FFmpeg 和批量异步任务"
+      ],
+      "fixes": [
+        "替换不符合正式技术栈要求的旧 FastAPI/SQLite 实现"
+      ],
+      "verification": [
+        "13 个只读 API 返回 200；最终验收成片 mix_5_01_90816.mp4 为 90.8 秒，1080×1920/30fps/AAC，钩子字幕正确烧录"
+      ],
+      "compatibility": "这是完整重写，旧 v1 工作流仅作为算法参考，不能直接导入当前应用。",
+      "evidence": [
+        "docs/ARCHITECTURE.md",
+        "backend/pom.xml",
+        "frontend/package.json",
+        "AI抖音混剪-项目链路历史记录.md"
+      ]
+    },
+    {
+      "id": "release-1-0-0",
+      "version": "1.0.0",
+      "kind": "旧版原型（已取代）",
+      "releasedAt": "2026-08-09",
+      "title": "FastAPI 原型与混剪算法验证",
+      "summary": "完成最早的端到端算法验证，但因技术栈要求被 v2 正式重写取代。",
+      "changes": [
+        "FastAPI + SQLite + ffmpeg + 原生 HTML/JS 单页工作流",
+        "实现 50–150 秒时长、3 秒切片、音画分离、BGM ducking、AI 钩子和预置工作流",
+        "实现 AI 中转聚合：按 hook/script/titles/cta/tag/general 用途路由、项目上下文注入、最多 3 次故障转移与用量日志",
+        "提供桌面快捷方式、256×256 图标和受控 venv 启动入口"
+      ],
+      "fixes": [
+        "修复测试服务未真正停止、端口仍监听导致的假验证",
+        "修复桌面启动脚本使用裸解释器、缺少 uvicorn 的问题，改用受管 venv",
+        "修复受控环境不能使用 WScript COM 创建快捷方式的问题，改为纯 Python 写入 Shell Link"
+      ],
+      "verification": [
+        "两条成片精确 99.97 秒，1080×1920、H.264+AAC、字幕烧录通过",
+        "离线故障转移验证：故障中转返回 503 后自动切换到主中转，AI 钩子文案进入 99.97 秒成片",
+        "交付前清理测试中转、测试项目、任务日志、输出与测试成片，保留干净交接状态"
+      ],
+      "compatibility": "路径 douyin-mixcut/ 已被当前 ai-douyin-mixcut/ 取代；不建议继续开发或导入旧数据库。旧版工作流仅保留为算法参考。",
+      "evidence": [
+        "AI抖音混剪-项目链路历史记录.md",
+        "C:/Users/Windows/WorkBuddy/2026-08-09-14-55-27/.workbuddy/memory/2026-08-09.md",
+        "douyin-mixcut/backend/ai.py",
+        "douyin-mixcut/data/mock_relay.py",
+        "douyin-mixcut/make_lnk.py",
+        "douyin-mixcut/make_icon.py",
+        "douyin-mixcut/workflows/*.json"
+      ]
+    }
+  ]
+}

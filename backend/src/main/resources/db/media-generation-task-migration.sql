@@ -1,0 +1,28 @@
+-- Persisted paid/provider-backed generation tasks. Safe to run repeatedly on MySQL 8.
+CREATE TABLE IF NOT EXISTS media_generation_task (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    task_key VARCHAR(64) NOT NULL UNIQUE,
+    kind VARCHAR(32) NOT NULL,
+    status VARCHAR(32) NOT NULL DEFAULT 'accepted',
+    phase VARCHAR(32),
+    progress INT NOT NULL DEFAULT 0,
+    provider_id BIGINT,
+    provider VARCHAR(128),
+    model VARCHAR(128),
+    input_snapshot JSON,
+    remote_task_id VARCHAR(255),
+    material_id BIGINT,
+    staging_file_path TEXT,
+    idempotency_key VARCHAR(64),
+    attempt_count INT NOT NULL DEFAULT 0,
+    max_attempts INT NOT NULL DEFAULT 2,
+    next_attempt_at DATETIME,
+    error_code VARCHAR(64),
+    error TEXT,
+    message TEXT,
+    last_activity_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_media_generation_task_status (status),
+    INDEX idx_media_generation_task_idempotency (idempotency_key)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

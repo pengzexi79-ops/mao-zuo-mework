@@ -1,0 +1,332 @@
+{
+  "schemaVersion": 2,
+  "manifestVersion": "1.1.1",
+  "description": "Mework 能力中心唯一数据源：驱动 BootstrapService 的能力清单、修复安装边界与官方入口。",
+  "requirementsFile": "requirements-windows.txt",
+  "approvedPip": {
+    "demucs": {
+      "spec": "demucs==4.1.0",
+      "repairable": true,
+      "origin": "发行包预置（prepare_portable.ps1），与打包时随包 venv 版本一致；缺失时环境中心可联网修复安装。"
+    },
+    "gallery-dl": {
+      "spec": "gallery-dl==1.32.9",
+      "repairable": true,
+      "origin": "发行包预置（prepare_portable.ps1），与打包时随包 venv 版本一致；缺失时环境中心可联网修复安装。"
+    },
+    "rembg": {
+      "spec": "rembg==2.0.78",
+      "repairable": false,
+      "origin": "发行包预置（prepare_portable.ps1），与打包时随包 venv 版本一致；仅随包分发，不提供一键修复安装。"
+    },
+    "auto-editor": {
+      "spec": "auto-editor==29.3.1",
+      "repairable": false,
+      "origin": "发行包预置（prepare_portable.ps1），与打包时随包 venv 版本一致；仅随包分发，不提供一键修复安装。"
+    },
+    "opencv-python": {
+      "spec": "opencv-python==5.0.0.93",
+      "repairable": false,
+      "origin": "发行包预置（prepare_portable.ps1），与打包时随包 venv 版本一致；仅随包分发，不提供一键修复安装。"
+    }
+  },
+  "capabilities": [
+    {
+      "type": "env",
+      "key": "video-render",
+      "group": "出片与渲染",
+      "name": "视频渲染与拼接",
+      "tool": "FFmpeg",
+      "envKey": "ffmpeg",
+      "needsNetwork": false,
+      "wired": true,
+      "usedBy": "出片任务、字幕烧录、静音封装、媒体质检",
+      "officialUrl": "https://ffmpeg.org/download.html"
+    },
+    {
+      "type": "env",
+      "key": "database",
+      "group": "出片与渲染",
+      "name": "任务与成片记录",
+      "tool": "MySQL",
+      "envKey": "databaseConnected",
+      "needsNetwork": false,
+      "wired": true,
+      "usedBy": "项目、素材、工作流、任务与成片版本"
+    },
+    {
+      "type": "env",
+      "key": "video-download",
+      "group": "素材抓取",
+      "name": "公开网页视频下载",
+      "tool": "yt-dlp",
+      "envKey": "yt-dlp",
+      "needsNetwork": true,
+      "executionPolicy": "networkFetch",
+      "offlineCapable": false,
+      "wired": true,
+      "usedBy": "公开素材抓取"
+    },
+    {
+      "type": "env",
+      "key": "video-download-2",
+      "group": "素材抓取",
+      "name": "兜底视频下载（you-get）",
+      "tool": "you-get",
+      "envKey": "you-get",
+      "needsNetwork": true,
+      "executionPolicy": "networkFetch",
+      "offlineCapable": false,
+      "wired": true,
+      "usedBy": "公开素材抓取"
+    },
+    {
+      "type": "env",
+      "key": "asr",
+      "group": "字幕与识别",
+      "name": "语音转写/自动字幕",
+      "tool": "faster-whisper",
+      "envKey": "fasterWhisper",
+      "needsNetwork": false,
+      "wired": true,
+      "usedBy": "素材转录、人工口播与 AI 口播字幕",
+      "officialUrl": "https://github.com/SYSTRAN/faster-whisper"
+    },
+    {
+      "type": "env",
+      "key": "asr-local",
+      "group": "字幕与识别",
+      "name": "本地快速转写（whisper.cpp）",
+      "tool": "whisper.cpp",
+      "envKey": "whisperCpp",
+      "needsNetwork": false,
+      "wired": true,
+      "usedBy": "匹配 ggml 模型就绪时优先转写；默认 faster-whisper，缺模型自动回退",  
+      "officialUrl": "https://github.com/ggml-org/whisper.cpp",
+      "installDisplay": "whisper.cpp"
+    },
+    {
+      "type": "env",
+      "key": "ocr",
+      "group": "字幕与识别",
+      "name": "画面文字识别",
+      "tool": "RapidOCR",
+      "envKey": "rapidOcr",
+      "needsNetwork": false,
+      "wired": true,
+      "usedBy": "素材文字检查与原字幕风险识别",
+      "officialUrl": "https://github.com/RapidAI/RapidOCR"
+    },
+    {
+      "type": "env",
+      "key": "tts",
+      "group": "AI 配音",
+      "name": "AI 配音（口播）",
+      "tool": "Edge-TTS",
+      "envKey": "neuralTts",
+      "needsNetwork": true,
+      "executionPolicy": "networkFetch",
+      "offlineCapable": false,
+      "wired": true,
+      "usedBy": "AI 自然人声"
+    },
+    {
+      "type": "env",
+      "key": "chattts",
+      "group": "AI 配音",
+      "name": "本地自然配音（可选）",
+      "tool": "ChatTTS",
+      "envKey": "chatTts",
+      "needsNetwork": true,
+      "wired": true,
+      "usedBy": "自然口播优先引擎；不可用时自动回退 Edge-TTS",
+      "officialUrl": "https://github.com/2noise/ChatTTS"
+    },
+    {
+      "type": "env",
+      "key": "loudness",
+      "group": "音频处理",
+      "name": "音量响度统一",
+      "tool": "FFmpeg loudnorm",
+      "envKey": "ffmpeg",
+      "needsNetwork": false,
+      "wired": true,
+      "usedBy": "渲染阶段通过 FFmpeg loudnorm 执行口播/BGM 混音与响度统一",
+      "officialUrl": "https://ffmpeg.org/ffmpeg-filters.html#loudnorm"
+    },
+    {
+      "type": "env",
+      "key": "vocals",
+      "group": "音频增强",
+      "name": "人声/伴奏分离",
+      "tool": "Demucs",
+      "envKey": "demucs",
+      "needsNetwork": true,
+      "wired": true,
+      "usedBy": "素材库人声/伴奏分离",
+      "officialUrl": "https://github.com/facebookresearch/demucs",
+      "repairable": true,
+      "pipRef": "demucs",
+      "installDisplay": "Demucs（人声/伴奏分离）"
+    },
+    {
+      "type": "env",
+      "key": "matting",
+      "group": "图像处理",
+      "name": "智能抠图",
+      "tool": "Rembg",
+      "envKey": "rembg",
+      "needsNetwork": false,
+      "wired": true,
+      "usedBy": "图片处理中的本地背景移除",
+      "officialUrl": "https://github.com/danielgatis/rembg"
+    },
+    {
+      "type": "env",
+      "key": "auto-editor",
+      "group": "智能剪辑",
+      "name": "智能剪辑（去废片/静音）",
+      "tool": "Auto-Editor",
+      "envKey": "autoEditor",
+      "needsNetwork": false,
+      "wired": true,
+      "usedBy": "素材库“智能剪除”任务：自动去除静音/废片区间",
+      "officialUrl": "https://github.com/WyattBlue/auto-editor"
+    },
+    {
+      "type": "env",
+      "key": "opencv",
+      "group": "画面分析",
+      "name": "图像/视频分析",
+      "tool": "OpenCV",
+      "envKey": "openCv",
+      "needsNetwork": false,
+      "wired": true,
+      "usedBy": "出片质检画面闸门：模糊/暗帧/过曝帧自动识别",
+      "officialUrl": "https://opencv.org/releases/"
+    },
+    {
+      "type": "env",
+      "key": "magick",
+      "group": "图片处理",
+      "name": "图片转码与处理",
+      "tool": "ImageMagick",
+      "envKey": "imageMagick",
+      "needsNetwork": false,
+      "wired": true,
+      "usedBy": "图片处理缩放/旋转/翻转/质量，随包 magick 优先，缺失回退 FFmpeg",
+      "officialUrl": "https://imagemagick.org/script/download.php"
+    },
+    {
+      "type": "env",
+      "key": "image-gallery",
+      "group": "能力商店",
+      "name": "图片/图集批量抓取",
+      "tool": "gallery-dl",
+      "envKey": "galleryDl",
+      "needsNetwork": true,
+      "executionPolicy": "networkFetch",
+      "offlineCapable": false,
+      "wired": true,
+      "usedBy": "图集/图片页面批量抓取（/api/crawl/images）",
+      "officialUrl": "https://github.com/mikf/gallery-dl",
+      "repairable": true,
+      "pipRef": "gallery-dl",
+      "installDisplay": "gallery-dl（图片/图集抓取）"
+    },
+    {
+      "type": "external",
+      "key": "whisper-model",
+      "group": "能力商店",
+      "name": "更多语言字幕模型",
+      "tool": "whisper.cpp 模型",
+      "installMode": "manual",
+      "officialUrl": "https://github.com/ggml-org/whisper.cpp",
+      "guide": "模型文件需要按官方说明下载；应用不会把未下载模型标记为可用。"
+    },
+    {
+      "type": "external",
+      "key": "nvenc",
+      "group": "能力商店",
+      "name": "硬件加速渲染（NVIDIA）",
+      "tool": "FFmpeg NVENC",
+      "installMode": "hardware",
+      "officialUrl": "https://trac.ffmpeg.org/wiki/HWAccelIntro",
+      "guide": "需要支持 NVENC 的 NVIDIA 显卡和官方驱动。"
+    },
+    {
+      "type": "external",
+      "key": "pixabay-video",
+      "group": "能力商店",
+      "name": "免费商用视频源",
+      "tool": "Pixabay API",
+      "installMode": "authorization",
+      "officialUrl": "https://pixabay.com/api/docs/",
+      "guide": "需要用户自行申请 Pixabay API Key 后启用。",
+      "credential": {
+        "configId": "pixabay",
+        "provider": "pixabay",
+        "propertyName": "pixabayApiKey",
+        "environmentVariable": "APP_PIXABAY_API_KEY",
+        "mediaType": "video",
+        "testQuery": "nature",
+        "minLength": 12,
+        "maxLength": 512,
+        "restartRequired": true
+      }
+    },
+    {
+      "type": "external",
+      "key": "pexels-video",
+      "group": "能力商店",
+      "name": "免费商用视频源（Pexels）",
+      "tool": "Pexels API",
+      "installMode": "authorization",
+      "officialUrl": "https://www.pexels.com/api/",
+      "guide": "需要用户自行申请 Pexels API Key 后启用。",
+      "credential": {
+        "configId": "pexels",
+        "provider": "pexels",
+        "propertyName": "pexelsApiKey",
+        "environmentVariable": "APP_PEXELS_API_KEY",
+        "mediaType": "video",
+        "testQuery": "nature",
+        "minLength": 12,
+        "maxLength": 512,
+        "restartRequired": true
+      }
+    },
+    {
+      "type": "external",
+      "key": "freesound",
+      "group": "能力商店",
+      "name": "免费音效/音频源",
+      "tool": "Freesound API",
+      "installMode": "authorization",
+      "officialUrl": "https://freesound.org/apiv2/apply/",
+      "guide": "需要用户自行申请 Freesound API Key 后启用。",
+      "credential": {
+        "configId": "freesound",
+        "provider": "freesound",
+        "propertyName": "freesoundApiKey",
+        "environmentVariable": "APP_FREESOUND_API_KEY",
+        "mediaType": "audio",
+        "testQuery": "ambient",
+        "minLength": 12,
+        "maxLength": 512,
+        "restartRequired": true
+      }
+    },
+    {
+      "type": "external",
+      "key": "ai-media-generation",
+      "group": "AI 媒体生成",
+      "name": "付费 AI 媒体生成（图片/视频/配音）",
+      "tool": "OpenAI-compatible Provider",
+      "installMode": "authorization",
+      "officialUrl": "https://platform.openai.com/docs/guides/image-generation",
+      "guide": "在「AI 接入」页配置 OpenAI-compatible 供应商（Base URL + API Key）并启用对应模型后，即可在素材库通过付费 AI 生成图片、视频与配音。由 external/media 适配器体系驱动，已纳入统一任务中心与素材入库。",
+      "usedBy": "素材库付费 AI 生成（图片/视频/配音）、出片素材补充"
+    }
+  ]
+}

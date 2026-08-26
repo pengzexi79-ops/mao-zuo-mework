@@ -1,0 +1,1 @@
+本轮实施范围：在 `frontend/src/views/Studio.vue` 增加预检阻塞的安全动作层。复用既有 `PreflightIssue.action`、素材缺口分析、受控公开补齐、素材库/素材抓取/环境中心路由和 `invalidatePreflight()`；只允许固定 action 白名单，不执行后端任意 URL，不自动提交，不绕过服务端准入。对 blocker 显示原因、下一步和“分析素材缺口/执行公开补齐/重新预检/检查环境/放宽去重”等动作；warning 显示可继续提示，blocked 明确需要处理后再继续。完成后运行 canonical Windows 前端构建、定向/全量测试和浏览器验收，保留现有 static 构建产物与 roadmap 文件不提交。

@@ -1,0 +1,113 @@
+server:
+  port: ${PORT:8760}
+  address: ${APP_BIND_ADDRESS:127.0.0.1}
+  tomcat:
+    # Keep Tomcat from rejecting large multipart requests before Spring's 2GB limits apply.
+    max-http-form-post-size: 2GB
+    max-swallow-size: 2GB
+    connection-timeout: 10m
+
+spring:
+  servlet:
+    multipart:
+      max-file-size: 2GB
+      max-request-size: 2GB
+  task:
+    scheduling:
+      pool:
+        size: 4
+  # 直接 java -jar、IDE 和 start.bat 都统一读取项目根目录 .env；该文件为本机私有配置且不入库。
+  config:
+    import: optional:file:../.env[.properties],optional:file:./.env[.properties]
+  application:
+    name: ai-douyin-mixcut
+  datasource:
+    # 注意：characterEncoding 必须是合法的 Java 字符集名（UTF-8），
+    # 写成 utf8mb4 会直接抛 UnsupportedEncodingException 且被 Hibernate 的 NPE 掩盖。
+    # 真正的 utf8mb4 由 connectionCollation 指定。
+    url: ${DB_URL:jdbc:mysql://127.0.0.1:3306/ai_mix_video?useUnicode=true&characterEncoding=UTF-8&connectionCollation=utf8mb4_general_ci&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false&rewriteBatchedStatements=true}
+    username: ${DB_USERNAME:}
+    password: ${DB_PASSWORD:}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      pool-name: mixcut-pool
+      maximum-pool-size: 12
+      minimum-idle: 2
+      connection-timeout: 8000
+      validation-timeout: 3000
+      initialization-fail-timeout: -1   # DB 未就绪时不阻断启动，页面自检会提示
+  jpa:
+    hibernate:
+      ddl-auto: none
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: false
+        # 显式指定方言：避免启动阶段因取不到 JDBC metadata 而无法推断方言
+        dialect: org.hibernate.dialect.MySQLDialect
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    banner: false
+
+app:
+  # All launch methods use the project-root data directory unless explicitly overridden.
+  data-dir: ${APP_DATA_DIR:./data}
+  ffmpeg: ${APP_FFMPEG:ffmpeg}
+  ffprobe: ${APP_FFPROBE:ffprobe}
+  materials-dir: ${APP_MATERIALS_DIR:./data/materials}
+  output-dir: ${APP_OUTPUT_DIR:./data/output}
+  cache-dir: ${APP_CACHE_DIR:./data/cache}
+  # 项目私有 Python 环境：用于本机 ASR、OCR、神经配音和响度统一。
+  # start.bat resolves this to backend/.venv with an absolute path before launching the Jar.
+  local-python: ${APP_LOCAL_PYTHON:./backend/.venv/Scripts/python.exe}
+  # Optional absolute override; otherwise resolves tools/media_diagnose.py from the installed project layout.
+  media-diagnose-script: ${APP_MEDIA_DIAGNOSE_SCRIPT:}
+  # 成片质检：默认拒绝无声、长静音和明显音画不同步的视频。
+  qc-allow-silent-audio: ${APP_QC_ALLOW_SILENT_AUDIO:false}
+  qc-max-silence-sec: ${APP_QC_MAX_SILENCE_SEC:3.0}
+  qc-max-av-drift-sec: ${APP_QC_MAX_AV_DRIFT_SEC:0.5}
+  qc-max-black-ratio: ${APP_QC_MAX_BLACK_RATIO:0.02}
+  # 外部下载器（可选；留空则仅用内置 HTTP 拉取公开素材）
+  ytdlp-path: ${APP_YTDLP_PATH:yt-dlp}
+  youget-path: ${APP_YOUGET_PATH:you-get}
+  # 素材平台 API Key（免费额度，可不填）
+  freesound-api-key: ${APP_FREESOUND_API_KEY:}
+  pixabay-api-key: ${APP_PIXABAY_API_KEY:}
+  pexels-api-key: ${APP_PEXELS_API_KEY:}
+  # 后续媒体工具与 AI 生成文件的位置；留空时保持在应用 data/materials/media-tools 中。
+  media-tools-output-dir: ${APP_MEDIA_TOOLS_OUTPUT_DIR:}
+  # 仅从环境变量读取，禁止在源码、示例或前端构建产物中保存真实密钥。
+  master-key: ${APP_MASTER_KEY:}
+  local-ai-allowed-ports: ${APP_LOCAL_AI_ALLOWED_PORTS:11434}
+  network-connect-timeout-sec: ${APP_NETWORK_CONNECT_TIMEOUT_SEC:20}
+  network-read-timeout-sec: ${APP_NETWORK_READ_TIMEOUT_SEC:30}
+  network-total-timeout-sec: ${APP_NETWORK_TOTAL_TIMEOUT_SEC:120}
+  network-max-redirects: ${APP_NETWORK_MAX_REDIRECTS:3}
+  network-max-retries: ${APP_NETWORK_MAX_RETRIES:2}
+  network-retry-backoff-ms: ${APP_NETWORK_RETRY_BACKOFF_MS:400}
+  network-max-response-bytes: ${APP_NETWORK_MAX_RESPONSE_BYTES:2000000}
+  network-max-download-bytes: ${APP_NETWORK_MAX_DOWNLOAD_BYTES:200000000}
+  # 留空保持本机免登录；设置后保护 /api/** 和 /files/**
+  access-token: ${APP_ACCESS_TOKEN:}
+  # 逗号分隔的浏览器来源白名单，禁止使用 *（凭据模式）
+  cors-allowed-origins: ${APP_CORS_ALLOWED_ORIGINS:http://localhost:5273,http://127.0.0.1:5273,http://localhost:5173,http://127.0.0.1:5173}
+  bind-address: ${APP_BIND_ADDRESS:127.0.0.1}
+  # 合规开关：是否允许爬取需登录的平台（默认关，需用户自行承担合规责任）
+  allow-login-crawl: false
+  # 0=按 CPU 核数自动选择；可用环境变量覆盖。1080p 编码建议从 2-4 路逐步压测。
+  render-pool-size: ${APP_RENDER_POOL_SIZE:0}
+  # 配置上限可设 1-50；超出物理 CPU/内存能力时仍会排队，避免速度归零。
+  render-max-concurrency: ${APP_RENDER_MAX_CONCURRENCY:8}
+  render-queue-capacity: ${APP_RENDER_QUEUE_CAPACITY:500}
+  # 单次拼接最长允许 1800 秒；失活阈值必须高于该阶段，避免慢机器被误判失败。
+  # Local short-video batches must fail visibly instead of appearing to render for hours.
+  job-timeout-sec: 1800
+  job-stale-after-sec: 600
+  job-watchdog-delay-ms: 30000
+
+logging:
+  level:
+    com.douyin.mixcut: INFO
