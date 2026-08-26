@@ -10,7 +10,7 @@
 
 当前开发版本为 `2.2.150`。最近完成了媒体能力路由、音频合同与响度质检、渲染前置检查、AI 媒体适配器、任务恢复与取消、资产识别交接，以及 D 盘启动器和安装验证流程。
 
-完整开发提交记录见 [`docs/zcode-handoff/GIT_HISTORY.md`](docs/zcode-handoff/GIT_HISTORY.md) 及 GitHub 的 `legacy-history-sanitized` 分支；`main` 是可直接分享的最新源码快照。
+完整开发提交记录见 [`docs/zcode-handoff/GIT_HISTORY.md`](docs/zcode-handoff/GIT_HISTORY.md) 及 GitHub 的 [`legacy-history-sanitized` 分支](https://github.com/pengzexi79-ops/mao-zuo-mework/tree/legacy-history-sanitized)；`main` 是可直接分享的最新源码快照。
 
 ## 功能概览
 
