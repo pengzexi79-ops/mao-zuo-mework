@@ -122,9 +122,17 @@ public class MixPlanner {
         private String rehookText;
         private double rehookWindowStart;
         private double rehookWindowEnd;
-        /** 语义候选 vs 网格回退统计，用于干跑解释与降级审计。 */
+        /** timeline 中实际使用的 scene 镜头数与网格回退镜头数，不是素材条数。 */
         private int semanticSegmentCount;
         private int gridFallbackCount;
+        /** 每个回退素材/原因，供 Preflight 与 DeliveryQc 解释降级。 */
+        private List<String> fallbackReasons = new ArrayList<>();
+        /** 实际命中的确定性语义证据，供调用方审计。 */
+        private List<SemanticEvidenceMatcher.Evidence> semanticMatches = new ArrayList<>();
+        /** 有 completed+scene 分析结论；false 表示分析不可用，严格模式不得仅因此阻断。 */
+        private boolean semanticAnalysisAvailable;
+        /** True once planner has audited the actual timeline; distinguishes unavailable analysis from legacy hand-built plans. */
+        private boolean semanticAuditApplied;
 
         /** Real ASR-derived captions for the AI narration voice, already in video-timeline seconds. */
         private List<CaptionCue> narrationCaptions = new ArrayList<>();
@@ -562,7 +570,6 @@ public class MixPlanner {
         // ---------- 0.1 语义候选 vs 网格回退统计（解释性 + 降级审计） ----------
         Map<Long, List<MaterialSegment>> semantic = semanticOverride != null
                 ? semanticOverride : loadSemanticSegments(pool);
-        applySemanticAudit(plan, pool, semantic);
 
         // ---------- 1. 目标时长 ----------
         double target = decideTarget(p, rnd);
@@ -715,6 +722,7 @@ public class MixPlanner {
             timelineOffset += segment.getDuration();
         }
         plan.setSegments(timeline);
+        applySemanticAudit(plan, timeline, semantic);
         plan.setPlannedSec(round(acc));
         if (plan.getPlannedSec() >= p.getMinSec() && plan.getPlannedSec() < target) {
             plan.getNotes().add(String.format(Locale.ROOT,
@@ -1171,23 +1179,37 @@ public class MixPlanner {
         return sources.size();
     }
 
-    /** 语义候选审计：统计并记录结构化片段 vs 网格回退（降级）情况。 */
-    private void applySemanticAudit(Plan plan, Pool pool, Map<Long, List<MaterialSegment>> semantic) {
-        int semanticMaterials = 0;
-        int gridMaterials = 0;
-        for (Material m : pool.allVisual()) {
-            if (m.getFileType() == Material.FileType.image) continue;
-            if (semantic != null && !semantic.getOrDefault(m.getId(), List.of()).isEmpty()) semanticMaterials++;
-            else gridMaterials++;
+    /** Audit actual timeline slices, not candidate material count. */
+    private void applySemanticAudit(Plan plan, List<Segment> timeline, Map<Long, List<MaterialSegment>> semantic) {
+        int sceneSegments = 0;
+        int gridSegments = 0;
+        Set<Long> fallbackMaterials = new LinkedHashSet<>();
+        for (Segment timelineSegment : timeline) {
+            if (timelineSegment == null || timelineSegment.getSourceDuration() <= 0) continue;
+            boolean scene = semantic != null && semantic.getOrDefault(timelineSegment.getMaterialId(), List.of()).stream()
+                    .anyMatch(candidate -> overlaps(timelineSegment, candidate));
+            if (scene) sceneSegments++;
+            else {
+                gridSegments++;
+                fallbackMaterials.add(timelineSegment.getMaterialId());
+            }
         }
-        plan.setSemanticSegmentCount(semanticMaterials);
-        plan.setGridFallbackCount(gridMaterials);
-        if (semanticMaterials > 0) {
-            plan.getNotes().add("已优先使用 " + semanticMaterials + " 条素材的结构化镜头片段（语义候选）");
-        }
-        if (gridMaterials > 0 && semanticMaterials > 0) {
-            plan.getNotes().add(gridMaterials + " 条素材缺少结构化镜头分析，已回退网格切片（降级）");
-        }
+        plan.setSemanticSegmentCount(sceneSegments);
+        plan.setGridFallbackCount(gridSegments);
+        plan.setSemanticAnalysisAvailable(semantic != null && semantic.values().stream().anyMatch(list -> list != null && !list.isEmpty()));
+        plan.setSemanticAuditApplied(true);
+        List<String> reasons = new ArrayList<>();
+        for (Long materialId : fallbackMaterials) reasons.add("material " + materialId + ": 未使用 scene 片段，保留网格回退");
+        plan.setFallbackReasons(reasons);
+        if (sceneSegments > 0) plan.getNotes().add("实际时间线使用 " + sceneSegments + " 个 scene 语义候选镜头");
+        if (gridSegments > 0) plan.getNotes().add(gridSegments + " 个时间线镜头已回退网格切片（降级）");
+    }
+
+    private boolean overlaps(Segment timelineSegment, MaterialSegment candidate) {
+        if (candidate == null || candidate.getStartSec() == null || candidate.getEndSec() == null) return false;
+        double start = timelineSegment.getSourceStart();
+        double end = start + timelineSegment.getDuration();
+        return start < candidate.getEndSec() && end > candidate.getStartSec();
     }
 
     /** 惰性加载 + 缓存结构化镜头片段；仅采纳已完成且来源为 scene 的分析，避免把均匀切片兜底误当语义候选。 */

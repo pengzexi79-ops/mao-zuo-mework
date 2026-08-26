@@ -659,8 +659,8 @@ class MixPlannerTest {
         MixPlanner.Plan plan = planner.plan(pool, params, 0, "hook", null, semantic);
 
         assertTrue(plan.isUsable());
-        assertEquals(1, plan.getSemanticSegmentCount());
-        assertEquals(1, plan.getGridFallbackCount());
+        assertTrue(plan.getSemanticSegmentCount() > 0, "semantic count must count actual timeline scene slices");
+        assertTrue(plan.getGridFallbackCount() > 0, "grid count must count actual timeline fallback slices");
         assertTrue(plan.getNotes().stream().anyMatch(n -> n.contains("语义候选")),
                 "should record semantic segment preference");
         assertTrue(plan.getNotes().stream().anyMatch(n -> n.contains("已回退网格切片")),

@@ -1294,7 +1294,7 @@ public class JobService {
                 root.put("projectDefaultParamsSnapshot", project.getDefaultParams() == null ? "" : project.getDefaultParams());
             }
             if (admissionConfig != null) {
-                root.set("admissionSnapshot", om.valueToTree(admissionConfig.getAdmission()));
+                root.set("admissionSnapshot", admissionNode(admissionConfig.getAdmission()));
                 root.put("configHash", admissionConfig.getConfigHash());
                 root.put("variant", admissionConfig.getVariant() == null ? 0 : admissionConfig.getVariant());
             }
@@ -1302,6 +1302,22 @@ public class JobService {
         } catch (Exception e) {
             throw new IllegalArgumentException("无法冻结出片任务配置: " + concise(e));
         }
+    }
+
+    private com.fasterxml.jackson.databind.node.ObjectNode admissionNode(AdmissionSnapshot admission) {
+        var node = om.createObjectNode();
+        if (admission == null) return node;
+        node.put("configHash", admission.getConfigHash());
+        node.put("workflowHash", admission.getWorkflowHash());
+        node.put("materialScopeHash", admission.getMaterialScopeHash());
+        node.put("checkedAt", admission.getCheckedAt() == null ? null : admission.getCheckedAt().toString());
+        node.put("expiresAt", admission.getExpiresAt() == null ? null : admission.getExpiresAt().toString());
+        node.put("preparationId", admission.getPreparationId());
+        node.put("variant", admission.getVariant() == null ? 0 : admission.getVariant());
+        node.put("status", admission.getStatus());
+        node.put("statusSignature", admission.getStatusSignature());
+        node.set("runtimeSnapshot", om.valueToTree(admission.getRuntimeSnapshot()));
+        return node;
     }
 
     private long stableSeed(Long workflowId, Long projectId, String effectiveParams) {
