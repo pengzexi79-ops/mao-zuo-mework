@@ -37,7 +37,7 @@ public class OpenAiCompatibleMediaAdapter implements MediaAdapter {
         body.put("size", size);
         body.put("quality", quality);
         body.put("n", 1);
-        MediaHttpTransport.Response response = executeJson(provider, "/v1/images/generations", body);
+        MediaHttpTransport.Response response = executeJson(provider, provider.imagePath(), body);
         JsonNode payload = readSuccess(response, "图片生成");
         JsonNode first = payload.path("data").path(0);
         String base64 = first.path("b64_json").asText("");
@@ -52,7 +52,7 @@ public class OpenAiCompatibleMediaAdapter implements MediaAdapter {
                 + "--" + boundary + "\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\n" + model + "\r\n"
                 + "--" + boundary + "\r\nContent-Disposition: form-data; name=\"size\"\r\n\r\n" + size + "\r\n"
                 + "--" + boundary + "\r\nContent-Disposition: form-data; name=\"seconds\"\r\n\r\n" + seconds + "\r\n--" + boundary + "--\r\n";
-        String url = endpoint(provider.baseUrl(), "/v1/videos");
+        String url = endpoint(provider.baseUrl(), provider.videoPath());
         Map<String, String> headers = new LinkedHashMap<>();
         headers.put("Authorization", "Bearer " + provider.apiKey());
         MediaHttpTransport.Response response = transport.execute(new MediaHttpTransport.Request("POST", url, headers,
@@ -65,7 +65,7 @@ public class OpenAiCompatibleMediaAdapter implements MediaAdapter {
 
     public VideoPoll pollVideo(ProviderContext provider, String remoteTaskId) throws Exception {
         String safeId = remoteTaskId(remoteTaskId);
-        MediaHttpTransport.Response response = executeGet(provider, "/v1/videos/" + safeId);
+        MediaHttpTransport.Response response = executeGet(provider, append(provider.videoPath(), safeId));
         JsonNode payload = readSuccess(response, "视频状态查询");
         String rawStatus = payload.path("status").asText("").toLowerCase(java.util.Locale.ROOT);
         VideoState state = switch (rawStatus) {
@@ -84,7 +84,7 @@ public class OpenAiCompatibleMediaAdapter implements MediaAdapter {
     public VideoDownload downloadVideo(ProviderContext provider, String remoteTaskId, Path staging, long maxBytes) throws Exception {
         try {
             String safeId = remoteTaskId(remoteTaskId);
-            String url = endpoint(provider.baseUrl(), "/v1/videos/" + safeId + "/content");
+            String url = endpoint(provider.baseUrl(), append(provider.videoPath(), safeId, "content"));
             Map<String, String> headers = new LinkedHashMap<>();
             headers.put("Authorization", "Bearer " + provider.apiKey());
             MediaHttpTransport.DownloadResponse response = transport.download(
@@ -146,9 +146,21 @@ public class OpenAiCompatibleMediaAdapter implements MediaAdapter {
         String base = UrlGuard.validate(baseUrl).replaceAll("/+$", "");
         URI uri = URI.create(base);
         if (!"https".equalsIgnoreCase(uri.getScheme())) throw new MediaAdapterException("MEDIA_PROTOCOL_UNSUPPORTED", "付费 AI Provider 必须使用 HTTPS 地址");
-        if (!path.startsWith("/v1/")) throw new MediaAdapterException("MEDIA_PROTOCOL_UNSUPPORTED", "OpenAI-compatible 媒体路径无效");
-        if (base.endsWith("/api/v3")) return UrlGuard.validate(base + path.substring(3));
-        return UrlGuard.validate(base + path);
+        String route = path == null || path.isBlank() ? "/v1/images/generations" : path.trim();
+        if (route.startsWith("https://")) return UrlGuard.validate(route);
+        if (!route.startsWith("/") || route.contains("..") || route.contains("?") || route.contains("#")) {
+            throw new MediaAdapterException("MEDIA_PROTOCOL_UNSUPPORTED", "OpenAI-compatible 媒体路径无效");
+        }
+        if (base.endsWith("/api/v3") && route.startsWith("/v1/")) return UrlGuard.validate(base + route.substring(3));
+        return UrlGuard.validate(base + route);
+    }
+
+    private String append(String path, String... parts) {
+        String base = path == null || path.isBlank() ? "/v1/videos" : path.trim();
+        while (base.endsWith("/")) base = base.substring(0, base.length() - 1);
+        StringBuilder result = new StringBuilder(base);
+        for (String part : parts) result.append('/').append(part);
+        return result.toString();
     }
 
     private String remoteTaskId(String raw) {
@@ -176,11 +188,17 @@ public class OpenAiCompatibleMediaAdapter implements MediaAdapter {
         try { Files.deleteIfExists(staging); } catch (Exception ignored) { }
     }
 
-    public record ProviderContext(String baseUrl, String apiKey, String voicePath) {
-        public ProviderContext {
-            if (voicePath == null || voicePath.isBlank()) voicePath = "/v1/audio/speech";
-            if (!voicePath.startsWith("/v1/")) throw new MediaAdapterException("MEDIA_PROTOCOL_UNSUPPORTED", "OpenAI-compatible 配音 endpoint 无效");
+    public record ProviderContext(String baseUrl, String apiKey, String imagePath, String videoPath, String voicePath) {
+        public ProviderContext(String baseUrl, String apiKey, String voicePath) {
+            this(baseUrl, apiKey, "", "", voicePath);
         }
+        public ProviderContext {
+            if (imagePath == null || imagePath.isBlank()) imagePath = "/v1/images/generations";
+            if (videoPath == null || videoPath.isBlank()) videoPath = "/v1/videos";
+            if (voicePath == null || voicePath.isBlank()) voicePath = "/v1/audio/speech";
+            if (!validPath(imagePath) || !validPath(videoPath) || !validPath(voicePath)) throw new MediaAdapterException("MEDIA_PROTOCOL_UNSUPPORTED", "OpenAI-compatible 媒体 endpoint 无效");
+        }
+        private static boolean validPath(String value) { return value.startsWith("/") || value.startsWith("https://"); }
     }
     public enum VideoState { QUEUED, RUNNING, SUCCEEDED, FAILED, CANCELLED, EXPIRED, UNKNOWN }
     public record ImageSubmission(String base64, String url) {}

@@ -184,6 +184,9 @@ public class MediaGenerationService {
                     view.put("providerMode", isOfficialOpenAi(p) ? "official" : "openai-compatible");
                     view.put("hasKey", true);
                     view.putAll(capability.view());
+                    view.put("imageModels", executableModels(capability, "image"));
+                    view.put("videoModels", executableModels(capability, "video"));
+                    view.put("voiceModels", executableModels(capability, "voice"));
                     return view;
                 })
                 .filter(p -> !((List<?>) p.get("imageModels")).isEmpty() || !((List<?>) p.get("videoModels")).isEmpty() || !((List<?>) p.get("voiceModels")).isEmpty())
@@ -216,9 +219,8 @@ public class MediaGenerationService {
         String prompt = request.getPrompt() == null ? "" : request.getPrompt().trim();
         if (prompt.length() < 2 || prompt.length() > 4000) throw new IllegalArgumentException("提示词长度必须在 2 到 4000 个字符之间");
         AiProvider provider = supportedProvider(request.getProviderId());
-        // Provider base URL was validated and encrypted through the existing AI settings flow.
-        // The browser never supplies it; the service only appends a fixed API path and revalidates the final URL.
-        endpoint(provider, "/v1/images/generations");
+        MediaProviderCatalog.Capability capability = mediaCapability(provider);
+        mediaAdapterRegistry.adapterFor(provider, "image", capability);
         String model = requiredModel(provider, "image", request.getModel());
         String size = List.of("1024x1024", "1024x1536", "1536x1024").contains(request.getSize()) ? request.getSize() : "1024x1024";
         String quality = List.of("low", "medium", "high").contains(request.getQuality()) ? request.getQuality() : "medium";
@@ -233,6 +235,8 @@ public class MediaGenerationService {
         String prompt = request.getPrompt() == null ? "" : request.getPrompt().trim();
         if (prompt.length() < 2 || prompt.length() > 4000) throw new IllegalArgumentException("视频提示词长度必须在 2 到 4000 个字符之间");
         AiProvider provider = supportedProvider(request.getProviderId());
+        MediaProviderCatalog.Capability capability = mediaCapability(provider);
+        mediaAdapterRegistry.adapterFor(provider, "video", capability);
         String model = requiredModel(provider, "video", request.getModel());
         String size = List.of("1280x720", "720x1280", "1024x1024").contains(request.getSize()) ? request.getSize() : "1280x720";
         int seconds = request.getSeconds() == null ? 4 : Math.max(2, Math.min(12, request.getSeconds()));
@@ -258,10 +262,9 @@ public class MediaGenerationService {
     }
 
     private AiProvider supportedProvider(Long id) {
-        if (id == null) throw new IllegalArgumentException("请选择已配置的 OpenAI-compatible 媒体供应商");
+        if (id == null) throw new IllegalArgumentException("请选择已配置且使用已注册媒体协议的供应商");
         AiProvider provider = providers.findById(id).orElseThrow(() -> new IllegalArgumentException("供应商不存在"));
         if (!Boolean.TRUE.equals(provider.getEnabled()) || provider.getApiKey() == null || provider.getApiKey().isBlank()) throw new IllegalArgumentException("该供应商未启用、缺少 API Key，或不支持已注册媒体协议");
-        endpoint(provider, "/v1/models");
         return provider;
     }
 
@@ -283,6 +286,24 @@ public class MediaGenerationService {
 
     private MediaProviderCatalog.Capability mediaCapability(AiProvider provider) {
         return mediaCatalog.read(provider);
+    }
+
+    private List<String> executableModels(MediaProviderCatalog.Capability capability, String operation) {
+        try {
+            mediaAdapterRegistry.adapterFor(null, operation, capability);
+            return capability.models(operation);
+        } catch (Exception ignored) {
+            return List.of();
+        }
+    }
+
+    private OpenAiCompatibleMediaAdapter.ProviderContext mediaContext(AiProvider provider) {
+        MediaProviderCatalog.Capability capability = mediaCapability(provider);
+        if (capability == null) {
+            return new OpenAiCompatibleMediaAdapter.ProviderContext(normalizedBase(provider), secret(provider), "");
+        }
+        return new OpenAiCompatibleMediaAdapter.ProviderContext(normalizedBase(provider), secret(provider),
+                capability.imageEndpoint(), capability.videoEndpoint(), capability.voiceEndpoint());
     }
 
     private Task newTask(String kind, String message) { return newTask(kind, message, null, null, Map.of()); }
@@ -329,8 +350,7 @@ public class MediaGenerationService {
         try {
             beginSubmission(task, 10, "正在调用 OpenAI-compatible 视频生成接口");
             OpenAiCompatibleMediaAdapter mediaAdapter = mediaAdapterRegistry.adapterFor(provider, "video", mediaCapability(provider));
-            String remoteId = mediaAdapter.submitVideo(new OpenAiCompatibleMediaAdapter.ProviderContext(
-                    normalizedBase(provider), secret(provider), "/v1/audio/speech"), prompt, model, size, seconds).remoteTaskId();
+            String remoteId = mediaAdapter.submitVideo(mediaContext(provider), prompt, model, size, seconds).remoteTaskId();
             task.setRemoteTaskId(remoteId);
             update(task, "remote_submitted", 25, "视频任务已提交，等待受控轮询 worker");
             pollVideoWorker(task, provider, model, remoteId);
@@ -347,8 +367,7 @@ public class MediaGenerationService {
             for (int i = 0; i < 120; i++) {
                 Thread.sleep(3000);
                 OpenAiCompatibleMediaAdapter mediaAdapter = mediaAdapterRegistry.adapterFor(provider, "video", mediaCapability(provider));
-                var poll = mediaAdapter.pollVideo(new OpenAiCompatibleMediaAdapter.ProviderContext(
-                        normalizedBase(provider), secret, "/v1/audio/speech"), remoteId);
+                var poll = mediaAdapter.pollVideo(mediaContext(provider), remoteId);
                 int progress = poll.progress() > 0 ? poll.progress() : Math.min(90, 25 + i / 2);
                 update(task, "polling", Math.max(25, Math.min(90, progress)), "供应商视频状态：" + poll.state().name().toLowerCase(java.util.Locale.ROOT));
                 if (poll.state() == OpenAiCompatibleMediaAdapter.VideoState.SUCCEEDED) { downloadVideo(task, provider, remoteId); return; }
@@ -378,8 +397,7 @@ public class MediaGenerationService {
         boolean registered = false;
         try {
             OpenAiCompatibleMediaAdapter mediaAdapter = mediaAdapterRegistry.adapterFor(provider, "video", mediaCapability(provider));
-            mediaAdapter.downloadVideo(new OpenAiCompatibleMediaAdapter.ProviderContext(
-                    normalizedBase(provider), secret(provider), "/v1/audio/speech"), remoteId, staging, props.getNetworkMaxDownloadBytes());
+            mediaAdapter.downloadVideo(mediaContext(provider), remoteId, staging, props.getNetworkMaxDownloadBytes());
             Files.createDirectories(dir);
             Files.move(staging, output, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
             update(task, "validating", 95, "正在验证视频并登记素材");
@@ -409,13 +427,7 @@ public class MediaGenerationService {
             beginSubmission(task, 15, "正在调用配音接口");
             MediaProviderCatalog.Capability capability = mediaCapability(provider);
             OpenAiCompatibleMediaAdapter mediaAdapter = mediaAdapterRegistry.adapterFor(provider, "voice", capability);
-            String voicePath = capability.voiceEndpoint() == null || capability.voiceEndpoint().isBlank() ? "/v1/audio/speech" : capability.voiceEndpoint();
-            if (voicePath.startsWith("https://")) {
-                throw new OpenAiCompatibleMediaAdapter.MediaAdapterException("MEDIA_PROTOCOL_UNSUPPORTED",
-                        "自定义绝对配音 endpoint 需要专用 adapter，当前 OpenAI-compatible adapter 仅支持固定 /v1 路径");
-            }
-            var artifact = mediaAdapter.submitVoice(new OpenAiCompatibleMediaAdapter.ProviderContext(
-                    normalizedBase(provider), secret(provider), voicePath), input, model, voice, instructions);
+            var artifact = mediaAdapter.submitVoice(mediaContext(provider), input, model, voice, instructions);
             Path dir = props.mediaToolsOutput().resolve("generated-ai-audio");
             Files.createDirectories(dir);
             output = dir.resolve("voice-" + Instant.now().toEpochMilli() + ".mp3");
@@ -476,8 +488,7 @@ public class MediaGenerationService {
         try {
             beginSubmission(task, 15, "正在调用 OpenAI-compatible 图片生成接口");
             OpenAiCompatibleMediaAdapter mediaAdapter = mediaAdapterRegistry.adapterFor(provider, "image", mediaCapability(provider));
-            var submission = mediaAdapter.submitImage(new OpenAiCompatibleMediaAdapter.ProviderContext(
-                    normalizedBase(provider), secret(provider), "/v1/audio/speech"), prompt, model, size, quality);
+            var submission = mediaAdapter.submitImage(mediaContext(provider), prompt, model, size, quality);
 
             update(task, "running", 75, "正在校验并登记生成图片"); Path dir = props.mediaToolsOutput().resolve("generated-ai-images"); Files.createDirectories(dir); Path output = dir.resolve("openai-" + Instant.now().toEpochMilli() + ".png");
             if (!submission.base64().isBlank()) Files.write(output, Base64.getDecoder().decode(submission.base64()));

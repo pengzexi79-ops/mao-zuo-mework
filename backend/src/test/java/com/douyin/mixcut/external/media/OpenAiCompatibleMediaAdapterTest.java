@@ -38,6 +38,20 @@ class OpenAiCompatibleMediaAdapterTest {
     }
 
     @Test
+    void imageUsesConfiguredRelativeEndpoint() throws Exception {
+        AtomicReference<MediaHttpTransport.Request> captured = new AtomicReference<>();
+        OpenAiCompatibleMediaAdapter adapter = new OpenAiCompatibleMediaAdapter(new ObjectMapper(), request -> {
+            captured.set(request);
+            return new MediaHttpTransport.Response(200, Map.of(), "{\"data\":[{\"b64_json\":\"abc\"}]}".getBytes(StandardCharsets.UTF_8));
+        });
+
+        adapter.submitImage(new OpenAiCompatibleMediaAdapter.ProviderContext("https://api.openai.com/v1", "secret", "/custom/image", "/custom/video", "/custom/voice"),
+                "a product", "image-model", "1024x1024", "medium");
+
+        assertEquals("https://api.openai.com/v1/custom/image", captured.get().url());
+    }
+
+    @Test
     void preservesArkApiV3MediaRouteCompatibility() throws Exception {
         AtomicReference<MediaHttpTransport.Request> captured = new AtomicReference<>();
         OpenAiCompatibleMediaAdapter adapter = new OpenAiCompatibleMediaAdapter(new ObjectMapper(), request -> {
@@ -67,6 +81,37 @@ class OpenAiCompatibleMediaAdapterTest {
         assertEquals("Bearer secret", captured.get().headers().get("Authorization"));
         assertTrue(captured.get().contentType().startsWith("multipart/form-data"));
         assertTrue(new String(captured.get().body(), StandardCharsets.UTF_8).contains("name=\"seconds\""));
+    }
+
+    @Test
+    void videoUsesConfiguredEndpointForSubmitPollAndDownload(@TempDir Path tempDir) throws Exception {
+        List<MediaHttpTransport.Request> requests = new ArrayList<>();
+        OpenAiCompatibleMediaAdapter adapter = new OpenAiCompatibleMediaAdapter(new ObjectMapper(), new MediaHttpTransport() {
+            @Override
+            public Response execute(Request request) {
+                requests.add(request);
+                byte[] body = requests.size() == 1
+                        ? "{\"id\":\"remote-custom\"}".getBytes(StandardCharsets.UTF_8)
+                        : "{\"status\":\"completed\",\"progress\":100}".getBytes(StandardCharsets.UTF_8);
+                return new Response(200, Map.of(), body);
+            }
+
+            @Override
+            public DownloadResponse download(Request request, Path staging, long maxBytes) throws Exception {
+                requests.add(request);
+                Files.write(staging, new byte[4096]);
+                return new DownloadResponse(200, Map.of("Content-Type", "video/mp4"), 4096);
+            }
+        });
+        var provider = new OpenAiCompatibleMediaAdapter.ProviderContext("https://api.openai.com", "secret", "/image", "/custom/videos", "/voice");
+
+        adapter.submitVideo(provider, "a product", "video-model", "1280x720", 4);
+        adapter.pollVideo(provider, "remote-custom");
+        adapter.downloadVideo(provider, "remote-custom", tempDir.resolve("video.part"), 10_000);
+
+        assertEquals("https://api.openai.com/custom/videos", requests.get(0).url());
+        assertEquals("https://api.openai.com/custom/videos/remote-custom", requests.get(1).url());
+        assertEquals("https://api.openai.com/custom/videos/remote-custom/content", requests.get(2).url());
     }
 
     @Test
@@ -145,9 +190,9 @@ class OpenAiCompatibleMediaAdapterTest {
     }
 
     @Test
-    void rejectsNonOpenAiCompatibleVoiceEndpointBeforeTransport() {
+    void rejectsHttpMediaEndpointBeforeTransport() {
         assertThrows(OpenAiCompatibleMediaAdapter.MediaAdapterException.class, () ->
-                new OpenAiCompatibleMediaAdapter.ProviderContext("https://api.openai.com", "secret", "/api/tts"));
+                new OpenAiCompatibleMediaAdapter.ProviderContext("https://api.openai.com", "secret", "http://api.openai.com/tts"));
     }
 
     private OpenAiCompatibleMediaAdapter.ProviderContext provider() {

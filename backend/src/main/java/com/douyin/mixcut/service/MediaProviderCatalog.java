@@ -19,8 +19,16 @@ public class MediaProviderCatalog {
     private final ObjectMapper om;
 
     public record Capability(List<String> imageModels, List<String> videoModels, List<String> voiceModels,
-                             List<String> visionModels, String voiceEndpoint, String imageProtocol,
-                             String videoProtocol, String voiceProtocol, String setupUrl, String billingUrl) {
+                             List<String> visionModels, String imageEndpoint, String videoEndpoint,
+                             String voiceEndpoint, String imageProtocol, String videoProtocol,
+                             String voiceProtocol, String setupUrl, String billingUrl) {
+        /** Keeps source compatibility for callers written before image/video endpoints existed. */
+        public Capability(List<String> imageModels, List<String> videoModels, List<String> voiceModels,
+                          List<String> visionModels, String voiceEndpoint, String imageProtocol,
+                          String videoProtocol, String voiceProtocol, String setupUrl, String billingUrl) {
+            this(imageModels, videoModels, voiceModels, visionModels, "", "", voiceEndpoint,
+                    imageProtocol, videoProtocol, voiceProtocol, setupUrl, billingUrl);
+        }
         public String protocol(String operation) {
             return switch (operation) {
                 case "image" -> imageProtocol;
@@ -30,7 +38,7 @@ public class MediaProviderCatalog {
             };
         }
         public static Capability empty() {
-            return new Capability(List.of(), List.of(), List.of(), List.of(), "", "", "", "", "", "");
+            return new Capability(List.of(), List.of(), List.of(), List.of(), "", "", "", "", "", "", "", "");
         }
 
         public boolean supports(String operation, String model) {
@@ -57,6 +65,8 @@ public class MediaProviderCatalog {
             value.put("voiceModels", voiceModels);
             value.put("visionModels", visionModels);
             value.put("imageGenerationModels", imageModels);
+            value.put("imageEndpoint", imageEndpoint);
+            value.put("videoEndpoint", videoEndpoint);
             value.put("voiceEndpoint", voiceEndpoint);
             value.put("imageProtocol", imageProtocol);
             value.put("videoProtocol", videoProtocol);
@@ -76,9 +86,15 @@ public class MediaProviderCatalog {
             }
             String setup = safeExternalUrl(media.path("setupUrl").asText(""));
             String billing = safeExternalUrl(media.path("billingUrl").asText(""));
-            Capability existing = new Capability(models(media.path("image")), models(media.path("video")), models(media.path("voice")), models(media.path("vision")),
-                    safeEndpoint(media.path("voiceEndpoint").asText("")), safeProtocol(media.path("imageProtocol").asText(""), ""),
-                    safeProtocol(media.path("videoProtocol").asText(""), ""), safeProtocol(media.path("voiceProtocol").asText(""), ""),
+            List<String> imageModels = models(media.path("image"));
+            List<String> videoModels = models(media.path("video"));
+            List<String> voiceModels = models(media.path("voice"));
+            Capability existing = new Capability(imageModels, videoModels, voiceModels, models(media.path("vision")),
+                    safeEndpoint(media.path("imageEndpoint").asText("")), safeEndpoint(media.path("videoEndpoint").asText("")),
+                    safeEndpoint(media.path("voiceEndpoint").asText("")),
+                    safeProtocol(media.path("imageProtocol").asText(""), defaultProtocol("image", imageModels)),
+                    safeProtocol(media.path("videoProtocol").asText(""), defaultProtocol("video", videoModels)),
+                    safeProtocol(media.path("voiceProtocol").asText(""), defaultProtocol("voice", voiceModels)),
                     setup.isBlank() ? officialSetup(provider) : setup,
                     billing.isBlank() ? officialBilling(provider) : billing);
             return withOfficialLinks(provider, existing);
@@ -120,14 +136,21 @@ public class MediaProviderCatalog {
             var normalized = root != null && root.isObject() ? ((com.fasterxml.jackson.databind.node.ObjectNode) root).deepCopy() : om.createObjectNode();
             if (root != null && root.isArray()) normalized.set("text", root);
             var media = normalized.putObject("media");
-            media.set("image", om.valueToTree(models(input.path("image"))));
-            media.set("video", om.valueToTree(models(input.path("video"))));
-            media.set("voice", om.valueToTree(models(input.path("voice"))));
+            List<String> imageModels = models(input.path("image"));
+            List<String> videoModels = models(input.path("video"));
+            List<String> voiceModels = models(input.path("voice"));
+            media.set("image", om.valueToTree(imageModels));
+            media.set("video", om.valueToTree(videoModels));
+            media.set("voice", om.valueToTree(voiceModels));
             media.set("vision", om.valueToTree(models(input.path("vision"))));
-            String imageProtocol = safeProtocol(input.path("imageProtocol").asText(""), "");
-            String videoProtocol = safeProtocol(input.path("videoProtocol").asText(""), "");
+            String imageEndpoint = safeEndpoint(input.path("imageEndpoint").asText(""));
+            String videoEndpoint = safeEndpoint(input.path("videoEndpoint").asText(""));
+            String imageProtocol = safeProtocol(input.path("imageProtocol").asText(""), defaultProtocol("image", imageModels));
+            String videoProtocol = safeProtocol(input.path("videoProtocol").asText(""), defaultProtocol("video", videoModels));
             String voiceEndpoint = safeEndpoint(input.path("voiceEndpoint").asText(""));
-            String voiceProtocol = safeProtocol(input.path("voiceProtocol").asText(""), "");
+            String voiceProtocol = safeProtocol(input.path("voiceProtocol").asText(""), defaultProtocol("voice", voiceModels));
+            if (!imageEndpoint.isBlank()) media.put("imageEndpoint", imageEndpoint);
+            if (!videoEndpoint.isBlank()) media.put("videoEndpoint", videoEndpoint);
             if (!voiceEndpoint.isBlank()) media.put("voiceEndpoint", voiceEndpoint);
             if (!imageProtocol.isBlank()) media.put("imageProtocol", imageProtocol);
             if (!videoProtocol.isBlank()) media.put("videoProtocol", videoProtocol);
@@ -148,12 +171,20 @@ public class MediaProviderCatalog {
         String setup = existing.setupUrl() == null || existing.setupUrl().isBlank() ? officialSetup(provider) : existing.setupUrl();
         String billing = existing.billingUrl() == null || existing.billingUrl().isBlank() ? officialBilling(provider) : existing.billingUrl();
         return new Capability(existing.imageModels(), existing.videoModels(), existing.voiceModels(), existing.visionModels(),
-                existing.voiceEndpoint(), existing.imageProtocol(), existing.videoProtocol(), existing.voiceProtocol(), setup, billing);
+                existing.imageEndpoint(), existing.videoEndpoint(), existing.voiceEndpoint(), existing.imageProtocol(),
+                existing.videoProtocol(), existing.voiceProtocol(), setup, billing);
     }
 
     private String safeEndpoint(String raw) {
         if (raw == null || raw.isBlank()) return "";
-        String url = UrlGuard.validate(raw);
+        String value = raw.trim();
+        if (value.startsWith("/")) {
+            if (value.contains("..") || value.contains("?") || value.contains("#") || !value.matches("/[A-Za-z0-9._~:/-]+")) {
+                throw new IllegalArgumentException("媒体 endpoint 路径无效");
+            }
+            return value;
+        }
+        String url = UrlGuard.validate(value);
         if (!url.startsWith("https://")) throw new IllegalArgumentException("媒体 endpoint 必须使用 HTTPS");
         return url;
     }
@@ -161,8 +192,18 @@ public class MediaProviderCatalog {
     private String safeProtocol(String raw, String defaultValue) {
         String value = raw == null || raw.isBlank() ? defaultValue : raw.trim().toLowerCase(java.util.Locale.ROOT);
         if (value.isBlank()) return "";
-        if (!List.of("openai_image_generation", "openai_video_generation", "openai_audio_speech", "dashscope_tts_http", "dashscope_tts_websocket").contains(value)) throw new IllegalArgumentException("不支持的媒体协议");
+        if (value.length() > 80 || !value.matches("[a-z0-9][a-z0-9._-]*")) throw new IllegalArgumentException("媒体协议标识无效");
         return value;
+    }
+
+    private String defaultProtocol(String operation, List<String> models) {
+        if (models == null || models.isEmpty()) return "";
+        return switch (operation) {
+            case "image" -> "openai_image_generation";
+            case "video" -> "openai_video_generation";
+            case "voice" -> "openai_audio_speech";
+            default -> "";
+        };
     }
 
     private List<String> models(JsonNode node) {

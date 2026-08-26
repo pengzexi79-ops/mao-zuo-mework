@@ -78,6 +78,39 @@ class MediaProviderCatalogTest {
     }
 
     @Test
+    void assignsCompatibleDefaultsToLegacyManualMediaModels() {
+        AiProvider provider = provider("https://relay.example.com/v1");
+        provider.setModels("{\"text\":[\"gpt-5.6-terra\"],\"media\":{\"image\":[\"gpt-5.6-terra\"],\"video\":[\"gpt-5.6-terra\"],\"voice\":[\"gpt-5.6-terra\"]}}");
+
+        var capability = catalog.read(provider);
+
+        assertEquals("openai_image_generation", capability.imageProtocol());
+        assertEquals("openai_video_generation", capability.videoProtocol());
+        assertEquals("openai_audio_speech", capability.voiceProtocol());
+    }
+
+    @Test
+    void keepsManuallyDeclaredModelEvenWhenDiscoveryDidNotReturnIt() throws Exception {
+        String merged = catalog.mergeMediaConfig("{\"text\":[\"gpt-5.6-terra\"],\"observed\":{\"image\":[]}}",
+                "{\"image\":[\"gpt-5.6-terra\"]}");
+        var root = new ObjectMapper().readTree(merged);
+
+        assertEquals("gpt-5.6-terra", root.path("media").path("image").path(0).asText());
+        assertEquals("openai_image_generation", root.path("media").path("imageProtocol").asText());
+    }
+
+    @Test
+    void acceptsRelativeAndHttpsMediaEndpointsButRejectsUnsafePaths() {
+        String merged = catalog.mergeMediaConfig("{}", "{\"image\":[\"image-model\"],\"imageEndpoint\":\"/custom/images\",\"videoEndpoint\":\"https://api.openai.com/video\"}");
+        var provider = provider("https://relay.example.com/v1");
+        provider.setModels(merged);
+
+        assertEquals("/custom/images", catalog.read(provider).imageEndpoint());
+        assertEquals("https://api.openai.com/video", catalog.read(provider).videoEndpoint());
+        assertThrows(IllegalArgumentException.class, () -> catalog.mergeMediaConfig("{}", "{\"image\":[\"m\"],\"imageEndpoint\":\"/../private\"}"));
+    }
+
+    @Test
     void rejectsUnsafeOfficialLinks() {
         assertThrows(IllegalArgumentException.class, () -> catalog.mergeMediaConfig("{}", "{\"setupUrl\":\"http://127.0.0.1:8080/key\"}"));
     }

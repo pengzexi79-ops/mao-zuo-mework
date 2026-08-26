@@ -5,7 +5,7 @@
 
     <el-tabs v-model="mode" class="create-tabs">
       <el-tab-pane label="AI 图片" name="image" :disabled="!operationProviders('image').length">
-        <div v-if="!operationProviders('image').length" class="capability-empty">没有已确认的图片生成模型。请到 AI 接入识别并采用图片模型，且 Provider 必须真实支持 `/v1/images/generations`。</div>
+        <div v-if="!operationProviders('image').length" class="capability-empty">没有可执行的图片能力。请在 AI 接入中填写实际模型，并选择已注册的图片协议。</div>
         <section class="create-panel">
           <ProviderSelect v-model="image.providerId" operation="image" :providers="operationProviders('image')" @changed="ensureModel(image, 'image')" />
           <el-form label-position="top">
@@ -17,7 +17,7 @@
         </section>
       </el-tab-pane>
       <el-tab-pane label="AI 视频" name="video" :disabled="!operationProviders('video').length">
-        <div v-if="!operationProviders('video').length" class="capability-empty">没有已确认的视频生成模型。请到 AI 接入识别并采用视频模型，且 Provider 必须真实支持 `/v1/videos`。</div>
+        <div v-if="!operationProviders('video').length" class="capability-empty">没有可执行的视频能力。请在 AI 接入中填写实际模型，并选择已注册的视频协议。</div>
         <section class="create-panel">
           <ProviderSelect v-model="video.providerId" operation="video" :providers="operationProviders('video')" @changed="ensureModel(video, 'video')" />
           <el-form label-position="top">
@@ -29,7 +29,7 @@
         </section>
       </el-tab-pane>
       <el-tab-pane label="AI 配音" name="voice" :disabled="!operationProviders('voice').length">
-        <div v-if="!operationProviders('voice').length" class="capability-empty">没有已确认的配音模型。请到 AI 接入识别并采用配音模型，且 Provider 必须真实支持 `/v1/audio/speech`。</div>
+        <div v-if="!operationProviders('voice').length" class="capability-empty">没有可执行的配音能力。请在 AI 接入中填写实际模型，并选择已注册的配音协议。</div>
         <section class="create-panel">
           <ProviderSelect v-model="voice.providerId" operation="voice" :providers="operationProviders('voice')" @changed="ensureModel(voice, 'voice')" />
           <el-form label-position="top">

@@ -3,7 +3,7 @@
     <div class="ai-summary-grid">
       <div class="ai-summary-card"><span>已配置 Provider</span><b>{{ providers.filter(item => item.hasKey).length }}</b><small>密钥只保存在本机服务端</small></div>
       <div class="ai-summary-card"><span>文本 / 视觉</span><b>{{ providers.filter(item => item.hasKey && textModels(item).length).length }} / {{ providers.filter(item => item.hasKey && visionModels(item).length).length }}</b><small>用于脚本、镜头规划与素材理解</small></div>
-      <div class="ai-summary-card"><span>媒体执行</span><b>{{ providers.filter(item => item.hasKey && mediaModelCount(item) > 0 && item.kind === 'openai').length }}</b><small>仅显示真实兼容且已声明的媒体模型</small></div>
+      <div class="ai-summary-card"><span>媒体执行</span><b>{{ providers.filter(item => item.hasKey && executableMediaModelCount(item) > 0).length }}</b><small>按已声明模型与已注册协议计算</small></div>
       <div class="ai-summary-card"><span>待处理</span><b>{{ providers.filter(item => item.discoveryStatus === 'failed' || !item.hasKey).length }}</b><small>识别失败或尚未配置密钥</small></div>
     </div>
     <div class="card">
@@ -135,7 +135,7 @@
       </el-collapse-item>
     </el-collapse>
 
-    <el-dialog v-model="dlgVisible" :title="form.id ? '编辑供应商' : '新增供应商'" width="600px">
+    <el-dialog v-model="dlgVisible" :title="form.id ? '编辑供应商' : '新增供应商'" width="780px">
       <el-alert type="info" :closable="false" show-icon style="margin-bottom:12px" title="常用接口模板">
         <el-button v-for="template in providerTemplates" :key="template.name" link type="primary" @click="applyTemplate(template)">{{ template.name }}</el-button>
       </el-alert>
@@ -167,15 +167,20 @@
             <el-option v-for="m in presetList" :key="m" :label="m" :value="m" />
           </el-select>
         </el-form-item>
-        <el-divider content-position="left">图片 / 视频 / 配音能力</el-divider>
-        <div class="form-hint" style="margin:-8px 0 12px">只填写该服务商实际支持的模型。AI 创作会严格按这里显示，未填写的能力不能提交。</div>
+        <el-divider content-position="left">媒体能力</el-divider>
+        <div class="form-hint" style="margin:-8px 0 12px">每一行都是独立能力：填写模型后，选择它的协议；留空 endpoint 使用该服务地址的默认路径。</div>
         <div v-if="form.observedMediaText" class="observed-models"><span>最近识别到候选媒体模型：{{ form.observedMediaText }}</span><el-button size="small" plain type="primary" @click="adoptObservedMedia">全部带入草稿</el-button></div>
         <div v-if="form.observedMedia" class="observed-picker"><el-input v-model="form.observedQuery" size="small" clearable placeholder="搜索候选模型名称" /><div v-for="group in observedGroups" :key="group.key" class="observed-group"><div class="observed-group-head"><b>{{ group.label }}</b><span>{{ group.models.length }} 个候选</span><el-button link size="small" @click="toggleObservedGroup(group.key)">{{ group.models.every(model => form.observedSelected[group.key].includes(model)) ? '清除本组' : '全选本组' }}</el-button></div><label v-for="model in group.models" :key="model" class="observed-model-row"><input v-model="form.observedSelected[group.key]" type="checkbox" :value="model" /><code>{{ model }}</code><span class="muted">已发现 · 未确认</span></label></div></div>
-        <el-form-item label="图片模型"><el-input v-model="form.imageModels" placeholder="逗号分隔，例如 image-model-a,image-model-b" /></el-form-item>
-        <el-form-item label="视频模型"><el-input v-model="form.videoModels" placeholder="逗号分隔，例如 video-model-a" /></el-form-item>
-        <el-form-item label="配音模型"><el-input v-model="form.voiceModels" placeholder="逗号分隔，例如 qwen3-tts-flash" /></el-form-item>
-        <el-form-item label="配音协议"><el-select v-model="form.voiceProtocol" style="width:100%"><el-option label="OpenAI /v1/audio/speech（兼容中转）" value="openai_audio_speech" /><el-option label="千问 HTTP TTS（按中转文档）" value="dashscope_tts_http" /><el-option label="千问 WebSocket TTS（暂需专用适配）" value="dashscope_tts_websocket" /></el-select></el-form-item>
-        <el-form-item label="配音 Endpoint（可选）"><el-input v-model="form.voiceEndpoint" placeholder="留空则按 Provider baseUrl 自动补 /v1/audio/speech" /></el-form-item>
+        <div class="capability-editor">
+          <div v-for="row in capabilityRows" :key="row.key" class="capability-row">
+            <div class="capability-row-title"><b>{{ row.label }}</b><span>{{ row.note }}</span></div>
+            <el-input v-model="form[row.models]" class="capability-models" :placeholder="row.placeholder" />
+            <el-select v-model="form[row.protocol]" class="capability-protocol" clearable :placeholder="row.protocolPlaceholder">
+              <el-option v-for="option in row.options" :key="option.value" :label="option.label" :value="option.value" />
+            </el-select>
+            <el-input v-model="form[row.endpoint]" class="capability-endpoint" :placeholder="row.endpointPlaceholder" />
+          </div>
+        </div>
         <el-form-item label="官方接入页"><el-input v-model="form.setupUrl" placeholder="https:// 服务商获取 API Key 的官方页面" /><el-link v-if="form.setupUrl" :href="form.setupUrl" target="_blank" rel="noopener noreferrer" type="primary">打开官方接入 / API Key 页面</el-link></el-form-item>
         <el-form-item label="计费 / 额度页"><el-input v-model="form.billingUrl" placeholder="https:// 服务商官方计费或额度页面" /><el-link v-if="form.billingUrl" :href="form.billingUrl" target="_blank" rel="noopener noreferrer" type="primary">打开官方计费 / 额度页面</el-link></el-form-item>
         <el-form-item label="优先级">
@@ -209,6 +214,12 @@ const providerTemplates = [
   { name: 'Gemini 官方（文本 / 分镜）', kind: 'gemini', baseUrl: 'https://generativelanguage.googleapis.com', model: 'gemini-2.0-flash', image: '', video: '', voice: '', setupUrl: 'https://aistudio.google.com/app/apikey', billingUrl: 'https://aistudio.google.com/' }
 ]
 
+const capabilityRows = [
+  { key: 'image', label: '图片生成', note: 'JSON 图片接口', models: 'imageModels', protocol: 'imageProtocol', endpoint: 'imageEndpoint', options: [{ label: 'OpenAI-compatible', value: 'openai_image_generation' }], placeholder: '模型名，可填多个，用逗号分隔', protocolPlaceholder: '选择图片协议', endpointPlaceholder: '默认 /v1/images/generations' },
+  { key: 'video', label: '视频生成', note: '提交 / 轮询 / 下载', models: 'videoModels', protocol: 'videoProtocol', endpoint: 'videoEndpoint', options: [{ label: 'OpenAI-compatible', value: 'openai_video_generation' }], placeholder: '模型名，可填多个，用逗号分隔', protocolPlaceholder: '选择视频协议', endpointPlaceholder: '默认 /v1/videos' },
+  { key: 'voice', label: '配音 / TTS', note: '二进制音频响应', models: 'voiceModels', protocol: 'voiceProtocol', endpoint: 'voiceEndpoint', options: [{ label: 'OpenAI-compatible', value: 'openai_audio_speech' }, { label: '千问 HTTP（待专用适配）', value: 'dashscope_tts_http' }, { label: '千问 WebSocket（待专用适配）', value: 'dashscope_tts_websocket' }], placeholder: '模型名，可填多个，用逗号分隔', protocolPlaceholder: '选择配音协议', endpointPlaceholder: '默认 /v1/audio/speech' }
+]
+
 const USE_CASE_LABEL = {
   hook: '钩子文案',
   script: '脚本',
@@ -236,7 +247,7 @@ const dlgVisible = ref(false)
 
 const form = reactive({
   id: null, name: '', kind: 'openai', baseUrl: '', apiKey: '', defaultModel: '', priority: 10, enabled: true,
-  imageModels: '', videoModels: '', voiceModels: '', visionModels: '', voiceEndpoint: '', voiceProtocol: 'openai_audio_speech', setupUrl: '', billingUrl: '', observedMedia: null, observedMediaText: '', observedQuery: '', observedSelected: { image: [], video: [], voice: [] }
+  imageModels: '', videoModels: '', voiceModels: '', visionModels: '', imageEndpoint: '', videoEndpoint: '', voiceEndpoint: '', imageProtocol: 'openai_image_generation', videoProtocol: 'openai_video_generation', voiceProtocol: 'openai_audio_speech', setupUrl: '', billingUrl: '', observedMedia: null, observedMediaText: '', observedQuery: '', observedSelected: { image: [], video: [], voice: [] }
 })
 
 const presetList = computed(() => presets.value[form.kind] || [])
@@ -266,6 +277,16 @@ function mediaModelCount (provider) {
   const caps = provider?.mediaCapabilities || {}
   return ['imageModels', 'videoModels', 'voiceModels'].reduce((total, key) => total + (Array.isArray(caps[key]) ? caps[key].length : 0), 0)
 }
+function executableMediaModelCount (provider) {
+  const caps = provider?.mediaCapabilities || {}
+  return ['image', 'video', 'voice'].reduce((total, key) => {
+    const models = Array.isArray(caps[`${key}Models`]) ? caps[`${key}Models`].length : 0
+    return total + (isExecutableProtocol(caps[`${key}Protocol`]) ? models : 0)
+  }, 0)
+}
+function isExecutableProtocol (protocol) {
+  return ['openai_image_generation', 'openai_video_generation', 'openai_audio_speech'].includes(protocol)
+}
 function providerCapabilities (provider) {
   const caps = provider?.mediaCapabilities || {}
   const groups = [
@@ -281,7 +302,8 @@ function providerState (provider) {
   if (!provider.hasKey) return { label: '未配置', tone: 'muted' }
   if (!provider.enabled) return { label: '已停用', tone: 'muted' }
   if (provider.discoveryStatus === 'failed') return { label: '识别失败', tone: 'warning' }
-  if (mediaModelCount(provider) && provider.kind === 'openai') return { label: '媒体可执行', tone: 'success' }
+  if (executableMediaModelCount(provider)) return { label: '媒体可执行', tone: 'success' }
+  if (mediaModelCount(provider)) return { label: '媒体待适配', tone: 'warning' }
   if (provider.discoveryStatus === 'success') return { label: '模型已发现', tone: 'info' }
   return { label: '已授权', tone: 'info' }
 }
@@ -299,6 +321,12 @@ function applyTemplate (template) {
   form.imageModels = template.image
   form.videoModels = template.video
   form.voiceModels = template.voice
+  form.imageProtocol = template.image ? 'openai_image_generation' : ''
+  form.videoProtocol = template.video ? 'openai_video_generation' : ''
+  form.voiceProtocol = template.voice ? 'openai_audio_speech' : ''
+  form.imageEndpoint = ''
+  form.videoEndpoint = ''
+  form.voiceEndpoint = ''
   form.setupUrl = template.setupUrl
   form.billingUrl = template.billingUrl
   form.apiKey = ''
@@ -314,7 +342,11 @@ function capabilityBody () {
     video: splitModels(form.videoModels),
     voice: splitModels(form.voiceModels),
     vision: splitModels(form.visionModels),
+    imageEndpoint: form.imageEndpoint.trim(),
+    videoEndpoint: form.videoEndpoint.trim(),
     voiceEndpoint: form.voiceEndpoint.trim(),
+    imageProtocol: form.imageProtocol,
+    videoProtocol: form.videoProtocol,
     voiceProtocol: form.voiceProtocol,
     setupUrl: form.setupUrl.trim(),
     billingUrl: form.billingUrl.trim()
@@ -437,7 +469,7 @@ function openNew() {
   Object.assign(form, {
     id: null, name: '', kind: 'openai', baseUrl: 'https://api.openai.com', apiKey: '',
     defaultModel: presets.value.openai?.[0] || '', priority: 10, enabled: true,
-    imageModels: '', videoModels: '', voiceModels: '', setupUrl: '', billingUrl: '', observedMedia: null, observedMediaText: '', observedQuery: '', observedSelected: { image: [], video: [], voice: [] }
+    imageModels: '', videoModels: '', voiceModels: '', imageEndpoint: '', videoEndpoint: '', voiceEndpoint: '', imageProtocol: 'openai_image_generation', videoProtocol: 'openai_video_generation', voiceProtocol: 'openai_audio_speech', setupUrl: '', billingUrl: '', observedMedia: null, observedMediaText: '', observedQuery: '', observedSelected: { image: [], video: [], voice: [] }
   })
   dlgVisible.value = true
 }
@@ -449,7 +481,10 @@ function openEdit(row) {
     id: row.id, name: row.name, kind: row.kind, baseUrl: row.baseUrl, apiKey: '',
     defaultModel: row.defaultModel, priority: row.priority, enabled: row.enabled,
     imageModels: capabilityText(row, 'imageModels'), videoModels: capabilityText(row, 'videoModels'), voiceModels: capabilityText(row, 'voiceModels'), visionModels: capabilityText(row, 'visionModels'),
-    voiceEndpoint: row.mediaCapabilities?.voiceEndpoint || '', voiceProtocol: row.mediaCapabilities?.voiceProtocol || 'openai_audio_speech',
+    imageEndpoint: row.mediaCapabilities?.imageEndpoint || '', videoEndpoint: row.mediaCapabilities?.videoEndpoint || '', voiceEndpoint: row.mediaCapabilities?.voiceEndpoint || '',
+    imageProtocol: row.mediaCapabilities?.imageProtocol || (capabilityText(row, 'imageModels') ? 'openai_image_generation' : ''),
+    videoProtocol: row.mediaCapabilities?.videoProtocol || (capabilityText(row, 'videoModels') ? 'openai_video_generation' : ''),
+    voiceProtocol: row.mediaCapabilities?.voiceProtocol || (capabilityText(row, 'voiceModels') ? 'openai_audio_speech' : ''),
     setupUrl: row.mediaCapabilities?.setupUrl || '', billingUrl: row.mediaCapabilities?.billingUrl || '',
     observedMedia: observed, observedMediaText: observedMediaText(observed), observedQuery: '', observedSelected: { image: [...current.image], video: [...current.video], voice: [...current.voice] }
   })
@@ -539,7 +574,7 @@ async function discoverModels(row) {
     const recommendations = recommendationGroups
       ? `<section class="model-recommendations"><h4>文本用途推荐</h4>${recommendationGroups}</section>`
       : ''
-    const html = `<div class="model-discovery-result"><div class="model-discovery-meta"><span>探测延迟 <b>${Number(result.latencyMs || 0)} ms</b></span><span>仅展示供应商实际返回或明确声明的能力</span></div>${modelGroups}${recommendations}<p class="model-discovery-note">普通文本模型不会被伪装成图片、视频或 TTS。若某项显示未提供，请在供应商控制台开通对应能力或更换支持该能力的 Provider。</p></div>`
+    const html = `<div class="model-discovery-result"><div class="model-discovery-meta"><span>探测延迟 <b>${Number(result.latencyMs || 0)} ms</b></span><span>识别结果是候选观察，不是能力裁决</span></div>${modelGroups}${recommendations}<p class="model-discovery-note">中转站常常只返回文本模型列表；图片、视频或音频能力可以在下方编辑器中手工填写。保存后，系统只按已选择的协议和 adapter 判断是否可执行。</p></div>`
     ElMessageBox.alert(html, '模型识别结果', { type: 'success', dangerouslyUseHTMLString: true, customClass: 'model-discovery-dialog', width: '680px' })
   } catch {
     /* 拦截器已提示 */
@@ -589,6 +624,11 @@ onMounted(async () => {
 .ai-summary-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; margin-bottom:14px; }
 .ai-summary-card { min-height:94px; padding:14px; border:1px solid var(--el-border-color-lighter); border-radius:6px; background:var(--el-bg-color-overlay); display:flex; flex-direction:column; gap:6px; }
 .ai-summary-card span,.ai-summary-card small { color:var(--el-text-color-secondary); font-size:12px; }.ai-summary-card b { font-size:22px; }
+.capability-editor { display:flex; flex-direction:column; gap:8px; margin:0 0 14px 100px; }
+.capability-row { display:grid; grid-template-columns:140px minmax(180px,1.15fr) minmax(150px,.85fr) minmax(180px,1fr); align-items:center; gap:8px; }
+.capability-row-title { display:flex; flex-direction:column; gap:2px; min-width:0; }.capability-row-title span { color:var(--el-text-color-secondary); font-size:11px; }
+.capability-row :deep(.el-input), .capability-row :deep(.el-select) { width:100%; }.capability-endpoint :deep(input) { font-family:Consolas,Monaco,monospace; font-size:12px; }
 .provider-loading { height:96px; }.provider-empty { padding:16px 0; }.provider-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(270px,1fr)); gap:12px; }.provider-card { display:flex; flex-direction:column; gap:10px; min-width:0; padding:14px; border:1px solid var(--el-border-color-lighter); border-radius:6px; background:var(--el-bg-color-overlay); }.provider-card-head,.provider-card-meta,.provider-card-actions { display:flex; align-items:center; justify-content:space-between; gap:10px; }.provider-card h3 { margin:0 0 4px; font-size:15px; }.provider-card-meta code,.provider-card-url { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; }.provider-status { flex:0 0 auto; padding:3px 7px; border-radius:4px; background:var(--el-fill-color-light); font-size:12px; }.provider-status.success { color:var(--el-color-success); background:var(--el-color-success-light-9); }.provider-status.warning { color:var(--el-color-warning); background:var(--el-color-warning-light-9); }.provider-status.info { color:var(--el-color-primary); background:var(--el-color-primary-light-9); }.provider-status.muted { color:var(--el-text-color-secondary); }.provider-model-main { display:flex; flex-direction:column; gap:3px; }.provider-capabilities { display:flex; flex-wrap:wrap; gap:6px; min-height:24px; }.provider-card-actions { justify-content:flex-start; }.advanced-ai-sections { margin-top:14px; border:1px solid var(--el-border-color-lighter); border-radius:6px; }.nested-ai-card { margin:10px 0; border:0; box-shadow:none; }.ai-route-popper { z-index:3001 !important; max-width:calc(100vw - 24px); }.ai-route-popper .el-select-dropdown__item { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }.observed-models { display:flex; align-items:center; justify-content:space-between; gap:10px; margin:-2px 0 10px; padding:8px 10px; border:1px solid var(--el-color-warning-light-7); border-radius:4px; background:var(--el-color-warning-light-9); color:var(--el-text-color-regular); font-size:12px; }.observed-picker { display:flex; flex-direction:column; gap:8px; max-height:280px; overflow:auto; margin-bottom:12px; padding:8px; border:1px solid var(--el-border-color-lighter); border-radius:5px; background:var(--el-fill-color-light); }.observed-group { padding:6px 0; border-bottom:1px solid var(--el-border-color-lighter); }.observed-group:last-child { border-bottom:0; }.observed-group-head { display:flex; align-items:center; gap:8px; }.observed-group-head span { color:var(--el-text-color-secondary); font-size:12px; }.observed-group-head .el-button { margin-left:auto; }.observed-model-row { display:flex; align-items:center; gap:8px; min-height:28px; padding:3px 6px; border-radius:4px; cursor:pointer; }.observed-model-row:hover { background:var(--el-bg-color-overlay); }.observed-model-row code { min-width:0; flex:1; overflow-wrap:anywhere; font-size:12px; }
 @media (max-width:900px) { .ai-summary-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } } @media (max-width:560px) { .ai-summary-grid { grid-template-columns:1fr; }.observed-models { align-items:flex-start; flex-direction:column; } }
+@media (max-width:760px) { .capability-editor { margin-left:0; }.capability-row { grid-template-columns:1fr; gap:6px; padding:10px 0; border-bottom:1px solid var(--el-border-color-lighter); }.capability-row:last-child { border-bottom:0; } }
 </style>
