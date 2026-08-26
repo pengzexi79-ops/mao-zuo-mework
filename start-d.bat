@@ -8,6 +8,9 @@ set "JAR=%APP_DIR%backend\target\mixcut-current.jar"
 set "LOG_DIR=%APP_DATA_DIR%\logs"
 set "PORT=8762"
 
+rem Resolve relative configuration such as .env from the application root.
+cd /d "%APP_DIR%"
+
 if not exist "%LOG_DIR%" mkdir "%LOG_DIR%"
 if not exist "%JAVA_BIN%" (
   echo ERROR: bundled Java 17 is missing: %JAVA_BIN%
