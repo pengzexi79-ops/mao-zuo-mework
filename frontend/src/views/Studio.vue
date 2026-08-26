@@ -2000,7 +2000,7 @@ function onProjectChange (id) {
     // 清空项目选择:参数恢复默认,保留手动选材与固定顺序配置。
     applyParamPatch({}, { reset: true })
     draftSource.value = '基础默认参数'
-    ElMessage.success('已清除项目选择，参数恢复默')
+    ElMessage.success('已清除项目选择，参数恢复默认')
     return
   }
   const pj = projects.value.find((x) => x.id === id)
@@ -2009,7 +2009,7 @@ function onProjectChange (id) {
   try { patch = pj.defaultParams ? JSON.parse(pj.defaultParams) : {} } catch { patch = {} }
   applyParamPatch(patch, { reset: true })
   draftSource.value = pj.defaultParams ? `项目「${pj.name}」默认参数` : `项目「${pj.name}」`
-  ElMessage.success(pj.defaultParams ? '已载入项目默认参数；你可以继续修' : '已选择项目；使用默认出片参')
+  ElMessage.success(pj.defaultParams ? '已载入项目默认参数；你可以继续修改' : '已选择项目；使用默认出片参数')
 }
 
 async function onWorkflowChange (id) {
@@ -2135,7 +2135,7 @@ async function doDryRun() {
     }
     return ready
   } catch (error) {
-    if (revision === dryRunRevision) ElMessage.error(`干跑预检失败：${error.message || '请检查后端和素材状'}`)
+    if (revision === dryRunRevision) ElMessage.error(`干跑预检失败：${error.message || '请检查后端和素材状态'}`)
     return false
   } finally {
     dry.value = false
@@ -2150,7 +2150,7 @@ async function doGapAnalysis({ silent = false } = {}) {
       params: payload()
     })
   } catch (error) {
-    if (!silent) ElMessage.error(`缺口分析失败：${error.message || '请检查后端状'}`)
+    if (!silent) ElMessage.error(`缺口分析失败：${error.message || '请检查后端状态'}`)
   } finally {
     gapLoading.value = false
   }
@@ -2385,11 +2385,11 @@ async function prepareMaterials () {
       const issues = sourceIssueRows(final.autoFill)
       ElMessage.warning(issues.length
         ? `公开素材来源暂不可用（${issues.map((issue) => issue.source).join('')}）；本次继续使用本地素材出片，可稍后在素材抓取页重试`
-        : '未找到可用的公开素材；本次继续使用本地素材出片，可前往素材抓取页手动导')
+        : '未找到可用的公开素材；本次继续使用本地素材出片，可前往素材抓取页手动导入')
     }
     await loadInitial()
   } catch (error) {
-    ElMessage.warning(`项目素材准备未完成：${error.message || '将继续使用当前本地素'}`)
+    ElMessage.warning(`项目素材准备未完成：${error.message || '将继续使用当前本地素材'}`)
   } finally {
     preparing.value = false
     if (!preparationBackground.value) preparingSnapshot.value = null
@@ -2439,7 +2439,7 @@ async function submit() {
     if (created?.id != null && !jobs.value.some((job) => String(job.id) === String(created.id))) {
       jobs.value.unshift(created)
     }
-    ElMessage.success(continuous.value ? '已开始连续出片，随时可点击暂' : '已提交，正在后台渲染')
+    ElMessage.success(continuous.value ? '已开始连续出片，随时可点击暂停' : '已提交，正在后台渲染')
     await loadJobs({ silent: true, refresh: true })
   } catch (error) {
     const message = String(error?.message || '')
@@ -2538,7 +2538,7 @@ async function pause(row) {
 }
 async function resume(row) {
   await api.resumeJob(row.id)
-  ElMessage.success(row.status === 'awaiting_decision' ? '已按当前安全策略重新排队' : '已继续出')
+  ElMessage.success(row.status === 'awaiting_decision' ? '已按当前安全策略重新排队' : '已继续出片')
   loadJobs()
 }
 async function retryFailed(row) {
@@ -2717,7 +2717,7 @@ async function loadInitial () {
           applyFixedOrderStages(pack.name, pack.stages, false)
           sessionStorage.removeItem('mework-fixed-order-custom')
           router.replace({ path: '/studio' })
-        } catch { ElMessage.error('自定义顺序数据无效，未应') }
+        } catch { ElMessage.error('自定义顺序数据无效，未应用') }
       } else if (pendingOrder) {
         sessionStorage.removeItem('mework-fixed-order-preset')
         applyFixedOrderPreset(pendingOrder, false)
