@@ -29,7 +29,7 @@ public class ReleaseNotesService {
             "id", "version", "kind", "releasedAt", "title", "summary",
             "changes", "fixes", "verification", "compatibility", "evidence");
     private static final Set<String> KINDS = Set.of(
-            "当前本机构建", "交付构建", "阶段验收", "历史开发阶段",
+            "当前本机构建", "交付构建", "正式发行", "阶段验收", "历史开发阶段",
             "数据库演进阶段", "旧版原型（已取代）", "正式技术栈重写");
     private final ObjectMapper objectMapper;
     private final AppProps props;

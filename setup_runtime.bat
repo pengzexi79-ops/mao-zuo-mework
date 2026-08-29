@@ -29,13 +29,9 @@ if exist "%APP_DIR%portable\jdk-17\bin\java.exe" (
 )
 
 if exist "%APP_DIR%portable\mysql\bin\mysqld.exe" (
-  if exist "%APP_DIR%portable\mysqldata\ai_mix_video" (
-    echo [已就绪] 便携 MySQL 8（数据目录已含 ai_mix_video 库）
-  ) else (
-    echo [提示] 便携 MySQL 已就绪，数据目录未初始化；请先启动一次初始化或使用环境中心处理
-  )
+  echo [已就绪] 便携 MySQL 8；首次启动会在 %APP_DATA_DIR%\mysql 创建空数据库
 ) else (
-  echo [需处理] MySQL: 将便携 MySQL 放入 portable\mysql（含 bin\mysqld.exe），数据目录放入 portable\mysqldata
+  echo [需处理] MySQL: 将便携 MySQL 放入 portable\mysql（含 bin\mysqld.exe 和 bin\mysql.exe）
 )
 if exist "%APP_DIR%portable\ffmpeg\bin\ffmpeg.exe" (
   echo [已就绪] 便携 FFmpeg

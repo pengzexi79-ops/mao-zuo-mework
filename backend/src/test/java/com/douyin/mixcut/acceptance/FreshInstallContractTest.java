@@ -17,9 +17,10 @@ class FreshInstallContractTest {
         String text = Files.readString(script);
         assertTrue(text.contains("APP_PORT"));
         assertTrue(text.contains("MYSQL_PORT"));
-        assertTrue(text.contains("PickPort"));
+        assertTrue(text.contains("Pick-Port"));
         assertTrue(text.contains("/api/system/env"));
-        assertTrue(text.contains("fresh-install:skipped"));
+        assertTrue(text.contains("fresh-install:0"));
+        assertFalse(text.contains("fresh-install:skipped"), "missing release assets must fail, not skip");
         assertFalse(text.contains("taskkill"), "gate must not use broad taskkill");
         assertFalse(text.contains(".env.example"), "gate must not copy env templates into install test");
         assertTrue(text.contains("APP_DATA_DIR"));

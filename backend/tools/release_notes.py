@@ -329,7 +329,11 @@ def command_apply(_: argparse.Namespace) -> None:
     if pending is None:
         raise SystemExit("没有待记录，无法发布。请先运行 new 并填写 backend/release-notes.pending.json。")
     record = validate_pending(pending, current_version)
-    today = date.today().isoformat()
+    released_at = str(pending.get("releasedAt") or date.today().isoformat())
+    try:
+        date.fromisoformat(released_at)
+    except ValueError as error:
+        raise SystemExit(f"发布日期必须为 YYYY-MM-DD：{released_at}") from error
     old_current = {key: deepcopy(value) for key, value in notes.items() if key != "history" and key != "source"}
     old_current["id"] = release_id(current_version)
     old_current["kind"] = "历史开发阶段"
@@ -338,7 +342,7 @@ def command_apply(_: argparse.Namespace) -> None:
     notes.update(record)
     notes["id"] = release_id(new_version)
     notes["version"] = new_version
-    notes["releasedAt"] = today
+    notes["releasedAt"] = released_at
     notes["kind"] = record.get("kind", "当前本机构建")
     notes["history"] = [old_current, *old_history]
     write_json(NOTES_PATH, notes)

@@ -1,8 +1,8 @@
-python.exe : ERROR: Could not install packages due to an OSError: [WinError 206] ÎÄ¼þÃû»òÀ©Õ¹ÃûÌ«³¤¡£: 'C:\\Users\\Wind
+python.exe : ERROR: Could not install packages due to an OSError: [WinError 206] ï¿½Ä¼ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Õ¹ï¿½ï¿½Ì«ï¿½ï¿½ï¿½ï¿½: 'C:\\Users\\Wind
 ows\\WorkBuddy\\2026-08-09-14-55-27\\ai-douyin-mixcut\\backend\\.venv\\Lib\\site-packages\\torch-2.13.0.dist-info\\lice
 nses\\third_party\\kineto\\libkineto\\third_party\\dynolog\\third_party\\prometheus-cpp\\3rdparty\\civetweb\\src\\third
 _party\\duktape-1.5.2'
-ËùÔÚÎ»ÖÃ C:\Users\Windows\WorkBuddy\2026-08-09-14-55-27\ai-douyin-mixcut\prepare_portable.ps1:57 ×Ö·û: 3
+ï¿½ï¿½ï¿½ï¿½Î»ï¿½ï¿½ <legacy-workspace>\ai-douyin-mixcut\prepare_portable.ps1:57 ï¿½Ö·ï¿½: 3
 +   & $venvPy -m pip install --disable-pip-version-check --no-input dem ...
 +   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     + CategoryInfo          : NotSpecified: (ERROR: Could no...\duktape-1.5.2':String) [], RemoteException

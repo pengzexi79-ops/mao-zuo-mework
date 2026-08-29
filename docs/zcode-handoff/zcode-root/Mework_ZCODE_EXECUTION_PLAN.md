@@ -1,7 +1,7 @@
 # 猫作 / Mework 全环境真实可用实施指令
 
 > 文档用途：供 ZCode 按阶段执行，不是产品介绍。
-> 目标项目：`C:\Users\Windows\WorkBuddy\2026-08-09-14-55-27\ai-douyin-mixcut`
+> 目标项目：`<legacy-workspace>\ai-douyin-mixcut`
 > 主运行方式：Windows 本地优先，Spring Boot + Vue + MySQL + FFmpeg。
 > 生成日期：2026-08-22
 

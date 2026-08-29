@@ -4,7 +4,7 @@ Date: 2026-08-29
 
 ## Scope
 
-The live D-drive instance is `D:\zcode\projects\ai-douyin-mixcut` on port `8762`. The C-drive process on port `8760` is an older instance and was not changed. The pasted handoff path points at that older deployment, so this audit follows the source that serves the live D-drive application.
+The live D-drive instance is `<release-workspace>\ai-douyin-mixcut` on port `8762`. The C-drive process on port `8760` is an older instance and was not changed. The pasted handoff path points at that older deployment, so this audit follows the source that serves the live D-drive application.
 
 ## Reuse map
 

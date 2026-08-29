@@ -21,6 +21,7 @@
         <maven.compiler.target>17</maven.compiler.target>
         <!-- 可用 -Ddelivery.jar.name=mixcut-delivery 绕开 Windows 对旧 Jar 的文件锁。 -->
         <delivery.jar.name>mixcut</delivery.jar.name>
+        <release.build.directory>${project.basedir}/target</release.build.directory>
     </properties>
 
     <dependencies>
@@ -67,6 +68,7 @@
     </dependencies>
 
     <build>
+        <directory>${release.build.directory}</directory>
         <finalName>${delivery.jar.name}</finalName>
         <plugins>
             <plugin>

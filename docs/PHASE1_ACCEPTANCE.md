@@ -2,7 +2,7 @@
 
 日期：2026-08-10
 项目：喵作 · Mework
-项目路径：`C:\Users\Windows\WorkBuddy\2026-08-09-14-55-27\ai-douyin-mixcut`
+项目路径：`<legacy-workspace>\ai-douyin-mixcut`
 
 ## 交付内容
 

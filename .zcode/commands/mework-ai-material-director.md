@@ -5,7 +5,7 @@ argument-hint: [optional project/product brief]
 
 Act as the Mework AI material director for this workspace. Continue until the app is verified or a hard blocker is proven.
 
-Project path: `C:\Users\Windows\WorkBuddy\2026-08-09-14-55-27\ai-douyin-mixcut`.
+Project path: `<legacy-workspace>\ai-douyin-mixcut`.
 
 User brief: `$ARGUMENTS`.
 

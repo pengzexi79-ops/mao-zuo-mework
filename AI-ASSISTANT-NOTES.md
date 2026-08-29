@@ -8,7 +8,7 @@
 
 - **title**: 全电脑离线环境适配与环境修复归档
 - **summary**: 安装包内置完整 Python 3.13.5 与 faster-whisper 离线模型,venv 可在任意电脑自愈重绑;新电脑首次启动生成的数据库凭据与内置 MySQL 对齐;批量删除、终态清理、素材等待与 HTTPS 抓取等修复入列。
-- **changes**: ①安装包新增内置完整 CPython 3.13.5(portable/python,约 118MB),venv 启动自愈:检测到 pyvenv.cfg.home 失效时自动重绑到应用内 portable/python,离线秒级恢复 ASR/OCR/TTS 依赖;②内置 faster-whisper small 离线模型(portable/whisper-models,约 464MB),start.bat 设置 HF_HOME 到应用数据目录并在首启本地预置,语音转写不再需要联网下载;③ensure_env.bat 与 .env.example 的默认数据库凭据对齐安装包内置 mysqldata(mixcut/MixcutLocal2026Secure8473),新电脑装完生成的 .env 可直接连接内置 MySQL;④start.bat 增加离线语音模型预置拷贝;setup_runtime.bat 无 venv 时优先用内置 Python 创建。
+- **changes**: ①安装包新增内置完整 CPython 3.13.5(portable/python,约 118MB),venv 启动自愈:检测到 pyvenv.cfg.home 失效时自动重绑到应用内 portable/python,离线秒级恢复 ASR/OCR/TTS 依赖;②内置 faster-whisper small 离线模型(portable/whisper-models,约 464MB),start.bat 设置 HF_HOME 到应用数据目录并在首启本地预置,语音转写不再需要联网下载;③ensure_env.bat 与 .env.example 的默认数据库凭据对齐安装包内置 mysqldata(mixcut/<removed-legacy-database-password>),新电脑装完生成的 .env 可直接连接内置 MySQL;④start.bat 增加离线语音模型预置拷贝;setup_runtime.bat 无 venv 时优先用内置 Python 创建。
 - **fixes**: ①新电脑安装后 .env 默认凭据与内置 MySQL 不匹配导致 1045 拒绝、应用无法连库;②内置 .venv 的 pyvenv.cfg.home 指向打包机绝对路径,换电脑后 Python 媒体依赖全部失效;③JobController 批量删除遇未知运行时异常中断整批并返回 500(已隔离到单条);④JobService.cleanupTerminal 只清理最近 100 条终态任务(已改全量);⑤RenderPreparationService.waitForCrawlJobs 在任务记录缺失时必然等待满超时(缺失任务视为已结束);⑥CrawlerGateway HTTPS 抓取在 IP 钉住建连下主机名校验被绕过/失败(校验绑定原始域名)。
 - **verification**: ①模拟新电脑:破坏 pyvenv.cfg.home → bootstrap_media_runtime.bat 自动修复 → venv 全部媒体依赖恢复(生产日志 16:05:44 实证);②HF_HUB_OFFLINE=1 + 全新预置缓存 → faster-whisper small 模型离线加载成功;③全新目录运行 ensure_env.bat → 生成凭据连接内置 MySQL 成功(19 张表);④后端 mvn -DskipTests compile 通过;缺口预检接口运行时验证正常。
 - **compatibility**: 安装包体积增加约 580MB(压缩后约 +500MB);默认凭据为本地单机应用设计,可在环境中心修改;旧 .env 不受影响(ensure_env 仅在没有 .env 时生成)。
@@ -22,7 +22,7 @@
 |---|---|---|
 | Java 17 | `portable\jdk-17` | ✅ |
 | Maven | `portable\maven` | ✅ |
-| MySQL 8 + 数据(schema 19 表) | `portable\mysql` + `portable\mysqldata` | ✅ 凭据 mixcut/MixcutLocal2026Secure8473 |
+| MySQL 8 + 数据(schema 19 表) | `portable\mysql` + `portable\mysqldata` | ✅ 凭据 mixcut/<removed-legacy-database-password> |
 | FFmpeg/FFprobe/FFplay | `portable\ffmpeg\bin` | ✅ |
 | ImageMagick | `portable\imagemagick\magick.exe` | ✅ |
 | whisper.cpp + 模型 | `portable\whisper\Release\whisper-cli.exe` | ✅ |
@@ -103,7 +103,7 @@
    - 注:这两处修改在 15:17 的前端构建之后,需在下次前端生产构建中生效。
    - 未改:`onProjectChange` 切换/清空项目参数重置语义(属 ZCode 任务①范畴,建议由它统一处理)。
 7. **Studio.vue(onProjectChange + applyParamPatch,1238 行,16:10)** — 补上任务①残留:切换项目先 `reset` 回默认再合并项目默认参数(消除旧项目残留值);清空项目选择时恢复默认;reset 时保留用户手动配置(materialIds/folderIds/folderReadSteps/strictFolderSequence)。**待下次前端构建生效。**
-8. **ensure_env.bat + .env.example(16:30)** — **新电脑连不上内置 MySQL 的关键 bug**:ensure_env.bat 生成 `mixcut/Mework@2026`,但安装包内置 `portable\mysqldata` 的 mixcut 用户真实密码是 `MixcutLocal2026Secure8473`(1045 拒绝)。已把两处默认凭据改为与内置库一致,并实测连接成功(19 张表)。**待下次安装器构建生效。**
+8. **ensure_env.bat + .env.example(16:30)** — **新电脑连不上内置 MySQL 的关键 bug**:ensure_env.bat 生成 `mixcut/Mework@2026`,但安装包内置 `portable\mysqldata` 的 mixcut 用户真实密码是 `<removed-legacy-database-password>`(1045 拒绝)。已把两处默认凭据改为与内置库一致,并实测连接成功(19 张表)。**待下次安装器构建生效。**
 
 ## 环境中心"所有电脑适配"修复(2026-08-15 16:00 新增)
 

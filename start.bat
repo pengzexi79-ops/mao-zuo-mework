@@ -156,8 +156,8 @@ set "PATH=%BACKEND_DIR%\.venv\Scripts;%APP_DIR%portable\ffmpeg\bin;%PATH%"
 call "%BACKEND_DIR%\tools\bootstrap_media_runtime.bat"
 if errorlevel 1 echo WARN: optional media runtime is unavailable; see %APP_DATA_DIR%\logs\dependency-bootstrap.log
 
-REM Open the web UI shortly after the backend is up.
-start "" /b powershell -NoProfile -WindowStyle Hidden -Command "Start-Sleep -Seconds 10; Start-Process 'http://%BROWSER_ADDR%:%PORT%'"
+REM Open the web UI shortly after the backend is up unless an isolated verifier disables it.
+if /I not "%APP_SKIP_BROWSER%"=="true" start "" /b powershell -NoProfile -WindowStyle Hidden -Command "Start-Sleep -Seconds 10; Start-Process 'http://%BROWSER_ADDR%:%PORT%'"
 echo Mework: http://%BROWSER_ADDR%:%PORT%
 if /I not "%APP_BIND_ADDRESS%"=="127.0.0.1" if /I not "%APP_BIND_ADDRESS%"=="localhost" if /I not "%APP_BIND_ADDRESS%"=="::1" (
   echo Phone: connect on the same Wi-Fi with http://YOUR-PC-LAN-IP:%PORT%/?access_token=YOUR_APP_ACCESS_TOKEN

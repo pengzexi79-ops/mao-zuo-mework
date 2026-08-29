@@ -2,29 +2,74 @@ param([string]$Root = $PSScriptRoot)
 $ErrorActionPreference = 'Stop'
 $rootPath = (Resolve-Path -LiteralPath $Root).Path
 $errors = [System.Collections.Generic.List[string]]::new()
-function Require-File([string]$relative) {
-  $path = Join-Path $rootPath $relative
-  if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { $errors.Add("missing: $relative") }
-  elseif ((Get-Item -LiteralPath $path -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) { $errors.Add("link-not-allowed: $relative") }
+
+function Require-File([string]$Relative) {
+  $path = Join-Path $rootPath $Relative
+  if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { $errors.Add("missing: $Relative"); return }
+  if ((Get-Item -LiteralPath $path -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) { $errors.Add("link-not-allowed: $Relative") }
 }
-foreach ($file in @('start.bat','start_mysql.bat','setup_runtime.bat','ensure_env.bat','.env.example','backend\target\mixcut-current.jar','portable\python\python.exe','portable\ffmpeg\bin\ffmpeg.exe','portable\ffmpeg\bin\ffprobe.exe','portable\mysql\bin\mysqld.exe','backend\.venv\Scripts\python.exe')) { Require-File $file }
+
+$required = @(
+  'start.bat','ensure_env.bat','ensure_env.ps1','start_mysql.bat','start_mysql.ps1','setup_runtime.bat','.env.example',
+  'INSTALLATION_GUIDE.md','AI_INSTALLATION_GUIDE.md','PRIVACY_RELEASE.md','installer\ai-setup-manifest.json',
+  'backend\src\main\resources\db\schema.sql','backend\target\mixcut-delivery.jar',
+  'portable\jdk-17\bin\java.exe','portable\mysql\bin\mysqld.exe','portable\mysql\bin\mysql.exe',
+  'portable\python\python.exe','portable\ffmpeg\bin\ffmpeg.exe','portable\ffmpeg\bin\ffprobe.exe',
+  'portable\whisper\Release\whisper-cli.exe','portable\whisper-models\ggml-small.bin',
+  'portable\imagemagick\magick.exe','backend\.venv\Scripts\python.exe'
+)
+$required | ForEach-Object { Require-File $_ }
+
 $start = Get-Content -Raw -LiteralPath (Join-Path $rootPath 'start.bat')
+$ensureEnvBat = Get-Content -Raw -LiteralPath (Join-Path $rootPath 'ensure_env.bat')
+$startMysqlBat = Get-Content -Raw -LiteralPath (Join-Path $rootPath 'start_mysql.bat')
 $application = Get-Content -Raw -LiteralPath (Join-Path $rootPath 'backend\src\main\resources\application.yml')
 if ($start -notmatch 'set "PORT=8760"') { $errors.Add('start.bat missing default PORT') }
 if ($start -notmatch 'APP_PORT') { $errors.Add('start.bat does not honor APP_PORT') }
+if ($start -notmatch 'APP_SKIP_BROWSER') { $errors.Add('start.bat cannot suppress the browser during isolated verification') }
 if ($application -notmatch 'port:\s*\$\{PORT:8760\}') { $errors.Add('application.yml does not honor PORT') }
-$mysql = Get-Content -Raw -LiteralPath (Join-Path $rootPath 'start_mysql.bat')
-if ($mysql -notmatch 'mysqladmin') { $errors.Add('start_mysql.bat lacks protocol ping') }
-if ($mysql -notmatch 'DB_URL') { $errors.Add('start_mysql.bat lacks DB_URL consistency check') }
-if ($mysql -notmatch 'MYSQL_PWD=%DB_PASSWORD%') { $errors.Add('start_mysql.bat does not pass the configured database identity to mysqladmin') }
-if ($mysql -match '--password|DB_PASSWORD%"?\s+ping') { $errors.Add('start_mysql.bat exposes the database password on the mysqladmin command line') }
-$iss = Get-Content -Raw -LiteralPath (Join-Path $rootPath 'installer\Mework.iss')
-$runSection = if ($iss -match '(?s)\[Run\](.*?)(?:\r?\n\[|$)') { $Matches[1] } else { '' }
-if ($runSection -match 'setup_runtime\.bat' -and $runSection -match 'start\.bat') { $errors.Add('installer must not run setup_runtime and start concurrently') }
-$venvCfg = Join-Path $rootPath 'backend\.venv\pyvenv.cfg'
-if (Test-Path -LiteralPath $venvCfg -PathType Leaf) {
-  $homeLine = (Get-Content -LiteralPath $venvCfg | Where-Object { $_ -match '^home\s*=' } | Select-Object -First 1)
-  if ($homeLine -and $homeLine -match 'WorkBuddy|ai-douyin-mixcut') { Write-Warning 'pyvenv.cfg contains a development path; relocation verify must rebind it before use.' }
+foreach ($launcher in @(@{ Name = 'ensure_env.bat'; Text = $ensureEnvBat; Script = 'ensure_env.ps1' }, @{ Name = 'start_mysql.bat'; Text = $startMysqlBat; Script = 'start_mysql.ps1' })) {
+  if ($launcher.Text -notmatch 'set "APP_ROOT=%APP_DIR:~0,-1%"') { $errors.Add("$($launcher.Name) must remove the trailing directory separator before passing -Root") }
+  $expectedInvocation = '-File "%APP_DIR%' + $launcher.Script + '" -Root "%APP_ROOT%"'
+  if ($launcher.Text -notmatch [regex]::Escape($expectedInvocation)) { $errors.Add("$($launcher.Name) must pass a normalized APP_ROOT to PowerShell") }
 }
+
+$envScript = Get-Content -Raw -LiteralPath (Join-Path $rootPath 'ensure_env.ps1')
+foreach ($needle in @('RandomNumberGenerator','MYSQL_ROOT_PASSWORD','APP_MASTER_KEY','Select-Port')) {
+  if ($envScript -notmatch [regex]::Escape($needle)) { $errors.Add("ensure_env.ps1 missing $needle") }
+}
+$example = Get-Content -Raw -LiteralPath (Join-Path $rootPath '.env.example')
+foreach ($name in @('DB_PASSWORD','MYSQL_ROOT_PASSWORD','APP_MASTER_KEY','APP_ACCESS_TOKEN','APP_FREESOUND_API_KEY','APP_PIXABAY_API_KEY','APP_PEXELS_API_KEY','APP_UNSPLASH_API_KEY')) {
+  if ($example -notmatch "(?m)^$([regex]::Escape($name))=\s*$") { $errors.Add(".env.example must leave $name blank") }
+}
+
+$mysqlScript = Get-Content -Raw -LiteralPath (Join-Path $rootPath 'start_mysql.ps1')
+foreach ($needle in @('Test-MySqlIdentity','SELECT 1','--initialize-insecure','schema.sql','APP_DATA_DIR')) {
+  if ($mysqlScript -notmatch [regex]::Escape($needle)) { $errors.Add("start_mysql.ps1 missing $needle") }
+}
+if ($mysqlScript -match 'mysqladmin') { $errors.Add('start_mysql.ps1 must verify credentials with mysql SELECT 1, not mysqladmin ping') }
+if ($mysqlScript -match '--password') { $errors.Add('start_mysql.ps1 must not place passwords on command lines') }
+
+$iss = Get-Content -Raw -LiteralPath (Join-Path $rootPath 'installer\Mework.iss')
+$filesSection = if ($iss -match '(?s)\[Files\](.*?)(?:\r?\n\[|$)') { $Matches[1] } else { '' }
+if (-not $filesSection) { $errors.Add('installer has no [Files] section') }
+if ($filesSection -match 'Source:\s*"\.\.\\portable\\\*"') { $errors.Add('installer uses forbidden broad portable wildcard') }
+foreach ($blocked in @('portable\mysqldata','portable\maven','sample-materials')) {
+  if ($filesSection -match [regex]::Escape($blocked)) { $errors.Add("installer includes blocked input: $blocked") }
+}
+if ($filesSection -match 'Source:\s*"\.\.\\\.env"') { $errors.Add('installer must not include a local .env file') }
+foreach ($allowed in @('jdk-17','mysql','ffmpeg','python','whisper','whisper-models','imagemagick')) {
+  if ($filesSection -notmatch [regex]::Escape("portable\$allowed\*")) { $errors.Add("installer allowlist missing portable\$allowed") }
+}
+if ($iss -notmatch 'DefaultDirName=\{code:GetDefaultInstallDir\}' -or $iss -notmatch "Result := 'D:\\Mework'") { $errors.Add('installer does not prefer D:\Mework') }
+$runSection = if ($iss -match '(?s)\[Run\](.*?)(?:\r?\n\[|$)') { $Matches[1] } else { '' }
+if (([regex]::Matches($runSection, 'Filename:')).Count -ne 1 -or $runSection -notmatch 'start\.bat') { $errors.Add('installer must launch only start.bat after installation') }
+
+try {
+  $aiManifest = Get-Content -Raw -LiteralPath (Join-Path $rootPath 'installer\ai-setup-manifest.json') -Encoding UTF8 | ConvertFrom-Json
+  if ($aiManifest.product.version -ne '2.2.158') { $errors.Add('ai-setup-manifest version is not 2.2.158') }
+  if (-not $aiManifest.privacy.excluded) { $errors.Add('ai-setup-manifest has no privacy exclusions') }
+} catch { $errors.Add("ai-setup-manifest is invalid JSON: $($_.Exception.Message)") }
+
 if ($errors.Count) { $errors | ForEach-Object { Write-Error $_ }; exit 1 }
-Write-Host 'Windows install compatibility static checks passed.'
+Write-Host 'Windows installer static checks passed.'

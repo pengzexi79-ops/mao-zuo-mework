@@ -8,11 +8,22 @@
 
 ## 当前进展
 
-当前开发版本为 `2.2.152`。截至 2026-08-29，D 盘工作树已包含媒体能力路由、音频合同与响度质检、渲染前置检查、AI 媒体适配器、任务恢复与取消、生成任务结果入库、素材/成片批量操作修复、资产识别交接，以及 D 盘启动器和安装验证流程。
+当前发行版本为 `2.2.158`。截至 2026-08-29，D 盘工作树已包含媒体能力路由、音频合同与响度质检、渲染前置检查、AI 媒体适配器、任务恢复与取消、生成任务结果入库、素材/成片批量操作修复、资产识别交接，以及经过真实空库验收的 Windows 全量安装流程。
 
 完整开发提交记录见 [`docs/zcode-handoff/GIT_HISTORY.md`](docs/zcode-handoff/GIT_HISTORY.md) 及 GitHub 的 [`legacy-history-sanitized` 分支](https://github.com/pengzexi79-ops/mao-zuo-mework/tree/legacy-history-sanitized)；`main` 是可直接分享的最新源码快照。
 
 8 月 28–29 日的实际工作树变更、验证范围、未接通能力和发布边界见 [`docs/zcode-handoff/DEVELOPMENT_LOG_20260828_20260829.md`](docs/zcode-handoff/DEVELOPMENT_LOG_20260828_20260829.md)。仓库截图与应用能力页截图见 [`docs/REPOSITORY_EVIDENCE_20260829.md`](docs/REPOSITORY_EVIDENCE_20260829.md)。
+
+## Windows 安装包
+
+私人仓库的 `v2.2.158` Release 提供 Windows 10/11 x64 全量安装包。下载 EXE 和全部 `.bin` 分片后即可安装；有 D 盘时默认安装到 `D:\Mework`，没有 D 盘时回退当前用户应用目录。
+
+安装包内置 Java 17、MySQL 8、FFmpeg/FFprobe、Python 媒体环境、whisper.cpp、离线 ASR 模型和 ImageMagick。首次启动会创建空数据库并生成每台机器独立的随机密钥，不包含开发者素材、任务、成片、数据库、API Key、中转站地址、账号或 Cookie。
+
+- 普通用户：[`INSTALLATION_GUIDE.md`](INSTALLATION_GUIDE.md)
+- AI 助手：[`AI_INSTALLATION_GUIDE.md`](AI_INSTALLATION_GUIDE.md)
+- 隐私边界：[`PRIVACY_RELEASE.md`](PRIVACY_RELEASE.md)
+- 机器清单：[`installer/ai-setup-manifest.json`](installer/ai-setup-manifest.json)
 
 ## 功能概览
 

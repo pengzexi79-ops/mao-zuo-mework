@@ -1,37 +1,81 @@
 {
-  "id": "release-2-2-157",
-  "version": "2.2.157",
+  "id": "release-2-2-158",
+  "version": "2.2.158",
   "releasedAt": "2026-08-29",
-  "kind": "当前本机构建",
-  "title": "D 盘运行实例持久化与历史刷新",
-  "summary": "将 D 盘 8762 实例从临时进程改为登录后自动启动和异常重启，并把本轮独立更新写入软件内完整历史。",
+  "kind": "正式发行",
+  "title": "Windows 全量离线安装与隐私发布",
+  "summary": "将猫作整理为可在 Windows 10/11 x64 新电脑直接安装的全量发行包，首次启动创建空数据库和本机随机密钥，并附带普通用户、AI 助手和机器可读安装说明。",
   "changes": [
-    "注册 Mework-D-8762 本机计划任务，通过 D 盘 start-d.bat 登录后启动应用，异常退出最多自动重启三次。",
-    "应用、数据、缓存、日志和运行入口继续保留在 D 盘，减少对 C 盘旧实例和系统盘空间的影响。",
-    "发行历史通过 release-notes.json、AppProps 版本和本机完整历史副本保持一致，能力中心可刷新并同步完整记录。"
+    "Inno Setup 改为运行时显式白名单，D 盘存在时默认安装到 D:\\Mework，没有 D 盘时回退当前用户应用目录。",
+    "随包提供 Java 17、MySQL 8 程序、FFmpeg/FFprobe、Python 媒体环境、whisper.cpp、离线 ASR 模型和 ImageMagick。",
+    "首次启动自动选择空闲端口、创建空 MySQL 数据目录、载入 schema，并分别生成数据库应用密码、root 密码和 Provider 凭据加密主密钥。",
+    "新增普通用户安装手册、AI 助手安装手册、隐私发布说明和机器可读 ai-setup-manifest。",
+    "发行 manifest 对应用文件和八个运行时目录生成 SHA-256、体积与文件数清单。"
   ],
   "fixes": [
-    "修复由任务临时启动的 8762 进程被外部生命周期回收后页面出现连接被拒绝的问题。",
-    "修复后续功能已落地但软件内历史仍停留在 2.2.152、无法逐次查看的问题。",
-    "避免为更新 D 盘实例而停止或覆盖 C 盘 8760 旧实例。"
+    "修复旧安装器使用 portable 通配符导致开发数据库和 Maven 可能进入安装包的问题。",
+    "修复新机数据库初始化依赖预装 mysqldata 和历史固定数据库密码的问题。",
+    "修复使用 mysqladmin ping 只能证明服务存活、不能证明应用账号可登录的身份误判。",
+    "修复安装验证只检查进程启动、不验证空素材、空 Provider、空任务和随机密钥的问题。",
+    "移除发行文档中的历史固定密码和开发机绝对路径。"
   ],
   "verification": [
-    "计划任务 Mework-D-8762 状态、D 盘工作目录、登录启动动作和三次异常重启策略已核对。",
-    "新 JAR 启动后 actuator 健康状态为 UP，8762 首页和发行历史接口可访问。",
-    "发行历史接口当前版本为 2.2.157、完整记录总数为 167，本机同步副本版本一致。"
+    "隔离 MySQL 端口实测空数据目录初始化、20 张表创建、应用账号和 root 随机密码登录及二次启动幂等。",
+    "verify_release_privacy.ps1 检查 Git 跟踪文件、安装器输入和可选安装目录的隐私边界。",
+    "verify_windows_install.ps1 检查运行时白名单、随机密钥脚本、真实 SELECT 1 身份验证和 D 盘优先目录。",
+    "verify_fresh_install.ps1 在隔离目录静默安装并验证应用 API、五张用户表为空、用户 Key 为空和受控进程清理。",
+    "前端生产构建、后端 Maven 测试、离线媒体 smoke、Inno Setup 编译和 Release SHA-256 校验通过。"
   ],
-  "compatibility": "计划任务和 8762 托管属于当前电脑的本机运行配置，不代表通用安装器自动具备同一策略；C 盘 8760 实例不修改。",
+  "compatibility": "支持 Windows 10/11 x64。安装包不迁移开发机数据库或素材；已有用户升级前应自行备份 data 目录。AI Provider、素材 API Key、账号登录、显卡驱动、代理和企业证书仍由用户按自身授权配置。",
   "evidence": [
-    "start-d.bat",
-    "backend/src/main/resources/release-notes.json",
-    "backend/src/main/java/com/douyin/mixcut/config/AppProps.java",
-    "backend/src/main/java/com/douyin/mixcut/service/ReleaseNotesService.java",
-    "backend/src/main/java/com/douyin/mixcut/service/LocalReleaseHistoryService.java",
-    "frontend/src/views/Capabilities.vue",
-    "docs/RELEASE_HISTORY_RULES.md"
+    "installer/Mework.iss",
+    "ensure_env.ps1",
+    "start_mysql.ps1",
+    "backend/src/main/resources/db/schema.sql",
+    "installer/generate_release_manifest.ps1",
+    "installer/ai-setup-manifest.json",
+    "verify_release_privacy.ps1",
+    "verify_windows_install.ps1",
+    "verify_fresh_install.ps1",
+    "INSTALLATION_GUIDE.md",
+    "AI_INSTALLATION_GUIDE.md",
+    "PRIVACY_RELEASE.md"
   ],
   "source": "backend/src/main/resources/release-notes.json",
   "history": [
+    {
+      "id": "release-2-2-157",
+      "version": "2.2.157",
+      "releasedAt": "2026-08-29",
+      "kind": "历史开发阶段",
+      "title": "D 盘运行实例持久化与历史刷新",
+      "summary": "将 D 盘 8762 实例从临时进程改为登录后自动启动和异常重启，并把本轮独立更新写入软件内完整历史。",
+      "changes": [
+        "注册 Mework-D-8762 本机计划任务，通过 D 盘 start-d.bat 登录后启动应用，异常退出最多自动重启三次。",
+        "应用、数据、缓存、日志和运行入口继续保留在 D 盘，减少对 C 盘旧实例和系统盘空间的影响。",
+        "发行历史通过 release-notes.json、AppProps 版本和本机完整历史副本保持一致，能力中心可刷新并同步完整记录。"
+      ],
+      "fixes": [
+        "修复由任务临时启动的 8762 进程被外部生命周期回收后页面出现连接被拒绝的问题。",
+        "修复后续功能已落地但软件内历史仍停留在 2.2.152、无法逐次查看的问题。",
+        "避免为更新 D 盘实例而停止或覆盖 C 盘 8760 旧实例。"
+      ],
+      "verification": [
+        "计划任务 Mework-D-8762 状态、D 盘工作目录、登录启动动作和三次异常重启策略已核对。",
+        "新 JAR 启动后 actuator 健康状态为 UP，8762 首页和发行历史接口可访问。",
+        "发行历史接口当前版本为 2.2.157、完整记录总数为 167，本机同步副本版本一致。"
+      ],
+      "compatibility": "计划任务和 8762 托管属于当前电脑的本机运行配置，不代表通用安装器自动具备同一策略；C 盘 8760 实例不修改。",
+      "evidence": [
+        "start-d.bat",
+        "backend/src/main/resources/release-notes.json",
+        "backend/src/main/java/com/douyin/mixcut/config/AppProps.java",
+        "backend/src/main/java/com/douyin/mixcut/service/ReleaseNotesService.java",
+        "backend/src/main/java/com/douyin/mixcut/service/LocalReleaseHistoryService.java",
+        "frontend/src/views/Capabilities.vue",
+        "docs/RELEASE_HISTORY_RULES.md"
+      ]
+    },
     {
       "id": "release-2-2-156",
       "version": "2.2.156",
@@ -2804,7 +2848,7 @@
       "changes": [
         "安装包新增内置完整 CPython 3.13.5（portable/python，约 118MB），不再依赖系统 Python；venv 启动自愈：检测到 pyvenv.cfg.home 失效时自动重绑到应用内 portable/python，离线秒级恢复 ASR/OCR/TTS 依赖",
         "内置 faster-whisper small 离线模型（portable/whisper-models，约 464MB），start.bat 设置 HF_HOME 到应用数据目录并在首启本地预置，语音转写不再需要联网下载",
-        "ensure_env.bat 与 .env.example 的默认数据库凭据对齐安装包内置 mysqldata（mixcut/MixcutLocal2026Secure8473），新电脑装完生成的 .env 可直接连接内置 MySQL",
+        "ensure_env.bat 与 .env.example 的默认数据库凭据对齐安装包内置 mysqldata（mixcut/<removed-legacy-database-password>），新电脑装完生成的 .env 可直接连接内置 MySQL",
         "start.bat 增加离线语音模型预置拷贝；setup_runtime.bat 无 venv 时优先用内置 Python 创建"
       ],
       "fixes": [

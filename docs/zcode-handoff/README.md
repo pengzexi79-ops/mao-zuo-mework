@@ -4,8 +4,8 @@ This directory is the D-drive handoff archive for the Mework project.
 
 ## Source locations
 
-- Project source and Git history: `D:\zcode\projects\ai-douyin-mixcut`
-- Original ZCode project: `C:\Users\Windows\WorkBuddy\2026-08-09-14-55-27\ai-douyin-mixcut`
+- Project source and Git history: `<release-workspace>\ai-douyin-mixcut`
+- Original ZCode project: `<legacy-workspace>\ai-douyin-mixcut`
 - Root-level handoff documents: `zcode-root`
 - ZCode session plans: `session-plans`
 - ZCode commands: `commands`

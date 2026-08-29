@@ -15,6 +15,7 @@ docs/zcode-handoff/monitor/*.json
 
 # Build output, dependencies, bundled runtimes, and delivery artifacts
 backend/target/
+backend/target-release/
 backend/.venv/
 frontend/node_modules/
 frontend/dist/
@@ -25,6 +26,7 @@ installer/version.iss
 installer/*.log
 installer/*.log.err
 sample-materials/
+/.tmp-*/
 
 # IDE and OS files
 .idea/

@@ -23,11 +23,8 @@ function Link-Tool([string]$name, [string]$src, [string]$dst) {
 
 # JDK 17
 Link-Tool 'JDK17' (Join-Path $tc 'jdk-17.0.2') (Join-Path $portable 'jdk-17')
-# MySQL 8 (bin + data)
+# MySQL 8 server binaries. User databases are created after installation.
 Link-Tool 'MySQL8' (Join-Path $tc 'mysql-8.0.28-winx64') (Join-Path $portable 'mysql')
-Link-Tool 'MySQL data' (Join-Path $tc 'mysqldata') (Join-Path $portable 'mysqldata')
-# Maven (build convenience)
-Link-Tool 'Maven' (Join-Path $tc 'apache-maven-3.9.11') (Join-Path $portable 'maven')
 
 # FFmpeg: prefer the configured local build, else system ffmpeg, else instruct.
 $ffmpegDir = 'C:\DevTools\ffmpeg-9.0-full_build'
@@ -78,5 +75,7 @@ if (Test-Path $venvPy) {
 
 Write-Host 'portable/ 内容：'
 Get-ChildItem $portable | Select-Object Name
+Write-Host '发行白名单：jdk-17、mysql、ffmpeg、python、whisper、whisper-models、imagemagick。'
+Write-Host 'mysqldata、maven、素材、缓存和日志不会进入安装包。'
 Write-Host ''
 if (-not $Copy) { Write-Host '提示：打包安装器前请用 -Copy 生成真实文件（Inno Setup 不跟随 Junction）。' }

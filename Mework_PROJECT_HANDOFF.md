@@ -99,7 +99,7 @@ The old canvas localStorage keys are no longer read. No broad browser-storage cl
 From the project root:
 
 ```powershell
-Set-Location 'C:\Users\Windows\WorkBuddy\2026-08-09-14-55-27\ai-douyin-mixcut\frontend'
+Set-Location '<legacy-workspace>\ai-douyin-mixcut\frontend'
 npm run build
 
 Set-Location '..\backend'
@@ -111,7 +111,7 @@ The frontend build rewrites `backend/src/main/resources/static`; never hand-edit
 Package only after the frontend build succeeds:
 
 ```powershell
-Set-Location 'C:\Users\Windows\WorkBuddy\2026-08-09-14-55-27\ai-douyin-mixcut\backend'
+Set-Location '<legacy-workspace>\ai-douyin-mixcut\backend'
 mvn -q package
 ```
 

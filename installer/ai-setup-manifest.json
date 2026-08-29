@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 1,
+  "product": {
+    "name": "猫作·Mework",
+    "version": "2.2.158",
+    "repository": "https://github.com/pengzexi79-ops/mao-zuo-mework",
+    "releaseTag": "v2.2.158",
+    "visibility": "private"
+  },
+  "platform": {
+    "os": ["Windows 10", "Windows 11"],
+    "architecture": "x64",
+    "preferredInstallDirectory": "D:\\Mework",
+    "fallbackInstallDirectory": "%LOCALAPPDATA%\\Programs\\Mework",
+    "recommendedFreeDiskGiB": 8
+  },
+  "assets": {
+    "installer": "Mework-Setup-2.2.158.exe",
+    "spannedData": "Mework-Setup-2.2.158-*.bin",
+    "checksums": "SHA256SUMS.txt",
+    "releaseManifest": "release-manifest.json"
+  },
+  "bundled": [
+    {"id": "application", "path": "backend/target/mixcut-delivery.jar"},
+    {"id": "java", "path": "portable/jdk-17"},
+    {"id": "mysql", "path": "portable/mysql", "dataIncluded": false},
+    {"id": "ffmpeg", "path": "portable/ffmpeg"},
+    {"id": "python", "path": "portable/python"},
+    {"id": "python-media-environment", "path": "backend/.venv"},
+    {"id": "whisper-cpp", "path": "portable/whisper"},
+    {"id": "offline-asr-models", "path": "portable/whisper-models"},
+    {"id": "imagemagick", "path": "portable/imagemagick"}
+  ],
+  "firstRun": {
+    "entry": "start.bat",
+    "healthEndpoint": "/api/system/env",
+    "bindAddress": "127.0.0.1",
+    "databaseDirectory": "%APP_DATA_DIR%/mysql",
+    "createsEmptyDatabase": true,
+    "generatesMachineSpecificSecrets": true,
+    "opensBrowser": true
+  },
+  "userConfiguration": [
+    {"id": "ai-provider", "location": "AI 接入", "secret": true, "requiredFor": ["AI 对话", "AI 图片", "AI 视频", "AI 配音"]},
+    {"id": "stock-api-keys", "location": "能力中心", "secret": true, "providers": ["Pixabay", "Pexels", "Unsplash", "Freesound"]},
+    {"id": "gpu-driver", "secret": false, "source": "hardware vendor official site"},
+    {"id": "proxy-or-enterprise-certificate", "secret": true, "source": "user or organization administrator"},
+    {"id": "user-materials", "secret": false, "source": "user-selected local folders"}
+  ],
+  "materialSources": {
+    "readyWithoutKey": [
+      {"name": "Openverse", "official": "https://openverse.org/"},
+      {"name": "Wikimedia Commons", "official": "https://commons.wikimedia.org/"},
+      {"name": "Internet Archive", "official": "https://archive.org/"}
+    ],
+    "requiresUserApiKey": [
+      {"name": "Pixabay", "official": "https://pixabay.com/api/docs/"},
+      {"name": "Pexels", "official": "https://www.pexels.com/api/"},
+      {"name": "Unsplash", "official": "https://unsplash.com/developers"},
+      {"name": "Freesound", "official": "https://freesound.org/docs/api/"}
+    ],
+    "browserCookiesImported": false
+  },
+  "privacy": {
+    "excluded": [
+      ".env",
+      "API keys and gateway addresses",
+      "accounts and browser cookies",
+      "portable/mysqldata",
+      "portable/maven",
+      "data",
+      "materials",
+      "sample-materials",
+      "cache",
+      "logs",
+      "temp",
+      "jobs and generated outputs",
+      "developer machine paths"
+    ],
+    "freshCredentialFieldsEmpty": [
+      "APP_ACCESS_TOKEN",
+      "APP_FREESOUND_API_KEY",
+      "APP_PIXABAY_API_KEY",
+      "APP_PEXELS_API_KEY",
+      "APP_UNSPLASH_API_KEY"
+    ],
+    "loginCrawlDefault": false
+  },
+  "verification": {
+    "runtime": "setup_runtime.bat verify",
+    "staticRelease": "verify_windows_install.ps1",
+    "privacy": "verify_release_privacy.ps1",
+    "freshInstall": "verify_fresh_install.ps1"
+  }
+}

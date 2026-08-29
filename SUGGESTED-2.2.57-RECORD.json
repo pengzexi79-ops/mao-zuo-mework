@@ -5,7 +5,7 @@
   "changes": [
     "安装包新增内置完整 CPython 3.13.5（portable/python，约 118MB），不再依赖系统 Python；venv 启动自愈：检测到 pyvenv.cfg.home 失效时自动重绑到应用内 portable/python，离线秒级恢复 ASR/OCR/TTS 依赖",
     "内置 faster-whisper small 离线模型（portable/whisper-models，约 464MB），start.bat 设置 HF_HOME 到应用数据目录并在首启本地预置，语音转写不再需要联网下载",
-    "ensure_env.bat 与 .env.example 的默认数据库凭据对齐安装包内置 mysqldata（mixcut/MixcutLocal2026Secure8473），新电脑装完生成的 .env 可直接连接内置 MySQL",
+    "ensure_env.bat 与 .env.example 的默认数据库凭据对齐安装包内置 mysqldata（mixcut/<removed-legacy-database-password>），新电脑装完生成的 .env 可直接连接内置 MySQL",
     "start.bat 增加离线语音模型预置拷贝；setup_runtime.bat 无 venv 时优先用内置 Python 创建"
   ],
   "fixes": [
