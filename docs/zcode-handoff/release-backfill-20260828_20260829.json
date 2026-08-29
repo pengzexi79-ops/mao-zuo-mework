@@ -1,0 +1,70 @@
+[
+  {
+    "version": "2.2.151",
+    "releasedAt": "2026-08-28",
+    "kind": "历史开发阶段",
+    "title": "AI 媒体生成结果入库与能力分流",
+    "summary": "补齐图片、视频和配音生成从供应商响应到任务记录、文件保存和素材库展示的完整链路。",
+    "changes": [
+      "按文本、图片、视频、配音和视觉能力分流 Provider 请求，避免将媒体模型错误发送到聊天接口。",
+      "OpenAI-compatible 媒体适配器兼容图片 URL、图片 Base64、视频异步任务轮询和远程媒体下载。",
+      "生成媒体经过文件类型、可读性和任务状态校验后关联素材库，AI 创作页支持结果预览、进入素材库和继续二创。",
+      "AI 接入页保留模型探测、能力匹配、路由配置和脱敏诊断；未确认的候选模型不会自动开放生成。"
+    ],
+    "fixes": [
+      "修复供应商后台已生成结果但应用等待聊天响应格式，导致图片 URL 或 Base64 结果无法显示的问题。",
+      "修复图片、视频和配音任务缺少持久化阶段、失败信息、超时处理或重启恢复的问题。",
+      "修复媒体适配器注册和线程池注入导致应用编译通过但运行 JAR 启动失败的问题。"
+    ],
+    "verification": [
+      "媒体适配器、媒体文件类型、AI 服务和 AI Web 控制器测试通过。",
+      "前端文本完整性、Vite production build 和静态资源引用校验通过。",
+      "D 盘运行实例可启动并通过系统健康检查；未实现的供应商协议继续明确拒绝。"
+    ],
+    "compatibility": "保留既有聊天链路和数据库结构；仅对已注册且具备明确协议的媒体能力执行，不把 OCR、ASR、视觉理解或任意视频协议标记为已接通。",
+    "evidence": [
+      "backend/src/main/java/com/douyin/mixcut/external/media/OpenAiCompatibleMediaAdapter.java",
+      "backend/src/main/java/com/douyin/mixcut/service/MediaGenerationService.java",
+      "backend/src/main/java/com/douyin/mixcut/external/media/MediaFileTypes.java",
+      "frontend/src/views/AiCreate.vue",
+      "frontend/src/views/AiSettings.vue",
+      "backend/src/test/java/com/douyin/mixcut/external/media/OpenAiCompatibleMediaAdapterTest.java"
+    ]
+  },
+  {
+    "version": "2.2.152",
+    "releasedAt": "2026-08-29",
+    "kind": "当前本机构建",
+    "title": "生成任务与出片交付工作流修复",
+    "summary": "围绕 AI 生成任务、素材交接、成片批量交付和出片台窄栏布局，修复会导致误操作、结果丢失或界面溢出的工作逻辑。",
+    "changes": [
+      "AI 生成任务支持单条保存、批量保存、保存选中、删除选中、清理已结束记录、结果预览和继续媒体二创。",
+      "素材库和媒体工具支持从生成任务携带目标素材上下文进入，生成文件与任务记录的生命周期分开管理。",
+      "成片库增加文件名、任务和交付状态筛选，按真实媒体元数据适配横屏、竖屏和正方形展示。",
+      "成片库批量下载排除无文件记录，批量删除只作用于用户选择的记录并报告部分失败。",
+      "出片台音频选项改为可收缩、可换行的布局，滑块和文本限制在容器内，兼容窄栏工作区。"
+    ],
+    "fixes": [
+      "修复 AI 任务自动轮询或刷新时清掉用户勾选，导致保存和删除对象发生变化的问题。",
+      "修复切换成片库筛选条件时误清空其它筛选范围的选择，以及全选与批量删除作用范围不一致的问题。",
+      "修复无文件成片记录仍被当作可下载资源，以及生成结果跳转后素材上下文丢失的问题。",
+      "修复出片台音频四个单选项在窄栏中被网格最小宽度挤出父容器的问题。"
+    ],
+    "verification": [
+      "完整 Maven 测试通过，包含 AI、媒体、任务可靠性、素材和 Web 控制器测试。",
+      "D 盘实例 http://127.0.0.1:8762/ 返回 HTTP 200，后端连接、ffmpeg 和 AI 状态可在页面完成检测。",
+      "420px 窄屏验证音频选项组 scrollWidth 与 clientWidth 一致；默认桌面尺寸下左侧出片参数区加载完成后正常显示。",
+      "git diff --check 通过；C 盘旧实例 8760 未修改。"
+    ],
+    "compatibility": "不删除素材库生成文件；任务记录删除与素材删除分离。继续复用既有 Render、预检、干跑、音频合同、QC、编辑器和成片交付链路。",
+    "evidence": [
+      "frontend/src/views/AiCreate.vue",
+      "frontend/src/views/Materials.vue",
+      "frontend/src/views/MediaTools.vue",
+      "frontend/src/views/Outputs.vue",
+      "frontend/src/views/Studio.vue",
+      "docs/zcode-handoff/M0_STUDIO_OUTPUTS_AUDIT_20260829.md",
+      "backend/src/test/java/com/douyin/mixcut/service/AiServiceTest.java"
+    ]
+  }
+]
