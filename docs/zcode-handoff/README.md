@@ -18,7 +18,7 @@ project is the active development location for this task.
 ## Snapshot
 
 - Snapshot date: 2026-08-29
-- Current application version: `2.2.150`
+- Current application version: `2.2.152`
 - Local development history: 65 committed baseline commits through `40dc8cb`, plus the dated 8/28–8/29 delivery record
 - GitHub share snapshot: updated from the D-drive source by the current delivery
 - Running D-drive instance: `http://127.0.0.1:8762/`

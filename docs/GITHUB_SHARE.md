@@ -19,7 +19,7 @@ Excluded intentionally:
 - `.env` files, API keys, passwords, and machine credentials.
 - Local databases, generated media, logs, caches, virtual environments, models, and portable runtimes.
 - Raw ZCode monitor state and activity logs, which contain machine telemetry and are not suitable for a shareable repository.
-- The current `2.2.150` Setup EXE, because a complete installer for that version has not been produced yet.
+- The current `2.2.152` Setup EXE, because a complete installer for that version has not been produced yet.
 
 To run from a fresh Windows checkout, install or provide the runtime dependencies,
 copy `.env.example` to `.env`, configure the local database and provider keys, then

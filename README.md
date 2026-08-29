@@ -8,7 +8,7 @@
 
 ## 当前进展
 
-当前开发版本为 `2.2.150`。截至 2026-08-29，D 盘工作树已包含媒体能力路由、音频合同与响度质检、渲染前置检查、AI 媒体适配器、任务恢复与取消、生成任务结果入库、素材/成片批量操作修复、资产识别交接，以及 D 盘启动器和安装验证流程。
+当前开发版本为 `2.2.152`。截至 2026-08-29，D 盘工作树已包含媒体能力路由、音频合同与响度质检、渲染前置检查、AI 媒体适配器、任务恢复与取消、生成任务结果入库、素材/成片批量操作修复、资产识别交接，以及 D 盘启动器和安装验证流程。
 
 完整开发提交记录见 [`docs/zcode-handoff/GIT_HISTORY.md`](docs/zcode-handoff/GIT_HISTORY.md) 及 GitHub 的 [`legacy-history-sanitized` 分支](https://github.com/pengzexi79-ops/mao-zuo-mework/tree/legacy-history-sanitized)；`main` 是可直接分享的最新源码快照。
 
