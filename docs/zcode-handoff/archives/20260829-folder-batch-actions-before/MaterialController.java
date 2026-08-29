@@ -200,44 +200,12 @@ public class MaterialController {
     }
     @DeleteMapping("/folders/{id}")
     public R<Void> deleteFolder(@PathVariable Long id) {
-        String reason = folderDeleteBlockReason(id);
-        if (reason != null) return R.fail(reason);
-        folderRepo.deleteById(id); return R.ok();
-    }
-
-    @Data
-    public static class BatchFolderDeleteReq { private List<Long> ids; }
-
-    @Data
-    public static class FolderDeleteSkip { private Long id; private String name; private String reason;
-        FolderDeleteSkip(Long id, String name, String reason) { this.id = id; this.name = name; this.reason = reason; }
-    }
-
-    /** 批量删除只处理空文件夹；有关联素材或子分类的项返回跳过原因，不做强删。 */
-    @org.springframework.transaction.annotation.Transactional
-    @PostMapping("/folders/batch-delete")
-    public R<Map<String, Object>> batchDeleteFolders(@RequestBody BatchFolderDeleteReq req) {
-        if (req.getIds() == null || req.getIds().isEmpty()) return R.fail("未选择文件夹");
-        var requested = new java.util.LinkedHashSet<>(req.getIds());
-        int deleted = 0;
-        var skipped = new java.util.ArrayList<FolderDeleteSkip>();
-        for (Long id : requested) {
-            if (id == null) continue;
-            MaterialFolder folder = folderRepo.findById(id).orElse(null);
-            if (folder == null) { skipped.add(new FolderDeleteSkip(id, "#" + id, "文件夹不存在")); continue; }
-            String reason = folderDeleteBlockReason(id);
-            if (reason != null) { skipped.add(new FolderDeleteSkip(id, folder.getName(), reason)); continue; }
-            folderRepo.deleteById(id);
-            deleted++;
+        if (folderRepo.findById(id).isEmpty()) return R.fail("文件夹不存在");
+        if (repo.countByFolderId(id) > 0) return R.fail("文件夹仍有关联素材，请先移动素材后再删除");
+        if (folderRepo.findAll().stream().anyMatch(folder -> id.equals(folder.getParentId()))) {
+            return R.fail("文件夹仍有音频/视频子分类，请先移走素材后再删除");
         }
-        return R.ok(Map.of("deleted", deleted, "skipped", skipped));
-    }
-
-    private String folderDeleteBlockReason(Long id) {
-        if (folderRepo.findById(id).isEmpty()) return "文件夹不存在";
-        if (repo.countByFolderId(id) > 0) return "仍有关联素材，请先移动素材";
-        if (folderRepo.findAll().stream().anyMatch(folder -> id.equals(folder.getParentId()))) return "仍有子分类，请先移走子分类素材";
-        return null;
+        folderRepo.deleteById(id); return R.ok();
     }
 
     @Data public static class MoveReq { private Long folderId; }

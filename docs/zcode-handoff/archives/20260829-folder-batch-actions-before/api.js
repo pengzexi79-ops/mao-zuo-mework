@@ -246,7 +246,6 @@ export const api = {
   createMaterialFolder: (body) => http.post('/api/materials/folders', body),
   updateMaterialFolder: (id, body) => http.put(`/api/materials/folders/${id}`, body),
   deleteMaterialFolder: (id) => http.delete(`/api/materials/folders/${id}`),
-  batchDeleteMaterialFolders: (body) => http.post('/api/materials/folders/batch-delete', body),
   moveMaterial: (id, body) => http.post(`/api/materials/${id}/move`, body),
   reprobeMaterial: (id) => http.post(`/api/materials/${id}/reprobe`),
   retryThumbnail: (id) => http.post(`/api/materials/${id}/thumbnail/retry`),

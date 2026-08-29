@@ -250,21 +250,7 @@
     <el-dialog v-model="folderVisible" title="管理素材文件夹" width="620px">
       <el-form label-width="84px"><el-form-item label="名称"><el-input v-model="folderDraft.name" placeholder="例如：护肤主体素材" /></el-form-item><el-form-item label="说明"><el-input v-model="folderDraft.description" placeholder="仅用于说明，不影响现有路径" /></el-form-item><el-form-item label="启用"><el-switch v-model="folderDraft.enabled" /></el-form-item></el-form>
       <div style="margin-bottom:12px"><el-button type="primary" :loading="savingFolder" @click="saveFolder">{{ folderDraft.id ? '保存文件夹' : '新建文件夹' }}</el-button><el-button @click="resetFolderDraft">取消编辑</el-button></div>
-      <div class="folder-batch-toolbar">
-        <el-checkbox :model-value="folderSelectionAll" :indeterminate="folderSelectionIndeterminate" :disabled="!folders.length" @change="toggleAllFolders">全选</el-checkbox>
-        <span class="muted">已选 {{ selectedFolders.length }} / {{ folders.length }}</span>
-        <el-button size="small" link :disabled="!selectedFolders.length" @click="clearFolderSelection">清空选择</el-button>
-        <el-popconfirm v-if="selectedFolders.length" :title="`确认删除选中的 ${selectedFolders.length} 个文件夹？有素材或子分类的文件夹会自动跳过。`" @confirm="batchDeleteFolders">
-          <template #reference><el-button size="small" type="danger" plain :loading="batchDeletingFolders">批量删除</el-button></template>
-        </el-popconfirm>
-      </div>
-      <el-table ref="folderTableRef" :data="folders" size="small" max-height="220" @selection-change="selectedFolders = $event">
-        <el-table-column type="selection" width="42" />
-        <el-table-column prop="name" label="名称" />
-        <el-table-column prop="description" label="说明" />
-        <el-table-column label="状态" width="90"><template #default="{ row }"><el-tag :type="row.enabled ? 'success' : 'info'" size="small">{{ row.enabled ? '启用' : '停用' }}</el-tag></template></el-table-column>
-        <el-table-column label="操作" width="190"><template #default="{ row }"><el-button link size="small" @click="loadFolderContents(row)">查看素材</el-button><el-button link size="small" @click="filterToFolder(row)">筛选</el-button><el-button link size="small" @click="editFolder(row)">编辑</el-button><el-popconfirm title="仅能删除没有关联素材的文件夹" @confirm="deleteFolder(row)"><template #reference><el-button link type="danger" size="small">删除</el-button></template></el-popconfirm></template></el-table-column>
-      </el-table>
+      <el-table :data="folders" size="small" max-height="220"><el-table-column prop="name" label="名称" /><el-table-column prop="description" label="说明" /><el-table-column label="状态" width="90"><template #default="{ row }"><el-tag :type="row.enabled ? 'success' : 'info'" size="small">{{ row.enabled ? '启用' : '停用' }}</el-tag></template></el-table-column><el-table-column label="操作" width="190"><template #default="{ row }"><el-button link size="small" @click="loadFolderContents(row)">查看素材</el-button><el-button link size="small" @click="filterToFolder(row)">筛选</el-button><el-button link size="small" @click="editFolder(row)">编辑</el-button><el-popconfirm title="仅能删除没有关联素材的文件夹" @confirm="deleteFolder(row)"><template #reference><el-button link type="danger" size="small">删除</el-button></template></el-popconfirm></template></el-table-column></el-table>
       <el-collapse v-if="Object.keys(folderContents).length" style="margin-top:12px"><el-collapse-item v-for="folder in folders.filter((item) => folderContents[item.id])" :key="folder.id" :name="String(folder.id)" :title="`${folder.name} 内的素材`"><div v-if="folderContentsLoading === folder.id" v-loading="true" style="height:64px"></div><div v-else v-for="group in folderMediaSummary(folder)" :key="group.type" class="folder-media-type"><b>{{ group.type === 'video' ? '视频' : group.type === 'audio' ? '音频' : '图片' }}</b><span class="muted">{{ group.items.length }} 条</span><div v-if="group.items.length" class="folder-media-items">{{ group.items.map((item) => item.name).join(' · ') }}</div></div></el-collapse-item></el-collapse>
     </el-dialog>
 
@@ -322,7 +308,7 @@
 </template>
 
 <script setup>
-import { computed, ref, reactive, nextTick, onMounted, onBeforeUnmount } from 'vue'
+import { computed, ref, reactive, onMounted, onBeforeUnmount } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import { api, ROLE_LABEL, uploadFile, importMaterialPackage, importMaterialPackageArchive } from '../api'
@@ -335,9 +321,6 @@ const loading = ref(false)
 const selected = ref([])
 const expandedFolderGroups = ref([])
 const folders = ref([])
-const folderTableRef = ref(null)
-const selectedFolders = ref([])
-const batchDeletingFolders = ref(false)
 const uploadItems = ref([])
 const batchRoleVal = ref('')
 const sliceSec = ref(3)
@@ -411,8 +394,6 @@ const folderDraft = reactive({ id: null, name: '', description: '', enabled: tru
 const folderContents = reactive({})
 const folderContentsLoading = ref(null)
 const enabledFolders = computed(() => folders.value.filter((folder) => folder.enabled !== false))
-const folderSelectionAll = computed(() => folders.value.length > 0 && selectedFolders.value.length === folders.value.length)
-const folderSelectionIndeterminate = computed(() => selectedFolders.value.length > 0 && selectedFolders.value.length < folders.value.length)
 const folderNameById = computed(() => new Map(folders.value.map((folder) => [String(folder.id), folder.name])))
 const materialGroups = computed(() => {
   const groups = new Map()
@@ -439,13 +420,9 @@ let analysisPollingInFlight = false
 function resetFolderDraft () { Object.assign(folderDraft, { id: null, name: '', description: '', enabled: true }) }
 function openFolderDialog () { resetFolderDraft(); folderVisible.value = true }
 function editFolder (folder) { Object.assign(folderDraft, { id: folder.id, name: folder.name, description: folder.description || '', enabled: folder.enabled !== false }); folderVisible.value = true }
-function syncFolderSelection () { selectedFolders.value = []; nextTick(() => folderTableRef.value?.clearSelection()) }
-function toggleAllFolders (checked) { folderTableRef.value?.clearSelection(); if (checked) folders.value.forEach((folder) => folderTableRef.value?.toggleRowSelection(folder, true)) }
-function clearFolderSelection () { folderTableRef.value?.clearSelection() }
-async function loadFolders () { folders.value = await api.materialFolders(); syncFolderSelection() }
+async function loadFolders () { folders.value = await api.materialFolders() }
 async function saveFolder () { if (!folderDraft.name.trim()) return ElMessage.warning('请填写文件夹名称'); savingFolder.value = true; try { if (folderDraft.id) await api.updateMaterialFolder(folderDraft.id, folderDraft); else await api.createMaterialFolder(folderDraft); await loadFolders(); resetFolderDraft(); ElMessage.success('文件夹已保存') } catch (error) { ElMessage.error(`保存文件夹失败：${error.message}`) } finally { savingFolder.value = false } }
 async function deleteFolder (folder) { try { await api.deleteMaterialFolder(folder.id); await loadFolders(); ElMessage.success('文件夹已删除') } catch (error) { ElMessage.error(`删除文件夹失败：${error.message}`) } }
-async function batchDeleteFolders () { if (!selectedFolders.value.length) return ElMessage.warning('请先勾选要删除的文件夹'); batchDeletingFolders.value = true; try { const result = await api.batchDeleteMaterialFolders({ ids: selectedFolders.value.map((folder) => folder.id) }); await loadFolders(); const skipped = result?.skipped || []; const message = `已删除 ${result?.deleted || 0} 个文件夹${skipped.length ? `，跳过 ${skipped.length} 个（${skipped.map((item) => item.name || `#${item.id}`).join('、')}）` : ''}`; skipped.length ? ElMessage.warning(message) : ElMessage.success(message) } catch (error) { ElMessage.error(`批量删除文件夹失败：${error.message}`) } finally { batchDeletingFolders.value = false } }
 async function loadFolderContents (folder) {
   if (!folder || folderContentsLoading.value === folder.id) return
   folderContentsLoading.value = folder.id
@@ -1097,8 +1074,6 @@ onBeforeUnmount(() => {
 .material-dropzone :deep(.el-upload__tip) { margin-top:8px; color:#606266; }
 .native-folder-input { position:absolute; width:1px; height:1px; opacity:0; pointer-events:none; }
 .selection-toolbar { display:flex; align-items:center; gap:8px; padding:8px 10px; margin:-4px 0 10px; background:#f5f9ff; border:1px solid #dbeafe; border-radius:6px; }
-.folder-batch-toolbar { display:flex; align-items:center; gap:10px; min-height:32px; margin:0 0 8px; padding:6px 8px; background:#f7f8fa; border:1px solid #ebeef5; border-radius:4px; }
-.folder-batch-toolbar .muted { margin-right:auto; }
 .material-folder-groups { border-top:1px solid #ebeef5; }
 .material-group-count { margin-left:12px; font-size:12px; }
 .folder-media-type { margin:8px 0; padding:8px; background:#fafafa; border-radius:4px; }
