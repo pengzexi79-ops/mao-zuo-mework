@@ -73,10 +73,10 @@
         <el-form-item label="总包名称"><el-input v-model="globalDropPackageName" maxlength="80" show-word-limit /></el-form-item>
         <el-alert v-if="globalDropPackageAudit" :type="globalDropPackageAudit.valid ? 'info' : 'warning'" :closable="false" show-icon :title="globalDropPackageAudit.reason || '名称审核中'" />
       </el-form>
-      <el-select v-if="!globalDropPackageMode" v-model="globalDropRole" placeholder="自动识别角色" clearable popper-class="global-drop-select-popper" style="width:100%;margin-bottom:10px">
+      <el-select v-if="!globalDropPackageMode" v-model="globalDropRole" placeholder="自动识别角色" clearable style="width:100%;margin-bottom:10px">
         <el-option label="自动识别" value="none" /><el-option label="实拍主体" value="body" /><el-option label="自家产品" value="product" /><el-option label="钩子" value="hook" /><el-option label="背景音乐" value="bgm" /><el-option label="人声口播" value="voice" />
       </el-select>
-      <el-select v-model="globalDropFolderId" :placeholder="globalDropPackageMode ? '不选择则按总包名创建/复用' : '不归档'" clearable popper-class="global-drop-select-popper" style="width:100%;margin-bottom:14px">
+      <el-select v-model="globalDropFolderId" :placeholder="globalDropPackageMode ? '不选择则按总包名创建/复用' : '不归档'" clearable style="width:100%;margin-bottom:14px">
         <el-option v-for="folder in globalDropFolders.filter((item) => item.enabled !== false)" :key="folder.id" :label="folder.name" :value="folder.id" />
       </el-select>
       <div><el-button @click="globalDropVisible = false">取消</el-button><el-button type="primary" :loading="globalUploading" @click="uploadDroppedFiles">确认导入</el-button></div>
