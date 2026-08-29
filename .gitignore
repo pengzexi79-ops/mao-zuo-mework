@@ -11,6 +11,7 @@ data/
 logs/
 temp/
 *.log
+docs/zcode-handoff/monitor/*.json
 
 # Build output, dependencies, bundled runtimes, and delivery artifacts
 backend/target/
