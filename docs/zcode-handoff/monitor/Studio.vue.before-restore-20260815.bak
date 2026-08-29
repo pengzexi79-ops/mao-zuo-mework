@@ -1,0 +1,2109 @@
+﻿<template>
+  <div>
+    <div class="card runtime-card">
+      <div class="card-title">鏈満杩愯鐜 <span class="hint">璐﹀彿瀵嗙爜宸茬敱閮ㄧ讲绋嬪簭閰嶇疆锛岄〉闈㈠彧鏄剧ず杩炴帴鐘舵€侊紝涓嶅睍绀烘晱鎰熷瘑鐮?/span></div>
+      <div class="runtime-grid">
+        <span><b>鍚庣</b><el-tag size="small" :type="initialError || runtimeUnavailable ? 'danger' : 'success'">{{ initialError || runtimeUnavailable ? '涓嶅彲杈? : (runtime.backend || '宸茶繛鎺?) }}</el-tag></span>
+        <span><b>鏁版嵁搴?/b><el-tag size="small" :type="runtime.databaseConnected ? 'success' : 'danger'">{{ runtime.databaseConnected ? '宸茶繛鎺? : '鏈繛鎺? }}</el-tag></span>
+        <span><b>ffmpeg</b><el-tag size="small" :type="runtime.ffmpeg ? 'success' : 'danger'">{{ runtime.ffmpeg ? '宸插氨缁? : '鏈娴嬪埌' }}</el-tag></span>
+        <span><b>ffprobe</b><el-tag size="small" :type="runtime.ffprobe ? 'success' : 'danger'">{{ runtime.ffprobe ? '宸插氨缁? : '鏈娴嬪埌' }}</el-tag></span>
+        <span><b>yt-dlp</b><el-tag size="small" :type="runtime['yt-dlp'] ? 'success' : 'warning'">{{ runtime['yt-dlp'] ? '鍙敤' : '鏈畨瑁咃紙鍙€夛級' }}</el-tag></span>
+        <span><b>you-get</b><el-tag size="small" :type="runtime['you-get'] ? 'success' : 'warning'">{{ runtime['you-get'] ? '鍙敤' : '鏈畨瑁咃紙鍙€夛級' }}</el-tag></span>
+      </div>
+      <div class="runtime-queue" v-if="queue"><span>娓叉煋涓?<b>{{ queue.active }}</b></span><span>绛夊緟 <b>{{ queue.pendingJobs }}</b></span><span>绾跨▼姹?<b>{{ queue.maxConcurrency }}</b> 璺?/span><span class="muted">闃熷垪闀垮害 {{ queue.queueSize }}</span></div>
+    </div>
+    <div class="studio-layout">
+    <!-- 宸︼細鍙傛暟 -->
+    <div class="studio-left" v-loading="initialLoading">
+      <div class="card autonomy-card">
+        <div class="card-title">
+          AI 鐢熶骇妯″紡
+          <span class="hint">鏈満鍋忓ソ锛堟寔涔呬繚瀛橈級锛涘彧鍐冲畾鏈鍑虹墖鐨勬巿鏉冭竟鐣岋紝涓嶅畨瑁呬换浣曠粍浠?/span>
+        </div>
+        <div class="autonomy-modes">
+          <div v-for="mode in AUTONOMY_MODES" :key="mode.key" class="autonomy-mode"
+            :class="{ active: autonomyMode === mode.key }" @click="autonomyMode = mode.key">
+            <div class="autonomy-mode-head">
+              <span class="autonomy-mode-radio" :class="{ checked: autonomyMode === mode.key }"></span>
+              <b>{{ mode.label }}</b>
+              <el-tag v-if="mode.key === 'autonomous'" size="small" type="warning" effect="plain">榛樿涓ユ牸浜や粯</el-tag>
+            </div>
+            <div class="autonomy-mode-desc">{{ mode.desc }}</div>
+          </div>
+        </div>
+        <div class="autonomy-toggles">
+          <div class="autonomy-toggle-row">
+            <el-switch v-model="publicAutoFill" size="small" />
+            <div class="autonomy-toggle-text">
+              <b>鍏紑绱犳潗鑷姩琛ラ綈</b>
+              <div class="form-hint">浠呬娇鐢ㄨ鍙彲楠岃瘉鐨勫厤鐧诲綍鍏紑婧愶紙Wikimedia / Archive锛夛紱楂樿川閲?Pexels/Pixabay 瑙嗛闇€鍦ㄨ兘鍔涗腑蹇冮厤缃畼鏂?Key銆傚叧闂悗鍙敤宸叉湁鏈湴绱犳潗銆?/div>
+            </div>
+          </div>
+          <div class="autonomy-toggle-row">
+            <el-tag size="small" type="success" effect="plain" style="flex:0 0 auto">鍐呯疆鍚敤</el-tag>
+            <div class="autonomy-toggle-text">
+              <b>澶辫触鑷姩淇</b>
+              <div class="form-hint">鎴愬搧璐ㄦ澶辫触鏃舵寜瀹夊叏绛栫暐鑷姩淇锛堟浛鎹㈣儗鏅煶涔?/ 鍒囨崲閽╁瓙 / 鍥為€€鍘熷０绛夛級锛屼粎浣跨敤宸插畨瑁呯殑鏈満鑳藉姏锛屾棤闇€瀹夎浠讳綍缁勪欢銆?/div>
+            </div>
+          </div>
+          <div v-if="autonomyMode === 'autonomous'" class="autonomy-toggle-row">
+            <el-switch v-model="p.strictDelivery" size="small" />
+            <div class="autonomy-toggle-text">
+              <b>涓ユ牸浜や粯锛堣嚜涓绘ā寮忛粯璁ゅ紑鍚級</b>
+              <div class="form-hint">閽╁瓙 / 閲嶅 / 瀛楀箷鍚屾绛夎川妫€浠庢彁绀哄崌绾т负纭€ф嫤鎴紝涓嶈揪鏍囩殑鎴愮墖涓嶄細閫氳繃锛涘叧闂悗涓庡崐鑷姩妯″紡淇濇寔涓€鑷淬€?/div>
+            </div>
+          </div>
+        </div>
+        <div class="autonomy-boundary">鑷富妯″紡鍙娇鐢細宸叉湁鏈湴/椤圭洰绱犳潗銆佸浐瀹氬厤鐧诲綍鍏紑婧愩€佸凡瀹夎鑳藉姏涓庢覆鏌?璐ㄦ/淇锛涚粷涓嶈繘琛屾敮浠樸€佺涓夋柟鐧诲綍銆侀獙璇佺爜/DRM 缁曡繃鎴栫郴缁熻缃慨鏀广€傞娆℃彁浜ゅ崐鑷姩/鑷富妯″紡鍓嶄細灞曠ず瀹屾暣鏉冮檺璇存槑銆?/div>
+      </div>
+      <el-alert v-if="initialError" type="error" :closable="false" show-icon style="margin-bottom:14px"
+        title="閮ㄥ垎鎺у埗鍙版暟鎹姞杞藉け璐ワ紱宸插姞杞界殑鍐呭浠嶅彲浣跨敤銆? >
+        <el-button size="small" type="primary" plain @click="loadInitial">閲嶆柊鍔犺浇</el-button>
+      </el-alert>
+      <div class="card">
+        <div class="card-title">1. 閫夐」鐩拰宸ヤ綔娴?/div>
+        <el-form label-width="80px">
+          <el-form-item label="椤圭洰">
+            <el-select v-model="projectId" clearable style="width:100%" @change="onProjectChange"
+              placeholder="涓嶉€変篃鑳借窇锛屼絾 AI 鏂囨浼氬緢娉?>
+              <el-option v-for="p in projects" :key="p.id" :label="p.name" :value="p.id" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="宸ヤ綔娴?>
+            <el-select v-model="workflowId" clearable style="width:100%" placeholder="涓嶉€夊垯浣跨敤褰撳墠琛ㄥ崟鍙傛暟" @change="onWorkflowChange">
+              <el-option v-for="w in workflows" :key="w.id" :label="w.name" :value="w.id" />
+            </el-select>
+            <div class="form-hint">閫夋嫨椤圭洰鎴栧伐浣滄祦鍙細杞藉叆瀹冩彁渚涚殑榛樿鍙傛暟锛涗綘闅忓悗淇敼鐨勫嚭鐗囧弬鏁颁細浣滀负鏈鍑虹墖鐨勬渶缁堝€笺€?/div>
+            <el-button v-if="workflowId" link type="warning" size="small" @click="clearWorkflow">鎾ら攢褰撳墠宸ヤ綔娴?/el-button>
+            <el-button link type="danger" size="small" @click="resetDraft">閲嶇疆鍑虹墖鑽夌</el-button>
+          </el-form-item>
+        </el-form>
+      </div>
+
+      <div class="card">
+        <div class="card-title">
+          2. 鍑虹墖鍙傛暟
+          <span class="hint">鍙粠椤圭洰銆佸伐浣滄祦鎴栬涓氶缃浇鍏ュ悗缁х画淇敼</span>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 12px">
+          <span class="muted" style="font-size:12px">琛屼笟棰勮</span>
+          <el-button size="small" :type="activeIndustryPreset === 'beauty' ? 'primary' : 'default'" :plain="activeIndustryPreset === 'beauty'" @click="applyPreset('beauty')" @dblclick="clearIndustryPreset">缇庡</el-button>
+          <el-button size="small" :type="activeIndustryPreset === 'skincare' ? 'primary' : 'default'" :plain="activeIndustryPreset === 'skincare'" @click="applyPreset('skincare')" @dblclick="clearIndustryPreset">鎶よ偆</el-button>
+          <el-button size="small" :type="activeIndustryPreset === 'food' ? 'primary' : 'default'" :plain="activeIndustryPreset === 'food'" @click="applyPreset('food')" @dblclick="clearIndustryPreset">椋熷搧</el-button>
+          <el-button size="small" :type="activeIndustryPreset === 'maternal' ? 'primary' : 'default'" :plain="activeIndustryPreset === 'maternal'" @click="applyPreset('maternal')" @dblclick="clearIndustryPreset">姣嶅┐</el-button>
+          <el-button size="small" :type="activeIndustryPreset === 'digital' ? 'primary' : 'default'" :plain="activeIndustryPreset === 'digital'" @click="applyPreset('digital')" @dblclick="clearIndustryPreset">3C 鏁扮爜</el-button>
+          <el-button size="small" :type="activeIndustryPreset === 'longmix' ? 'primary' : 'default'" :plain="activeIndustryPreset === 'longmix'" @click="applyLongMixPreset" @dblclick="clearIndustryPreset">涓撲笟闀挎贩鍓?120鈥?50s</el-button>
+          <el-button v-if="activeIndustryPreset" link type="warning" size="small" @click="clearIndustryPreset">鍙栨秷褰撳墠棰勮</el-button>
+          <span class="form-hint" style="flex:0 0 100%;margin:0">棰勮浼氫紭鍏堟寜鏂囦欢澶广€佽儗鏅煶涔愬拰鍙ｆ挱鍏抽敭璇嶉€夌礌鏉愶紱鍐嶆鐐瑰嚮鎴栧弻鍑诲凡閫夐璁惧彲鍙栨秷骞舵仮澶嶄箣鍓嶅弬鏁般€?/span>
+        </div>
+        <el-form label-width="96px" size="small">
+          <el-alert type="info" :closable="false" show-icon class="duration-guide"
+            title="鍏堣鏃堕暱锛屽啀寮€濮嬪嚭鐗?>
+            褰撳墠鏈夋晥鍖洪棿 <b>{{ p.minSec }}鈥搟{ p.maxSec }} 绉?/b>锛涙€绘椂闀垮繀椤昏惤鍦ㄨ繖涓尯闂村唴銆傞粯璁ゆ帹鑽愮害 100 绉掞紝鏈€闀挎敮鎸?300 绉掋€?
+          </el-alert>
+          <el-form-item label="鏃堕暱鍖洪棿" class="duration-range-item">
+            <el-slider v-model="durRange" range :min="5" :max="300"
+              :marks="{ 50: '50s', 100: '100s', 150: '150s', 300: '300s' }" />
+            <div class="form-hint">鎷栧姩涓ょ璁剧疆鏈€鐭?/ 鏈€闀挎椂闀匡紱鑼冨洿瓒婄獎锛屾壒閲忔垚鐗囪秺绋冲畾銆?/div>
+          </el-form-item>
+          <div class="material-summary">褰撳墠鍙敤锛?b>{{ selectedVisuals.length }}</b> 鏉＄敾闈紝绾?<b>{{ usableVisualSeconds.toFixed(1) }} 绉?/b>銆傝繖閲屾槸绱犳潗瀹归噺浼扮畻锛屼笉绛変簬鍙洿鎺ヤ氦浠橈紱寮€濮嬫壒閲忓墠璇峰厛瀹屾垚鍙充晶骞茶窇棰勮銆?/div>
+          <el-form-item label="閽╁瓙澹伴煶">
+            <el-switch v-model="p.autoMatchAudio" active-text="鑷姩鍖归厤" inactive-text="鎵嬪姩閫夋嫨" />
+            <el-select v-if="!p.autoMatchAudio" v-model="p.hookAudioMaterialId" clearable filterable style="width:210px;margin-left:8px" placeholder="閫夋嫨浜哄０鎴栫煭闊抽">
+              <el-option v-for="m in voiceList" :key="m.id" :label="m.name" :value="m.id" />
+            </el-select>
+            <span class="form-hint">閽╁瓙澹伴煶鍙湪閽╁瓙鐢婚潰鏃堕棿绐楁挱鏀撅紱鏈尮閰嶆椂涓嶄細鎵撴柇 BGM銆?/span>
+          </el-form-item>
+          <el-form-item label="瀵嗛泦妯″紡">
+            <el-switch v-model="p.dense" />
+            <span class="muted" style="margin-left:8px">鍚?100 绉掓敹鏁?/span>
+          </el-form-item>
+          <el-form-item label="鎬绘椂闀? class="target-duration-item">
+            <el-input-number v-model="p.targetDurationSec" :min="p.minSec" :max="p.maxSec" :step="1" controls-position="right" />
+            <span class="duration-unit">绉?/span>
+            <el-button v-if="p.targetDurationSec" link type="primary" size="small" @click="p.targetDurationSec = null">鎸夊尯闂磋嚜鍔ㄧ敓鎴?/el-button>
+            <div class="form-hint">杩欐槸鏈€瀹规槗璋冩暣鐨勪富鎺ч」锛氳緭鍏?{{ p.minSec }}鈥搟{ p.maxSec }} 绉掞紱涓嶅～鍒欐寜鍖洪棿鑷姩鐢熸垚銆?/div>
+          </el-form-item>
+          <el-alert v-if="durationWarning" type="warning" :closable="false" show-icon class="duration-warning" :title="durationWarning">
+            <el-button size="small" type="warning" plain @click="normalizeDuration">鏀逛负 {{ p.targetDurationSec < p.minSec ? p.minSec : p.maxSec }} 绉?/el-button>
+          </el-alert>
+          <el-form-item label="鐗囨鍒嗛厤">
+            <el-radio-group v-model="p.durationAllocationMode" size="small">
+              <el-radio-button label="equal">鍧囩瓑</el-radio-button>
+              <el-radio-button label="random">闅忔満</el-radio-button>
+            </el-radio-group>
+          </el-form-item>
+          <el-form-item label="鑷畾涔夌墖澶?>
+            <el-switch v-model="p.introEnabled" />
+            <template v-if="p.introEnabled">
+              <el-radio-group v-model="p.introMode" size="small" style="margin-left:8px">
+                <el-radio-button label="fixed">鍥哄畾鐗囧ご</el-radio-button>
+                <el-radio-button label="rotate">鎵归噺杞崲</el-radio-button>
+              </el-radio-group>
+              <el-select v-if="p.introMode === 'fixed'" v-model="p.introMaterialId" clearable filterable style="width:230px;margin-left:8px" placeholder="閫夋嫨鏈湴瑙嗛鎴栧浘鐗囩礌鏉?>
+                <el-option v-for="m in introCandidates" :key="m.id" :label="`${m.name} 路 ${m.durationSec ? m.durationSec.toFixed(1) + 's' : '鍥剧墖'}`" :value="m.id" />
+              </el-select>
+              <el-select v-else v-model="p.introMaterialId" clearable filterable style="width:230px;margin-left:8px" placeholder="鍙€夛細浼樺厛鐢ㄤ綔绗竴鏉＄墖澶?>
+                <el-option v-for="m in introCandidates" :key="m.id" :label="`${m.name} 路 ${m.durationSec ? m.durationSec.toFixed(1) + 's' : '鍥剧墖'}`" :value="m.id" />
+              </el-select>
+              <el-checkbox v-if="p.introMode === 'rotate'" v-model="p.introNoRepeat" style="margin-left:8px">鏈壒娆＄墖澶翠笉閲嶅</el-checkbox>
+              <el-checkbox v-if="p.introMode === 'rotate' && p.introNoRepeat" v-model="p.introAllowRepeatWhenInsufficient" style="margin-left:8px">鍊欓€変笉瓒虫椂鍏佽閲嶅</el-checkbox>
+              <span class="form-hint" style="flex-basis:100%">{{ introHint }}</span>
+            </template>
+          </el-form-item>
+          <el-form-item label="鎺堟潈鏂囦欢澶? v-if="!p.strictFolderSequence">
+            <el-select v-model="p.folderIds" multiple clearable filterable collapse-tags style="width:100%" placeholder="涓嶉€夋嫨鍒欎娇鐢ㄥ叏閮ㄥ凡褰掓。绱犳潗"><el-option v-for="folder in folders.filter((item) => item.enabled !== false)" :key="folder.id" :label="folder.name" :value="folder.id" /></el-select>
+            <span class="form-hint">閫夋嫨鍚庯紝骞茶窇鍜屽嚭鐗囧彧浼氫娇鐢ㄨ繖浜涙枃浠跺す涓殑绱犳潗銆?/span>
+          </el-form-item>
+          <el-form-item label="浜х墖鍥哄畾椤哄簭">
+            <el-switch v-model="p.strictFolderSequence" active-text="鎸夊綋鍓嶉『搴忚鍙? inactive-text="鏅€氭贩鍓? @change="onStrictFolderSequenceChange" />
+            <el-select v-if="p.strictFolderSequence" v-model="fixedOrderSkillKey" size="small" clearable filterable style="width:220px" placeholder="閫夋嫨浜х墖鍥哄畾椤哄簭鎶€鑳? @change="applyFixedOrderPreset">
+              <el-option v-for="preset in FIXED_ORDER_PRESETS" :key="preset.key" :label="preset.name" :value="preset.key" />
+            </el-select>
+            <el-button v-if="p.strictFolderSequence" link type="primary" size="small" @click="router.push('/fixed-order-presets')">鏌ョ湅鍏ㄩ儴棰勭疆</el-button>
+            <span class="form-hint">杩欐槸鍙紪杈戠殑椤哄簭寤鸿锛屼笉鏄啓姝荤殑鍏娴佺▼銆傛瘡涓€姝ュ彧浣跨敤鑷繁缁戝畾鐨勫簲鐢ㄥ唴鏂囦欢澶广€?/span>
+          </el-form-item>
+          <div v-if="p.strictFolderSequence" class="folder-stage-list">
+            <div class="folder-stage-toolbar">
+              <span class="muted">褰撳墠 {{ p.folderReadSteps.length }} 姝ワ紱榛樿鍙樉绀哄墠涓夋锛屽悗缁彲鑷娣诲姞鎴栧垹闄ゃ€?/span>
+              <el-button size="small" type="primary" plain @click="addFolderReadStep">锛?娣诲姞璇诲彇姝ラ</el-button>
+            </div>
+            <div v-for="(step, index) in visibleFolderReadSteps" :key="step.order" class="folder-stage-row">
+              <el-tag size="small" type="primary">{{ step.order }}</el-tag>
+              <el-input v-model="step.name" maxlength="80" style="width:132px" />
+              <el-select v-model="step.folderId" clearable filterable style="width:170px" placeholder="閫夋嫨鏂囦欢澶?><el-option v-for="folder in folders.filter((item) => item.enabled !== false)" :key="folder.id" :label="folder.name" :value="folder.id" /></el-select>
+              <el-button v-if="step.folderId" link type="warning" size="small" @click="clearStepFolder(step)">鍙栨秷缁戝畾</el-button>
+              <el-input-number v-model="step.targetSec" :min="1" :max="300" :step="1" style="width:106px" />
+              <span class="muted">绉?/span>
+              <el-switch v-model="step.enabled" active-text="鍚敤" inactive-text="鍋滅敤" />
+              <el-switch v-model="step.required" active-text="蹇呭～" inactive-text="鍙烦杩? />
+              <el-select v-model="step.shortagePolicy" style="width:118px"><el-option label="涓嶈冻鍗抽樆鏂? value="block" /><el-option label="鏈楠ゅ鐢? value="fallback" /></el-select>
+              <el-select v-if="step.shortagePolicy === 'fallback'" v-model="step.fallbackFolderId" clearable filterable style="width:150px" placeholder="澶囩敤鏂囦欢澶?><el-option v-for="folder in folders.filter((item) => item.enabled !== false && item.id !== step.folderId)" :key="folder.id" :label="folder.name" :value="folder.id" /></el-select>
+              <el-button circle text type="danger" title="鍒犻櫎姝よ鍙栨楠? @click="removeFolderReadStep(index)">鈭?/el-button>
+            </div>
+            <el-button v-if="p.folderReadSteps.length > 3" link type="primary" size="small" @click="showAllFolderSteps = !showAllFolderSteps">{{ showAllFolderSteps ? '鏀惰捣鍒板墠涓夋' : `灞曞紑鍏朵綑 ${p.folderReadSteps.length - 3} 姝 }}</el-button>
+            <div class="form-hint">鍚敤涓斿繀濉殑姝ラ蹇呴』閰嶇疆鏂囦欢澶癸紱鍋滅敤鎴栧彲璺宠繃姝ラ涓嶄細闃绘柇銆備换鍔″垱寤烘椂浼氶攣瀹氭湰娆￠『搴忋€佹枃浠跺す鍜屽弬鏁般€?/div>
+          </div>
+          <el-form-item label="鎸囧畾绱犳潗" v-if="!p.strictFolderSequence">
+            <el-tag type="primary">宸叉寚瀹?{{ p.materialIds?.length || 0 }} 鏉?/el-tag>
+            <el-button link type="danger" :disabled="!(p.materialIds?.length)" @click="p.materialIds = []">娓呯┖鎸囧畾</el-button>
+            <span class="form-hint">浠庣礌鏉愬簱鍕鹃€夆€滈€佸幓鍑虹墖鈥濆悗甯﹀叆锛涗笌鎺堟潈鏂囦欢澶瑰悓閫夋椂浣跨敤骞堕泦銆?/span>
+            <div v-if="p.materialIds?.length" class="selected-materials">
+              <el-tag v-for="material in selectedVisuals" :key="material.id" closable size="small" @close="p.materialIds = p.materialIds.filter((id) => Number(id) !== Number(material.id))">{{ material.name }}</el-tag>
+              <span v-if="!selectedVisuals.length" class="muted">鎸囧畾绱犳潗涓嶅彲璇诲彇鎴栧凡琚Щ闄わ紝璇峰洖绱犳潗搴撻噸鏂伴€夋嫨銆?/span>
+            </div>
+          </el-form-item>
+          <el-form-item label="绱犳潗瑙勫垯">
+            <el-radio-group v-model="p.materialSelectionMode" size="small"><el-radio-button label="rules-only">浠呬汉宸ュ垎缁?/el-radio-button><el-radio-button label="cross-folder">璺ㄦ枃浠跺す缁勫悎</el-radio-button></el-radio-group>
+          </el-form-item>
+          <el-form-item label="椤圭洰鐩稿叧鎬?>
+            <el-switch v-model="p.projectRelevantOnly" active-text="鍙敤鐩稿叧绱犳潗" inactive-text="鍏佽鍏ㄩ儴绱犳潗" />
+            <span class="form-hint">寮€鍚悗浼氭寜椤圭洰鍝佺被銆佸崠鐐广€佺鐢ㄨ瘝鍜岀礌鏉愭爣绛炬帓闄ゆ槑鏄炬棤鍏崇敾闈紱浜哄伐鎸囧畾绱犳潗浼樺厛淇濈暀銆?/span>
+          </el-form-item>
+          <el-form-item label="鍏煎鏃ч厤缃? class="legacy-duration-item">
+            <el-input-number v-model="p.targetSec" :min="p.minSec" :max="p.maxSec" placeholder="鐣欑┖" />
+            <span class="muted" style="margin-left:6px">浠呯敤浜庤鍙栨棫椤圭洰锛涙柊浠诲姟璇蜂娇鐢ㄤ笂鏂光€滄€绘椂闀库€?/span>
+          </el-form-item>
+          <el-divider content-position="left"><span style="font-size:12px">甯哥敤璐ㄩ噺鍙傛暟</span></el-divider>
+          <el-form-item label="鍗曠墖鏃堕暱">
+            <el-input-number v-model="p.sliceSec" :min="1" :max="10" :step="0.5" />
+            <span class="muted" style="margin-left:6px">绉掞紱2鈥? 绉掕妭濂忓揩锛?鈥? 绉掓洿绋?/span>
+          </el-form-item>
+          <el-form-item label="鐗囨鑼冨洿">
+            <el-input-number v-model="p.minSegmentSec" :min="0.8" :max="15" :step="0.1" />
+            <span class="muted" style="margin:0 6px">鑷?/span>
+            <el-input-number v-model="p.maxSegmentSec" :min="p.minSegmentSec" :max="15" :step="0.1" />
+            <span class="muted" style="margin-left:6px">绉掞紱鑼冨洿瓒婄獎瓒婄ǔ瀹?/span>
+          </el-form-item>
+          <el-form-item label="闀跨礌鏉愭媶鏉?>
+            <el-switch v-model="p.explodeLongClips" />
+            <span class="muted" style="margin-left:8px">寮€鍚彲鎻愰珮绱犳潗鍒╃敤鐜囷紝浣嗛噸澶嶉闄╀細涓婂崌</span>
+          </el-form-item>
+          <el-form-item label="鍚岀礌鏉愪笂闄?>
+            <el-input-number v-model="p.maxSlicesPerMaterial" :min="1" :max="10" />
+            <span class="muted" style="margin-left:6px">鐗囷紱寤鸿 3锛屽お楂樺鏄撶敾闈㈤噸澶?/span>
+          </el-form-item>
+          <el-form-item label="鍘婚噸涓ユ牸搴?>
+            <el-radio-group v-model="p.dedupStrictness" size="small">
+              <el-radio-button label="standard">鏍囧噯锛堢瀹屽叏閲嶅锛?/el-radio-button>
+              <el-radio-button label="strict">涓ユ牸锛堝悓婧愪笉閲嶅彔锛?/el-radio-button>
+              <el-radio-button label="off">鍏抽棴</el-radio-button>
+            </el-radio-group>
+            <div class="form-hint">涓ユ牸妯″紡浼氬湪鍚屼竴鏉℃垚鐗囧唴绂佹鍚屼竴绱犳潗婧愮殑鏃堕棿鍖洪棿閲嶅彔锛涚礌鏉愭簮涓嶈冻鏃朵細鍦ㄥ共璺戞棩蹇楅噷缁欏嚭鏄庣‘涓嶈冻鎶ュ憡銆?/div>
+          </el-form-item>
+          <el-form-item label="鍚屾簮涓嶉噸鍙?>
+            <el-switch v-model="p.allowSameSourceNonoverlap" />
+            <span class="muted" style="margin-left:8px">鍏佽鍚屼竴绱犳潗鎷嗘垚澶氭浜掍笉閲嶅彔鐨勭敾闈?/span>
+          </el-form-item>
+          <el-form-item label="鑷姩鍐嶉挬瀛?>
+            <el-switch v-model="p.autoRehook" />
+            <span class="muted" style="margin-left:8px">鍦ㄧ墖涓鑷姩琛ヤ竴鍙ュ啀閽╁瓙鎷変綇瀹屾挱</span>
+          </el-form-item>
+          <el-form-item v-if="p.autoRehook" label="鍐嶉挬瀛愭枃妗?>
+            <el-input v-model="p.rehookText" placeholder="鐣欑┖鐢?AI 鎸夐挬瀛愮瓥鐣ヨ嚜鍔ㄧ敓鎴? />
+          </el-form-item>
+          <el-form-item label="缁撴瀯鎺у埗">
+            <el-input-number v-model="p.hookSec" :min="0" :max="10" :step="0.5" />
+            <span class="muted" style="margin:0 6px">閽╁瓙绉?/span>
+            <el-input-number v-model="p.productSlots" :min="0" :max="10" />
+            <span class="muted" style="margin:0 6px">浜у搧娈?/span>
+            <el-input-number v-model="p.productSec" :min="1" :max="10" :step="0.5" />
+            <span class="muted">绉?娈?/span>
+          </el-form-item>
+          <el-form-item label="鐢诲竷">
+            <el-select v-model="canvasKey" style="width:260px">
+              <el-option label="绔栧睆 1080脳1920锛堟姈闊虫帹鑽愶級" value="1080x1920" />
+              <el-option label="鏂瑰舰 1080脳1080" value="1080x1080" />
+              <el-option label="妯睆 1920脳1080" value="1920x1080" />
+              <el-option label="绔栧睆 1080脳1350锛?:5锛? value="1080x1350" />
+              <el-option label="绔栧睆 1080脳1440锛?:4锛? value="1080x1440" />
+            </el-select>
+            <span class="muted" style="margin-left:8px">鐢诲箙鍙樺寲浼氬奖鍝嶈鍒囧拰瀛楀箷浣嶇疆</span>
+          </el-form-item>
+          <el-form-item label="甯х巼">
+            <el-select v-model="p.fps" style="width:140px">
+              <el-option :value="24" label="24" /><el-option :value="25" label="25" />
+              <el-option :value="30" label="30锛堟帹鑽愶級" /><el-option :value="60" label="60锛堟洿鎱級" />
+            </el-select>
+          </el-form-item>
+          <el-form-item><el-button plain size="small" @click="advancedOpen = !advancedOpen">{{ advancedOpen ? '鏀惰捣楂樼骇璁剧疆' : '灞曞紑楂樼骇璁剧疆锛堢墖澶淬€侀殢鏈虹瀛愩€侀煶棰戠粏璋冦€佸瓧骞曪級' }}</el-button></el-form-item>
+
+          <div v-show="advancedOpen">
+          <el-divider content-position="left"><span style="font-size:12px">楂樼骇鎷嗘潯涓庣粨鏋?/span></el-divider>
+          <el-form-item label="鐗囧ご鏃堕暱" v-if="p.introEnabled">
+            <el-input-number v-model="p.introDurationSec" :min="0.8" :max="15" :step="0.5" />
+            <span class="muted" style="margin-left:6px">绉掞紱鐗囧ご浼氬崰鐢ㄦ€绘椂闀?/span>
+          </el-form-item>
+          <el-form-item label="闅忔満绉嶅瓙">
+            <el-input-number v-model="p.seed" :min="0" :max="2147483647" controls-position="right" placeholder="鑷姩" />
+            <el-button v-if="p.seed != null" link type="primary" size="small" @click="p.seed = null">鎭㈠鑷姩</el-button>
+            <div class="form-hint">鍚屼竴椤圭洰鍜岀瀛愪細灏介噺澶嶇幇鐩稿悓鍙栫墖锛涚暀绌鸿姣忔鑷劧鍙樺寲銆?/div>
+          </el-form-item>
+          <el-form-item label="鏃堕暱鎶栧姩">
+            <el-input-number v-model="p.sliceJitter" :min="0" :max="2" :step="0.1" />
+            <div class="form-hint">卤闅忔満锛涘缓璁?0.2鈥?.5 绉掞紝杩囧ぇ浼氶檷浣庢椂闀跨ǔ瀹氭€?/div>
+          </el-form-item>
+          <el-form-item label="鏄庢槦鍗犳瘮">
+            <el-slider v-model="celebPct" :min="0" :max="80" :format-tooltip="(v) => v + '%'" />
+            <div class="form-hint">鍙湪绱犳潗搴撴湁鏄庢槦/杈句汉瑙掕壊鏃剁敓鏁?/div>
+          </el-form-item>
+          <el-form-item label="鐗囧熬">
+            <el-switch v-model="p.endcard" />
+            <span class="muted" style="margin-left:8px">鐗囧熬绱犳潗浼氬崰鐢ㄧ洰鏍囨椂闀?/span>
+          </el-form-item>
+          <el-form-item label="澹伴煶妯″紡">
+            <el-radio-group v-model="p.audioMode" size="small" @change="onAudioModeChange">
+              <el-radio-button label="material-audio">浜哄伐鍙ｆ挱 + 鏂板瓧骞?/el-radio-button>
+              <el-radio-button label="original">淇濈暀鍘熺墖澹伴煶</el-radio-button>
+              <el-radio-button label="ai-voice">AI 鑷劧浜哄０</el-radio-button>
+              <el-radio-button label="silent">鐪熸闈欓煶瑙嗛</el-radio-button>
+            </el-radio-group>
+            <div class="form-hint">浜哄伐鍙ｆ挱妯″紡鍙娇鐢ㄦ槑纭€夋嫨鐨勫彛鎾?BGM锛汚I 浜哄０涓嶄細鍙犲姞銆傜湡姝ｉ潤闊宠棰戜細绉婚櫎鍘熺墖澹伴煶銆佷笉鐢熸垚 BGM銆丄I/TTS 鎴栨柊瀛楀箷锛屽苟楠岃瘉鏈€缁堟枃浠朵笉鍚煶棰戞祦銆?/div>
+          </el-form-item>
+          <el-form-item v-if="p.audioMode === 'original'" label="鍘熺墖澹伴煶闊抽噺">
+            <el-slider v-model="originalAudioPct" :min="0" :max="100" :format-tooltip="(v) => v + '%'" />
+          </el-form-item>
+          <el-form-item v-if="p.audioMode === 'ai-voice'" label="AI 浜哄０闊宠壊">
+            <el-select v-model="p.ttsVoice" style="width:100%"><el-option label="鏅撴檽锛堝コ澹帮級" value="zh-CN-XiaoxiaoNeural" /><el-option label="鏅撲紛锛堝コ澹帮級" value="zh-CN-XiaoyiNeural" /><el-option label="浜戝笇锛堢敺澹帮級" value="zh-CN-YunxiNeural" /><el-option label="浜戝仴锛堢敺澹帮級" value="zh-CN-YunjianNeural" /></el-select>
+          </el-form-item>
+          <el-form-item label="鑳屾櫙闊充箰">
+            <el-select v-model="p.bgmMaterialId" clearable filterable style="width:100%"
+              placeholder="鐣欑┖鏃朵粠鑳屾櫙闊充箰瑙掕壊涓殢鏈洪€夋嫨">
+              <el-option v-for="m in bgmList" :key="m.id" :label="m.name" :value="m.id" />
+            </el-select>
+            <div class="form-hint">鍙洿鎺ラ€夋嫨浠绘剰鍙闊抽浣滀负寰幆鑳屾櫙澹帮紱鏃х礌鏉愬嵆浣挎爣涓衡€滀汉澹板彛鎾€濅篃鏃犻渶閲嶆柊瀵煎叆銆?/div>
+          </el-form-item>
+          <el-form-item label="鑳屾櫙闊充箰闊抽噺">
+            <el-slider v-model="bgmPct" :min="0" :max="100" :format-tooltip="(v) => v + '%'" />
+          </el-form-item>
+          <el-form-item label="閽╁瓙澹伴煶闊抽噺">
+            <el-slider v-model="hookAudioPct" :min="0" :max="100" :format-tooltip="(v) => v + '%'" />
+            <span class="muted" style="margin-left:8px">鍙奖鍝嶉挬瀛愭椂闂寸獥</span>
+          </el-form-item>
+          <el-form-item label="鍙ｆ挱浜哄０">
+            <el-select v-model="p.voiceMaterialId" clearable filterable style="width:100%"
+              placeholder="鐣欑┖=鎸夊綋鍓嶆ā寮忓鐞? @change="onVoiceMaterialChange">
+              <el-option v-for="m in voiceList" :key="m.id" :label="m.name" :value="m.id" />
+            </el-select>
+            <div v-if="p.voiceMaterialId" class="form-hint">宸查攣瀹氭寚瀹氬彛鎾紱鎻愪氦鏃朵笉浼氱敓鎴?AI 璇煶锛屼篃涓嶄細鑷姩閫夌浜屾潯浜哄０銆?/div>
+          </el-form-item>
+
+          <el-divider content-position="left"><span style="font-size:12px">閽╁瓙鏂囨</span></el-divider>
+          <el-form-item label="鏅鸿兘鐢熸垚">
+            <el-switch v-model="p.aiHook" />
+            <span class="muted" style="margin-left:8px">鎵归噺鏃舵瘡鏉¤嚜鍔ㄦ崲涓€鍙?/span>
+          </el-form-item>
+          <el-form-item label="鎵嬪～閽╁瓙">
+            <el-input v-model="p.hookText" placeholder="濉啓鍚庝笉浣跨敤鏅鸿兘鐢熸垚锛屾暣鎵逛娇鐢ㄥ悓涓€鍙? />
+          </el-form-item>
+          <el-form-item label="鐑ч挬瀛愬瓧骞?>
+            <el-switch v-model="p.burnHookText" />
+          </el-form-item>
+          <el-form-item label="鍏ㄧ墖鑷姩瀛楀箷">
+            <el-switch v-model="p.autoSubtitles" active-text="鎸夋巿鏉冭浆褰? inactive-text="鍏抽棴" />
+            <span class="form-hint">浠呯儳褰曞湪绱犳潗搴撲腑鏄庣‘寮€鍚?杞綍瀛楀箷"涓斿凡鎴愬姛瀹屾垚璇煶璇嗗埆鐨勭礌鏉愬瓧骞曘€傝鍦ㄧ礌鏉愬垪琛ㄤ腑瀵归渶瑕佺殑绱犳潗寮€鍚浆褰曟巿鏉冦€?/span>
+          </el-form-item>
+          <el-form-item label="鏃у瓧骞曟竻鐞?>
+            <el-switch v-model="p.cleanSourceSubtitles" active-text="娓呯悊" inactive-text="淇濈暀" @change="onSourceSubtitleCleanChange" />
+            <span class="form-hint">閫傚悎甯﹁揣浜屽垱绱犳潗锛氬厛閬洊甯歌搴曢儴鏃у瓧骞曞畨鍏ㄥ尯锛屽啀鐑у綍鏂扮殑 ASR/AI 鍙ｆ挱瀛楀箷锛岄伩鍏嶅弻瀛楀箷鍙犲姞銆?/span>
+          </el-form-item>
+          <el-form-item v-if="p.cleanSourceSubtitles" label="娓呯悊妯″紡">
+            <el-select v-model="p.sourceSubtitleCleanMode" style="width:100%">
+              <el-option label="搴曢儴鏃у瓧骞曞畨鍏ㄥ尯閬洊锛堢ǔ瀹氾級" value="subtitle-safe-band" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="瀛楀彿 / 棰滆壊">
+            <el-input-number v-model="p.hookFontSize" :min="20" :max="160" style="width:120px" />
+            <el-input v-model="p.hookFontColor" style="width:110px;margin-left:8px" placeholder="鐧借壊" />
+          </el-form-item>
+          <el-form-item label="瀛椾綋鏂囦欢">
+            <el-input v-model="p.fontFile" placeholder="鍙€夛細鏈嶅姟鍣ㄤ笂鐨勪腑鏂囧瓧浣撴枃浠惰矾寰? />
+            <div class="form-hint">鍙暀绌猴紝鐢辨湇鍔″櫒鑷姩閫夋嫨鍙敤涓枃瀛椾綋锛涗笉鍐嶇粦瀹?Windows 璺緞</div>
+          </el-form-item>
+          <el-form-item label="鏂囦欢鍚嶅墠缂€">
+            <el-input v-model="p.namePrefix" placeholder="mix" />
+          </el-form-item>
+          </div>
+        </el-form>
+      </div>
+    </div>
+
+    <!-- 鍙筹細棰勮 + 鍑虹墖 -->
+    <div class="studio-main">
+      <div class="card">
+        <div class="card-title">
+          3. 骞茶窇棰勮
+          <span class="hint">涓嶆覆鏌擄紝鍙湅鏃堕棿绾裤€傜‘璁や骇鍝佹杩涘幓浜嗐€佹椂闀垮浜嗗啀鎵归噺璺?/span>
+          <span style="flex:1"></span>
+          <el-input-number v-model="variant" :min="0" :max="99" size="small" style="width:110px" />
+          <el-button size="small" style="margin-left:8px" :loading="dry" @click="doDryRun">棰勮绗?N 鏉?/el-button>
+        </div>
+
+        <div v-if="plan">
+          <div style="display:flex;gap:16px;font-size:13px;margin-bottom:10px;flex-wrap:wrap">
+            <span>鐩爣 <b>{{ plan.targetSec.toFixed(1) }}s</b></span>
+            <span>瀹為檯 <b :style="{ color: inRange ? '#67c23a' : '#f56c6c' }">{{ plan.plannedSec.toFixed(1) }}s</b></span>
+            <span>鐗囨 <b>{{ plan.segments.length }}</b> 涓?/span>
+            <span>閽╁瓙 <b>{{ plan.hookText || '锛堟棤锛? }}</b></span>
+            <span v-if="plan.hookEndSec > plan.hookStartSec" class="muted">閽╁瓙澹扮敾 {{ plan.hookStartSec.toFixed(1) }}鈥搟{ plan.hookEndSec.toFixed(1) }}s</span>
+            <span class="muted">閽╁瓙闊抽 {{ plan.hookAudioPath ? '宸茬粦瀹? : '鏈缃? }}</span>
+            <span class="muted">BGM {{ plan.bgmPath ? '宸查€夋嫨' : '鏈缃? }} 路 鍙ｆ挱 {{ plan.voicePath ? '宸查€夋嫨' : '鏈缃? }}</span>
+            <span class="muted">闅忔満鏍囪瘑 {{ plan.seed }}</span>
+          </div>
+          <div v-if="plan.hookStrategy || plan.rehookText || plan.semanticSegmentCount || plan.gridFallbackCount" style="display:flex;gap:14px;font-size:12px;flex-wrap:wrap;margin-bottom:10px">
+            <span v-if="plan.hookStrategy" class="muted">閽╁瓙绛栫暐 <b>{{ hookStrategyLabel(plan.hookStrategy) }}</b></span>
+            <span v-if="plan.rehookText" class="muted">涓鍐嶉挬瀛?{{ plan.rehookWindowStart?.toFixed?.(1) ?? plan.rehookWindowStart }}鈥搟{ plan.rehookWindowEnd?.toFixed?.(1) ?? plan.rehookWindowEnd }}s 路 {{ plan.rehookText }}</span>
+            <span v-if="plan.semanticSegmentCount" class="muted">璇箟鍊欓€?<b>{{ plan.semanticSegmentCount }}</b> 鏉?/span>
+            <span v-if="plan.gridFallbackCount" class="muted" style="color:#e6a23c">缃戞牸闄嶇骇 <b>{{ plan.gridFallbackCount }}</b> 鏉?/span>
+          </div>
+
+          <div class="timeline-bar">
+            <div v-for="(s, i) in plan.segments" :key="i" class="seg" :class="'seg-' + s.slot"
+              :style="{ flex: s.duration }" :title="segTitle(s)">
+              {{ s.duration >= 2.2 ? s.duration.toFixed(1) : '' }}
+            </div>
+          </div>
+          <div style="margin-top:8px;display:flex;gap:14px;font-size:12px;flex-wrap:wrap">
+            <span v-for="legendItem in legendItems" :key="legendItem.key">
+              <i :style="{ display: 'inline-block', width: '10px', height: '10px', background: legendItem.color, borderRadius: '2px', marginRight: '4px' }"></i>
+              {{ legendItem.label }} {{ countSlot(legendItem.key) }}
+            </span>
+          </div>
+
+          <el-collapse style="margin-top:12px">
+            <el-collapse-item :title="`鏃堕棿绾挎槑缁嗭紙${plan.segments.length} 娈碉級`" name="1">
+              <el-table :data="plan.segments" size="small" max-height="300">
+                <el-table-column prop="index" label="#" width="50" />
+                <el-table-column label="娈典綅" width="90">
+                  <template #default="{ row }">
+                    <el-tag size="small" :color="slotColor(row.slot)" style="color:#fff;border:none">
+                      {{ slotLabel(row.slot) }}
+                    </el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="materialName" label="绱犳潗" min-width="200" show-overflow-tooltip />
+                <el-table-column label="鍙栬嚜" width="100">
+                  <template #default="{ row }">{{ row.sourceStart.toFixed(1) }}s 璧?/template>
+                </el-table-column>
+                <el-table-column label="鏃堕暱" width="80">
+                  <template #default="{ row }">{{ row.duration.toFixed(2) }}s</template>
+                </el-table-column>
+                <el-table-column prop="kind" label="绫诲瀷" width="70" />
+              </el-table>
+            </el-collapse-item>
+            <el-collapse-item v-if="plan.notes?.length" :title="`鎵ц鏃ュ織锛?{plan.notes.length} 鏉★級`" name="2">
+              <div v-for="(n, i) in plan.notes" :key="i" class="mono muted" style="line-height:1.9">{{ n }}</div>
+            </el-collapse-item>
+          </el-collapse>
+        </div>
+        <div v-else class="muted">鐐广€岄瑙堢 N 鏉°€嶇湅鐪嬭繖娆′細鍓垚浠€涔堟牱銆傛敼 N 鍙互瀵规瘮涓嶅悓鏉′箣闂寸殑宸紓鍖栥€?/div>
+      </div>
+
+      <!-- 绱犳潗缂哄彛鍒嗘瀽 -->
+      <div v-if="materialGap" class="card gap-card">
+        <div class="card-title">
+          绱犳潗缂哄彛璇婃柇
+          <span class="hint">褰撳墠绱犳潗涓嶈冻浠ユ弧瓒冲嚭鐗囪姹傛椂鐨勮嚜鍔ㄥ垎鏋?/span>
+          <span style="flex:1"></span>
+          <el-button size="small" :loading="gapLoading" @click="doGapAnalysis">閲嶆柊鍒嗘瀽</el-button>
+        </div>
+        <el-alert v-if="materialGap.sufficient" type="success" :closable="false" show-icon title="绱犳潗鍏呰冻"
+          style="margin-bottom:10px" />
+        <el-alert v-else type="warning" :closable="false" show-icon title="绱犳潗涓嶈冻"
+          style="margin-bottom:10px">
+          <template #default>
+            {{ materialGap.notes?.[0] || '褰撳墠绱犳潗涓嶈冻浠ヨ鐩栫洰鏍囨椂闀裤€? }}
+          </template>
+        </el-alert>
+        <div class="gap-grid">
+          <div class="gap-item">
+            <span class="gap-label">鍙敤鐢婚潰鏃堕暱</span>
+            <b :style="{ color: materialGap.sufficient ? '#67c23a' : '#f56c6c' }">{{ materialGap.availableVisualSec?.toFixed(1) || '0.0' }} 绉?/b>
+          </div>
+          <div class="gap-item">
+            <span class="gap-label">瑕佹眰鏈€鐭椂闀?/span>
+            <b>{{ materialGap.requestedMinSec }} 绉?/b>
+          </div>
+          <div class="gap-item">
+            <span class="gap-label">鍙鐢婚潰鏁?/span>
+            <b>{{ materialGap.visualCount }}</b>
+            <span class="muted" style="font-size:11px">锛堟€昏 {{ materialGap.totalVisualCount }} 鏉★級</span>
+          </div>
+          <div v-if="materialGap.projectKeyword" class="gap-item">
+            <span class="gap-label">椤圭洰鍏抽敭璇?/span>
+            <b>{{ materialGap.projectKeyword }}</b>
+          </div>
+        </div>
+        <div v-if="materialGap.missingRoles?.length" class="gap-roles">
+          <span class="muted">缂哄皯鐨勮鑹诧細</span>
+          <el-tag v-for="role in materialGap.missingRoles" :key="role" size="small" type="warning" effect="plain" style="margin-right:6px">
+            {{ ROLE_LABEL[role] || role }}
+          </el-tag>
+          <div v-if="materialGap.missingRoles.includes('endcard')" class="gap-endcard-hint" style="margin-top:8px">
+            <el-alert type="warning" :closable="false" show-icon style="margin-bottom:8px"
+              title="缂哄皯鐗囧熬鍗★紙endcard锛?
+              description="鎴愮墖缁撳熬灏嗗鐢ㄤ富浣撶敾闈㈡壙杞借鍔ㄥ紩瀵硷紝杞寲瀹屾暣搴︿笉瓒炽€傚缓璁湪绱犳潗搴撴妸涓€寮犱骇鍝佸浘/鍝佺墝鍥炬爣璁颁负銆岀墖灏惧崱銆嶈鑹层€? />
+            <el-button size="small" type="primary" plain @click="$router.push('/materials')">鍘荤礌鏉愬簱鏍囪 endcard</el-button>
+          </div>
+        </div>
+        <div v-if="materialGap.roleCounts" class="gap-roles" style="margin-top:6px">
+          <span v-for="(count, role) in materialGap.roleCounts" :key="role" style="margin-right:12px;font-size:12px">
+            <span class="muted">{{ ROLE_LABEL[role] || role }}锛?/span><b>{{ count }}</b>
+          </span>
+        </div>
+        <div v-if="materialGap.notes?.length > 1" class="gap-notes">
+          <div v-for="(n, i) in materialGap.notes.slice(1)" :key="i" class="muted" style="font-size:12px;line-height:1.8">{{ n }}</div>
+        </div>
+        <div class="gap-auto" style="margin:10px 0;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <el-radio-group v-model="materialSourceMode" size="small">
+            <el-radio-button label="local">浠呮湰鍦扮礌鏉?/el-radio-button>
+            <el-radio-button label="builtin">鍐呯疆鍏紑琛ラ綈</el-radio-button>
+            <el-radio-button label="extended">鍏紑鐩撮摼 / 瀹樻柟鎺堟潈</el-radio-button>
+          </el-radio-group>
+          <span class="muted" style="font-size:12px">鍏紑琛ラ綈浠呬娇鐢ㄥ彈鎺ф潵婧愶紱鍏紑鐩撮摼鍜屽畼鏂规巿鏉冪礌鏉愯鍦ㄧ礌鏉愭姄鍙栭〉瀵煎叆锛屼笉鑳界粫杩囩珯鐐规巿鏉冦€?/span>
+        </div>
+        <div class="gap-actions">
+          <el-button type="primary" :loading="autoFillLoading" @click="doAutoFill"
+            :disabled="materialSourceMode === 'local' || materialGap.sufficient">
+            <span>鑷姩濉厖鍏紑绱犳潗</span>
+            <span class="form-hint" style="margin-left:6px;font-size:11px">锛堝厤 Key锛屼粎璁稿彲鍙獙璇佺殑 Wikimedia / Archive锛?/span>
+          </el-button>
+          <el-button @click="goToCrawlWithProject">鍓嶅線绱犳潗鎶撳彇</el-button>
+          <el-button @click="$router.push('/materials')">绠＄悊绱犳潗搴?/el-button>
+        </div>
+        <div v-if="autoFillResult" class="auto-fill-result" style="margin-top:10px">
+          <el-alert :type="autoFillResult.any ? 'success' : 'warning'" :closable="false" show-icon
+            :title="autoFillResult.any ? `宸叉帓闃?${autoFillResult.totalItemsQueued} 鏉＄礌鏉恅 : '鏈壘鍒板尮閰嶇殑鍏紑绱犳潗'" />
+          <div v-if="autoFillResult.crawlJobIds?.length" class="muted" style="margin-top:6px;font-size:12px">
+            閲囬泦浠诲姟 ID锛歿{ autoFillResult.crawlJobIds.join('銆?) }} 銆傝鍓嶅線
+            <el-link type="primary" @click="goToCrawlWithProject">绱犳潗鎶撳彇</el-link> 椤甸潰鏌ョ湅杩涘害銆?
+          </div>
+        </div>
+        <div v-if="preparationResult" class="auto-fill-result" style="margin-top:10px">
+          <el-alert :type="preparationResult.ready ? 'success' : 'warning'" :closable="false" show-icon
+            :title="preparationResult.ready ? '椤圭洰绱犳潗鍑嗗瀹屾垚锛屾湰娆″嚭鐗囦細浣跨敤宸插尮閰嶅拰宸插叆搴撶殑绱犳潗' : '椤圭洰绱犳潗浠嶆湁缂哄彛锛屾湰娆″皢浣跨敤宸叉垚鍔熷叆搴撶殑绱犳潗缁х画棰勬'" />
+          <div v-if="preparationResult.autoFill && !preparationResult.autoFill.any" class="prepare-fallback-hint" style="margin-top:8px">
+            <el-alert type="info" :closable="false" show-icon title="娌℃湁鍙敤鐨勫叕寮€绱犳潗"
+              description="鍏紑鏉ユ簮鏈兘鍏ュ簱绱犳潗锛屾湰娆″嚭鐗囦細缁х画浣跨敤褰撳墠鏈湴绱犳潗锛屼笉浼氫腑鏂共璺戯紱鍙墠寰€銆岀礌鏉愭姄鍙栥€嶉〉鎵嬪姩瀵煎叆鍏紑绱犳潗鍚庡啀璇曘€? />
+          </div>
+          <div v-if="preparationSourceIssueRows.length" class="prepare-source-issues" style="margin-top:8px">
+            <div v-for="(issue, idx) in preparationSourceIssueRows" :key="'final-' + idx" class="prepare-source-issue">
+              <el-tag size="small" :type="issue.status === 'failed' ? 'danger' : 'warning'">{{ issue.status === 'failed' ? '鏉ユ簮澶辫触' : '鏉ユ簮鐔旀柇' }}</el-tag>
+              <span class="prepare-source-name">{{ issue.source }}</span>
+              <span class="muted">{{ issue.message }}{{ issue.retryAfterSeconds ? `锛堢害 ${issue.retryAfterSeconds} 绉掑悗鎭㈠锛塦 : '' }}</span>
+            </div>
+          </div>
+          <div class="prepare-stage-list">
+            <div v-for="(stage, idx) in preparationResult.stages || []" :key="stage.name + '-' + idx" class="prepare-stage-row">
+              <el-tag size="small" :type="prepareStageType(stage.status)">{{ stage.name }}</el-tag>
+              <span class="muted">{{ stage.message }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card batch-card">
+        <div class="card-title">4. 鎵归噺鍑虹墖</div>
+        <el-alert v-if="preflightMessage" :type="preflightReady ? 'success' : 'warning'" :closable="false" show-icon style="margin-bottom:12px" :title="preflightMessage" />
+        <div v-if="preparing || dry || submitting || activeRenderJob" class="batch-live-panel"
+          :class="activeRenderJob ? `batch-live-${activeRenderJob.status}` : 'batch-live-working'">
+          <div class="batch-live-header">
+            <div class="batch-live-title">
+              <span class="live-dot" :class="{ paused: activeRenderJob?.status === 'paused' }"></span>
+              <strong>{{ livePanelTitle }}</strong>
+              <el-tag size="small" :type="livePanelTagType">{{ livePanelTag }}</el-tag>
+            </div>
+            <span class="batch-live-refresh">姣?3 绉掓鏌ヤ竴娆?路 {{ activeRenderJob ? liveHeartbeatText : (preparing ? '姝ｅ湪鍑嗗绱犳潗骞惰疆璇㈣繘搴︼紝璇蜂笉瑕侀噸澶嶇偣鍑? : '姝ｅ湪鎵ц锛岃涓嶈閲嶅鐐瑰嚮') }}</span>
+          </div>
+          <template v-if="activeRenderJob">
+            <div class="batch-live-main">
+              <div class="batch-live-number">
+                <span class="batch-live-count">{{ liveCompletedCount }}<small>/{{ liveTotalCount }}</small></span>
+                <span>宸插畬鎴愭潯鏁?/span>
+              </div>
+              <div class="batch-live-stage">
+                <div class="batch-live-stage-line"><b>{{ liveCurrentItemText }}</b><span>{{ livePhaseText }}</span></div>
+                <el-progress :percentage="liveOverallProgress" :status="activeRenderJob.status === 'running' ? undefined : 'warning'" :stroke-width="14" text-inside />
+                <div class="batch-live-subline">
+                  <span>鎬昏繘搴?{{ liveOverallProgress }}%</span>
+                  <span>褰撳墠鏉＄洰 {{ liveItemProgress }}%</span>
+                  <span v-if="liveEtaText">棰勮杩橀渶 {{ liveEtaText }}</span>
+                  <span>宸茶繍琛?{{ liveElapsedText }}</span>
+                </div>
+                <el-progress v-if="activeRenderJob.status === 'running' && liveItemProgress > 0" :percentage="liveItemProgress" :stroke-width="7" :show-text="false" status="success" />
+              </div>
+            </div>
+          </template>
+          <div v-else class="batch-preflight-state">
+            <div class="batch-preflight-spinner"></div>
+            <div style="flex:1;min-width:0">
+              <b>{{ preparing ? '姝ｅ湪璇嗗埆椤圭洰銆佸尮閰嶆湰鍦扮礌鏉愬苟琛ラ綈鍏紑绱犳潗' : (dry ? '姝ｅ湪妫€鏌ョ礌鏉愩€佹椂闀垮拰闊抽鍙敤鎬? : '姝ｅ湪鎻愪氦鍚庡彴鍑虹墖浠诲姟') }}</b>
+              <div>{{ preparing ? '鍙細浣跨敤鍥哄畾鍏紑鏉ユ簮锛涙垚鍔熷叆搴撶殑绱犳潗浼氱珛鍒诲弬鍔犳湰娆″共璺戙€? : (dry ? '浼氬厛瀹屾垚瀹夊叏棰勬锛岄妫€缁撴潫鍚庢墠浼氱湡姝ｅ嚭鐗囷紱杩欎笉鏄崱浣忋€? : '鎻愪氦鎴愬姛鍚庝細鑷姩鏄剧ず褰撳墠鏉＄洰鍜屽疄鏃惰繘搴︺€?) }}</div>
+              <template v-if="preparing">
+                <div class="prepare-live-stage">
+                  <span class="muted">褰撳墠闃舵</span><b>{{ preparingStageName }}</b>
+                  <span v-if="preparingStageMessage" class="muted">{{ preparingStageMessage }}</span>
+                </div>
+                <div class="prepare-live-meta">
+                  <span>宸茶繍琛?{{ formatDuration(preparingElapsedSec) }}</span>
+                  <span v-if="preparingWaitedSec > 0">绛夊緟鍏紑绱犳潗 {{ preparingWaitedSec }} 绉?/span>
+                  <span v-if="preparingSourceIssues.length" style="color:#d46b08">鍏紑鏉ユ簮闂 {{ preparingSourceIssues.length }} 涓?/span>
+                </div>
+                <div v-if="preparingSourceIssues.length" class="prepare-source-issues">
+                  <div v-for="(issue, idx) in preparingSourceIssues" :key="'live-' + idx" class="prepare-source-issue">
+                    <el-tag size="small" :type="issue.status === 'failed' ? 'danger' : 'warning'">{{ issue.status === 'failed' ? '鏉ユ簮澶辫触' : '鏉ユ簮鐔旀柇' }}</el-tag>
+                    <span class="prepare-source-name">{{ issue.source }}</span>
+                    <span class="muted">{{ issue.message }}{{ issue.retryAfterSeconds ? `锛堢害 ${issue.retryAfterSeconds} 绉掑悗鎭㈠锛塦 : '' }}</span>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </div>
+          <div class="batch-live-tip">{{ activeRenderJob ? liveActionText : (preparing ? (preparingStageMessage || '姝ｅ湪杞绱犳潗鍑嗗杩涘害锛岃淇濇寔椤甸潰鎵撳紑銆?) : (dry ? '姝ｅ湪璇诲彇 FFmpeg/FFprobe 妫€鏌ョ粨鏋滐紝璇风瓑寰呴妫€瀹屾垚銆? : '姝ｅ湪鎶婁换鍔′氦缁欏悗鍙伴槦鍒楋紝璇蜂繚鎸佸綋鍓嶉〉闈㈡墦寮€銆?)) }}</div>
+        </div>
+        <div class="batch-row batch-mode-row">
+          <span class="batch-label">鐢熸垚鏂瑰紡</span>
+          <span class="batch-option" :class="{ active: !continuous }">鍥哄畾鏁伴噺</span>
+          <el-switch v-model="continuous" class="batch-switch" />
+          <span class="batch-option" :class="{ active: continuous }">鎸佺画鐢熸垚</span>
+          <div v-if="!continuous" class="batch-inline-field">
+            <span>鏁伴噺</span><el-input-number v-model="count" :min="1" :max="200" controls-position="right" />
+          </div>
+        </div>
+        <div class="batch-row">
+          <div class="batch-field"><span>浠诲姟鍚?/span><el-input v-model="jobName" placeholder="鐣欑┖鑷姩鍛藉悕" /></div>
+          <div class="batch-field"><span>瓒呮椂(鍒?</span><el-input-number v-model="jobTimeoutMin" :min="0" :max="240" :step="5" controls-position="right" /><small>0 = 浣跨敤榛樿</small></div>
+          <div class="batch-field"><span>鍍垫(鍒?</span><el-input-number v-model="jobStaleMin" :min="0" :max="120" :step="5" controls-position="right" /><small>0 = 10 鍒嗛挓淇濇姢</small></div>
+        </div>
+        <div class="batch-row batch-action-row">
+          <template v-if="!activeContinuousJob">
+            <el-button type="primary" size="large" :loading="preparing || submitting || dry" :disabled="preparing || submitting || dry" @click="submit">{{ preparing ? '璇嗗埆骞惰ˉ榻愮礌鏉愪腑' : (dry ? '骞茶窇棰勬涓? : (continuous ? '寮€濮嬫寔缁敓鎴? : `寮€濮嬪嚭 ${count} 鏉)) }}</el-button>
+            <el-button v-if="preparing" size="large" plain type="warning" @click="cancelPrepare">鍙栨秷鍑嗗骞剁户缁?/el-button>
+          </template>
+          <template v-else>
+            <span class="batch-status">{{ activeContinuousJob.status === 'paused' ? '宸叉殏鍋滐紝宸茬敓鎴愮殑鎴愮墖浼氫繚鐣? : `姝ｅ湪鐢熸垚 路 宸蹭骇鍑?${jobLive[activeContinuousJob.id]?.completedItems ?? activeContinuousJob.current ?? 0} 鏉 }}<span v-if="jobLive[activeContinuousJob.id]?.phaseLabel || jobLive[activeContinuousJob.id]?.step"> 路 {{ jobLive[activeContinuousJob.id]?.phaseLabel || jobLive[activeContinuousJob.id]?.step }}</span></span>
+            <el-button v-if="activeContinuousJob.status === 'paused'" type="primary" size="large" @click="resume(activeContinuousJob)">缁х画鐢熸垚</el-button>
+            <el-button v-else type="warning" size="large" @click="pause(activeContinuousJob)">鏆傚仠骞朵繚鐣?/el-button>
+            <el-popconfirm title="鏀惧純鏈畬鎴愬唴瀹癸紵宸茬敓鎴愮殑鎴愮墖浼氫繚鐣欍€? @confirm="cancel(activeContinuousJob)"><template #reference><el-button type="danger" plain>鏀惧純褰撳墠浠诲姟</el-button></template></el-popconfirm>
+          </template>
+        </div>
+        <div class="form-hint batch-help">
+          鍥哄畾鏁伴噺閫傚悎鍏堝嚭 1鈥? 鏉★紝纭鐢婚潰銆佽妭濂忋€佸０闊冲拰瀛楀箷鍚庡啀澧炲姞鏁伴噺銆傛寔缁敓鎴愰€傚悎骞茶窇閫氳繃涓旂礌鏉愭睜鍏呰冻鐨勯」鐩紝姣忔潯鎴愬姛鍚庢墠缁х画锛涙殏鍋滀細淇濈暀宸插畬鎴愭垚鐗囷紝绱犳潗涓嶈冻銆佽川閲忔鏌ュけ璐ユ垨杩炵画寮傚父浼氳嚜鍔ㄥ仠姝€?
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">
+          鍑虹墖浠诲姟
+          <span style="flex:1"></span>
+          <el-switch v-model="autoRefresh" size="small" active-text="鑷姩鍒锋柊" />
+          <el-button size="small" style="margin-left:8px" @click="loadJobs">鍒锋柊</el-button>
+          <el-popconfirm v-if="selectedJobIds.length" :title="`鍒犻櫎閫変腑鐨?${selectedJobIds.length} 鏉′换鍔″強鍏宠仈鎴愮墖鏂囦欢锛熻繍琛屼腑鐨勪换鍔″繀椤诲厛鍙栨秷銆俙" @confirm="batchDeleteJobs">
+            <template #reference><el-button size="small" type="danger" plain style="margin-left:8px">鎵归噺鍒犻櫎锛坽{ selectedJobIds.length }}锛?/el-button></template>
+          </el-popconfirm>
+          <el-popconfirm title="鍙垹闄ゅ凡瀹屾垚銆佸け璐ャ€佸凡鍙栨秷鐨勪换鍔″強鍏舵湰鍦版垚鐗囨枃浠讹紝缁х画鍚楋紵" @confirm="cleanupJobs">
+            <template #reference><el-button size="small" type="danger" plain style="margin-left:8px">娓呯悊缁堟€佽褰?/el-button></template>
+          </el-popconfirm>
+        </div>
+        <el-alert v-if="jobsError" type="error" :closable="false" show-icon style="margin-bottom:10px"
+          title="浠诲姟鍒楄〃鍔犺浇澶辫触锛岃鍒锋柊閲嶈瘯" />
+        <div v-else-if="!initialLoading && !jobs.length" class="muted" style="margin-bottom:10px">鏆傛棤鍑虹墖浠诲姟銆?/div>
+        <el-table :data="jobs" v-loading="jobsLoading" row-key="id" size="small" max-height="330" @selection-change="onJobSelectionChange" @row-dblclick="onJobRowDblClick">
+          <el-table-column type="selection" width="46" :selectable="canSelectJobForDelete" />
+          <el-table-column prop="id" label="#" width="55" />
+          <el-table-column prop="name" label="浠诲姟" min-width="160" show-overflow-tooltip />
+          <el-table-column label="鐘舵€? width="90">
+            <template #default="{ row }">
+              <el-tag size="small" :type="STATUS_TYPE[row.status]">{{ STATUS_LABEL[row.status] || row.status }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="杩涘害" width="200">
+            <template #default="{ row }">
+              <el-progress :percentage="row.continuous ? 0 : (jobLive[row.id]?.overallProgress ?? row.progress ?? 0)" :stroke-width="12" text-inside
+                :status="row.continuous ? undefined : (row.status === 'failed' ? 'exception' : (row.status === 'done' ? 'success' : ''))" />
+              <div class="muted">{{ row.continuous ? `杩炵画妯″紡 路 宸蹭骇鍑?${jobLive[row.id]?.completedItems ?? row.current ?? 0} 鏉 : `${jobLive[row.id]?.completedItems ?? row.current ?? 0} / ${jobLive[row.id]?.totalItems ?? row.total ?? row.count}` }}</div>
+              <el-progress v-if="jobLive[row.id]?.currentItemProgress" :percentage="jobLive[row.id].currentItemProgress" :stroke-width="6" :show-text="false" />
+              <div class="muted">{{ translateTechnicalText(jobLive[row.id]?.phaseLabel || jobLive[row.id]?.step || row.summary || '绛夊緟璋冨害') }}</div>
+              <div v-if="jobLive[row.id]" class="muted">宸茬敤 {{ formatDuration(jobLive[row.id].elapsedSec) }} 路 {{ jobLive[row.id].itemsPerMinute || 0 }} 鏉?鍒?span v-if="!jobLive[row.id].isContinuous && jobLive[row.id].etaSec"> 路 棰勮 {{ formatDuration(jobLive[row.id].etaSec) }}</span></div>
+            </template>
+          </el-table-column>
+          <el-table-column label="璇存槑" min-width="180" show-overflow-tooltip>
+            <template #default="{ row }">
+              <span :style="{ color: row.error ? '#f56c6c' : '' }">{{ shortTaskText(row) }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="鎿嶄綔" width="150" fixed="right">
+            <template #default="{ row }">
+              <el-button link type="primary" size="small" @click="openJob(row)">璇︽儏</el-button>
+              <el-button v-if="row.continuous && (row.status === 'running' || row.status === 'pending')" link type="warning"
+                size="small" @click="pause(row)">鏆傚仠</el-button>
+              <el-button v-if="row.status === 'paused' || row.status === 'awaiting_decision'" link type="primary" size="small" @click="resume(row)">{{ row.status === 'awaiting_decision' ? '鎸夌幇鏈夌瓥鐣ョ户缁? : '缁х画' }}</el-button>
+              <el-button v-if="row.status === 'failed' || row.status === 'awaiting_decision' || (row.status === 'done' && row.error)" link type="warning" size="small" @click="retryFailed(row)">閲嶈瘯澶辫触椤?/el-button>
+              <el-button v-if="row.status === 'running' || row.status === 'pending' || row.status === 'paused' || row.status === 'awaiting_decision'" link type="danger"
+                size="small" @click="cancel(row)">鍙栨秷</el-button>
+              <el-popconfirm title="鍒犻櫎浠诲姟鍙婂叾鎴愮墖璁板綍锛? @confirm="delJob(row)">
+                <template #reference><el-button link type="danger" size="small">鍒犻櫎</el-button></template>
+              </el-popconfirm>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+    </div>
+
+    <el-dialog v-model="jobDlg" title="浠诲姟璇︽儏" width="720px">
+      <div v-if="jobDetail">
+        <el-descriptions :column="2" border size="small">
+          <el-descriptions-item label="鐘舵€?>{{ STATUS_LABEL[jobDetail.job.status] }}</el-descriptions-item>
+          <el-descriptions-item label="鎬讳綋杩涘害">{{ jobDetail.isContinuous ? '杩炵画鐢熸垚' : `${jobDetail.overallProgress || 0}%` }}</el-descriptions-item>
+          <el-descriptions-item label="浜у嚭">{{ jobDetail.completedItems ?? jobDetail.job.current }} / {{ jobDetail.totalItems ?? jobDetail.job.total }}</el-descriptions-item>
+          <el-descriptions-item label="褰撳墠闃舵">{{ translateTechnicalText(jobDetail.phaseLabel || jobDetail.step || '-') }}</el-descriptions-item>
+          <el-descriptions-item label="闃舵杩涘害">{{ jobDetail.currentItemProgress ?? jobDetail.phaseProgress ?? 0 }}%</el-descriptions-item>
+          <el-descriptions-item label="澶勭悊缁撴灉" :span="2">
+            <div v-if="taskIssueRows(jobDetail.job).length" class="task-issues">
+              <div v-for="(issue, index) in taskIssueRows(jobDetail.job)" :key="`${issue.text}-${index}`" class="task-issue">
+                <div class="task-issue-title">{{ issue.title }}</div>
+                <div class="task-issue-reason">鍘熷洜锛歿{ issue.text }}</div>
+                <div class="task-issue-action">澶勭悊鏂规硶锛歿{ issue.action }}</div>
+              </div>
+            </div>
+            <span v-else>{{ translateTechnicalText(jobDetail.job.summary || '-') }}</span>
+          </el-descriptions-item>
+        </el-descriptions>
+        <div style="margin-top:12px" class="video-grid">
+          <div class="video-card" v-for="o in jobDetail.outputs" :key="o.id">
+            <video v-if="o.filePath" :src="fileUrl(o)" controls preload="metadata"></video>
+            <div v-else class="muted" style="min-height:110px;display:flex;align-items:center">璇ユ潯宸茶鎴愬搧璐ㄦ鎷︽埅锛屾湭淇濈暀鍙挱鏀炬枃浠躲€?/div>
+            <div class="meta">
+              <div class="t">#{{ o.idx }}</div>
+              <div class="muted">{{ o.filePath && o.durationSec ? o.durationSec.toFixed(1) + 's' : (o.qcReport || '') }}</div>
+              <el-link v-if="o.filePath" type="primary" :href="api.downloadUrl(o.id)" target="_blank">涓嬭浇</el-link>
+            </div>
+          </div>
+        </div>
+      </div>
+    </el-dialog>
+
+    <el-dialog v-model="autonomyConsentDlg" :title="`AI 鐢熶骇鏉冮檺璇存槑锛?{consentModeLabel}锛塦" width="680px"
+      :close-on-click-modal="false" append-to-body>
+      <div class="consent-body">
+        <p class="consent-intro">棣栨浣跨敤銆寋{ consentModeLabel }}銆嶆ā寮忔彁浜ゅ墠锛岃纭鏈 AI 鑷富鐢熶骇鐨勬巿鏉冭竟鐣屻€傝璇存槑鍙拡瀵规湰鏈哄嚭鐗囨祦绋嬶紱纭鍚庢湰鏈哄皢璁颁綇浣犵殑閫夋嫨锛屽彲鍦ㄤ笂鏂规ā寮忓崱鐗囬殢鏃惰皟鏁淬€?/p>
+        <div class="consent-section">
+          <div class="consent-section-title allowed">鍏佽鐨勬搷浣?/div>
+          <ul>
+            <li>浣跨敤宸叉湁鏈湴绱犳潗涓庡綋鍓嶉」鐩礌鏉愶紙涓嶈秴鍑轰綘宸插鍏ユ垨宸叉巿鏉冭ˉ榻愮殑鑼冨洿锛?/li>
+            <li>浠庤鍙彲楠岃瘉鐨勫厤鐧诲綍鍏紑婧愯ˉ榻愮礌鏉愶紙Wikimedia / Archive锛夛紱Pexels/Pixabay 浠呭湪浣犻厤缃畼鏂?Key 鍚庝娇鐢?/li>
+            <li>浣跨敤宸插畨瑁呯殑鏈満鑳藉姏锛團Fmpeg / FFprobe 绛夊凡灏辩华宸ュ叿锛屼笉瀹夎缂哄け缁勪欢锛?/li>
+            <li>鑷姩娓叉煋銆佹垚鍝佽川妫€锛圦C锛変笌澶辫触鑷姩淇锛堜粎鍩轰簬宸插畨瑁呰兘鍔涗笌鏈湴绱犳潗锛?/li>
+          </ul>
+        </div>
+        <div class="consent-section">
+          <div class="consent-section-title prohibited">缁濅笉鎵ц</div>
+          <ul>
+            <li>浠讳綍鏀粯銆佷笅鍗曟垨璁㈤槄</li>
+            <li>绗笁鏂硅处鍙风櫥褰?/li>
+            <li>缁曡繃楠岃瘉鐮?/ DRM / 浠樿垂澧?/li>
+            <li>淇敼绯荤粺璁剧疆鎴栧畨瑁呯己澶辩粍浠?/li>
+          </ul>
+        </div>
+        <el-alert v-if="consentTargetMode === 'autonomous'" type="warning" :closable="false" show-icon
+          title="鑷富妯″紡榛樿寮€鍚弗鏍间氦浠?
+          description="鎴愬搧璐ㄦ椤逛粠鎻愮ず鍗囩骇涓虹‖鎬ф嫤鎴紝涓嶆弧瓒充氦浠樻爣鍑嗙殑鎴愮墖涓嶄細閫氳繃锛涙彁浜ゅ墠鍙湪鍙傛暟鍖烘墜鍔ㄥ叧闂€? />
+      </div>
+      <template #footer>
+        <el-button @click="onConsentCancel">鍙栨秷</el-button>
+        <el-button type="primary" @click="onConsentConfirm">鎴戜簡瑙ｅ苟鍚屾剰锛岀户缁彁浜?/el-button>
+      </template>
+    </el-dialog>
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.studio-layout { display:flex; gap:16px; align-items:flex-start; }
+.studio-left { width:420px; flex:0 0 420px; align-self:flex-start; position:sticky; top:12px; max-height:calc(100vh - 140px); overflow-y:auto; padding-right:4px; }
+.studio-main { flex:1; min-width:0; }
+.runtime-grid { display:grid; grid-template-columns:repeat(4,minmax(180px,1fr)); gap:10px; }
+.runtime-grid span { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 10px; background:#f6f8fb; border-radius:6px; }
+.runtime-queue { display:flex; flex-wrap:wrap; gap:18px; margin-top:10px; padding:8px 10px; background:#f8fafc; border:1px solid #e9ebef; border-radius:6px; font-size:12px; }
+.batch-row { display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin:10px 0; }
+.batch-mode-row { min-height:42px; }
+.batch-label { color:#303133; font-weight:600; }
+.batch-option { color:#909399; font-size:15px; }
+.batch-option.active { color:#1890ff; font-weight:600; }
+.batch-switch { margin:0 2px; }
+.batch-inline-field { display:flex; align-items:center; gap:8px; margin-left:20px; }
+.batch-field { display:flex; align-items:center; gap:8px; min-width:230px; }
+.batch-field > span { white-space:nowrap; color:#606266; }
+.batch-field :deep(.el-input) { width:220px; }
+.batch-field :deep(.el-input-number) { width:150px; }
+.batch-field small { color:#909399; white-space:nowrap; }
+.batch-action-row { min-height:52px; }
+.batch-status { color:#606266; font-size:13px; flex:1; min-width:260px; }
+.batch-help { line-height:1.8; }
+.autonomy-card { border-left: 3px solid #722ed1; }
+.autonomy-modes { display:flex; flex-direction:column; gap:8px; margin:4px 0 12px; }
+.autonomy-mode { padding:8px 10px; border:1px solid #e3e8ef; border-radius:6px; cursor:pointer; transition:border-color .15s, background .15s; }
+.autonomy-mode:hover { border-color:#b8a6dd; }
+.autonomy-mode.active { border-color:#722ed1; background:#f7f4ff; }
+.autonomy-mode-head { display:flex; align-items:center; gap:8px; color:#303133; }
+.autonomy-mode-head b { font-size:13px; }
+.autonomy-mode-radio { width:12px; height:12px; border-radius:50%; border:2px solid #c0c4cc; box-sizing:border-box; flex:0 0 auto; }
+.autonomy-mode-radio.checked { border-color:#722ed1; background:#722ed1; box-shadow:inset 0 0 0 2px #fff; }
+.autonomy-mode-desc { margin-top:4px; font-size:12px; color:#909399; line-height:1.55; }
+.autonomy-toggles { display:flex; flex-direction:column; gap:10px; margin-bottom:10px; }
+.autonomy-toggle-row { display:flex; align-items:flex-start; gap:10px; }
+.autonomy-toggle-row :deep(.el-switch) { margin-top:2px; flex:0 0 auto; }
+.autonomy-toggle-text b { font-size:13px; color:#303133; font-weight:600; }
+.autonomy-toggle-text .form-hint { margin-top:2px; line-height:1.55; }
+.autonomy-boundary { padding:8px 10px; background:#f6f8fb; border-radius:6px; font-size:12px; color:#606266; line-height:1.7; }
+.consent-body { line-height:1.7; }
+.consent-intro { margin:0 0 12px; color:#606266; font-size:13px; }
+.consent-section { margin-bottom:14px; }
+.consent-section-title { font-weight:700; margin-bottom:6px; font-size:13px; }
+.consent-section-title.allowed { color:#67c23a; }
+.consent-section-title.prohibited { color:#f56c6c; }
+.consent-section ul { margin:0; padding-left:20px; }
+.consent-section li { font-size:13px; color:#303133; margin-bottom:4px; }
+@media (max-width: 1000px) { .studio-layout { flex-direction:column; } .studio-left { width:100%; flex-basis:auto; position:static; max-height:none; overflow:visible; padding-right:0; } .runtime-grid { grid-template-columns:repeat(2,minmax(160px,1fr)); } }
+.duration-range-item :deep(.el-form-item__content) {
+  display: block;
+  min-width: 0;
+}
+.duration-range-item :deep(.el-slider) {
+  margin: 8px 12px 34px 4px;
+}
+.duration-guide { margin-bottom: 12px; }
+.duration-warning { margin: -4px 0 12px 96px; }
+.duration-unit { margin-left: 6px; color: #606266; }
+.target-duration-item :deep(.el-input-number) { width: 150px; }
+.duration-range-item .form-hint { margin-top: 0; }
+.selected-materials { display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; width:100%; }
+.folder-stage-list { margin:-4px 0 12px 96px; display:flex; flex-direction:column; gap:8px; }
+.folder-stage-toolbar { display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; }
+.folder-stage-row { display:flex; align-items:center; gap:6px; flex-wrap:wrap; padding:8px; border:1px solid #dbeafe; border-radius:6px; background:#f8fbff; }
+.gap-card { border-left: 3px solid #e6a23c; }
+.gap-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:10px; margin-bottom:10px; }
+.gap-item { display:flex; flex-direction:column; gap:2px; padding:6px 10px; background:#f8fafc; border-radius:6px; }
+.gap-label { font-size:11px; color:#909399; }
+.gap-roles { display:flex; align-items:center; flex-wrap:wrap; gap:4px; margin-bottom:8px; }
+.gap-notes { margin:6px 0 10px; padding:6px 10px; background:#fef0f0; border-radius:6px; }
+.gap-actions { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-top:6px; }
+.batch-live-panel { margin: 12px 0 16px; padding: 14px; border: 1px solid #b7ebc6; border-radius: 8px; background: #f6ffed; }
+.batch-live-panel.batch-live-pending { border-color: #b3d8ff; background: #f0f7ff; }
+.batch-live-panel.batch-live-paused { border-color: #f3d19e; background: #fdf6ec; }
+.batch-live-panel.batch-live-working { border-color: #e6a23c; background: #fffaf0; }
+.batch-live-header, .batch-live-stage-line, .batch-live-subline { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.batch-live-title { display:flex; align-items:center; gap:8px; color:#1f2d3d; }
+.batch-live-refresh, .batch-live-subline { color:#6b7785; font-size:12px; }
+.live-dot { width:10px; height:10px; border-radius:50%; background:#67c23a; box-shadow:0 0 0 4px rgba(103,194,58,.16); animation: batch-pulse 1.4s ease-in-out infinite; }
+.live-dot.paused { background:#e6a23c; box-shadow:0 0 0 4px rgba(230,162,60,.16); animation:none; }
+.batch-live-main { display:flex; gap:18px; align-items:center; margin-top:14px; }
+.batch-live-number { flex:0 0 92px; display:flex; flex-direction:column; gap:3px; color:#6b7785; font-size:12px; }
+.batch-live-count { color:#1f2d3d; font-size:30px; font-weight:700; line-height:1; }
+.batch-live-count small { color:#8a96a3; font-size:16px; font-weight:500; }
+.batch-live-stage { flex:1; min-width:0; }
+.batch-live-stage-line b { color:#303133; }
+.batch-live-stage-line span { color:#606266; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.batch-live-subline { margin-top:6px; }
+.batch-live-tip { margin-top:10px; padding-top:9px; border-top:1px solid rgba(103,194,58,.22); color:#536171; font-size:12px; line-height:1.6; }
+.batch-live-pending .batch-live-tip { border-top-color:rgba(64,158,255,.22); }
+.batch-live-paused .batch-live-tip { border-top-color:rgba(230,162,60,.25); }
+.batch-preflight-state { display:flex; align-items:center; gap:12px; margin-top:14px; padding:16px; border:1px dashed #e6a23c; border-radius:6px; color:#6b4b13; background:#fffdf5; }
+.batch-preflight-state b { display:block; color:#8a5a00; margin-bottom:4px; }
+.batch-preflight-state div:last-child { color:#8b7a5a; font-size:12px; line-height:1.6; }
+.batch-preflight-spinner { width:22px; height:22px; flex:0 0 22px; border:3px solid #f3d19e; border-top-color:#e6a23c; border-radius:50%; animation: batch-spin .8s linear infinite; }
+.batch-live-stuck { border-color:#f56c6c; background:#fff5f5; }
+.batch-live-stuck .batch-live-tip { border-top-color:rgba(245,108,108,.28); color:#a94442; }
+.prepare-stage-list { display:flex; flex-direction:column; gap:6px; margin-top:8px; }
+.prepare-stage-row { display:flex; align-items:flex-start; gap:8px; line-height:1.55; }
+.prepare-live-stage { display:flex; align-items:center; gap:8px; margin-top:8px; flex-wrap:wrap; }
+.prepare-live-stage b { color:#8a5a00; }
+.prepare-live-meta { display:flex; gap:14px; margin-top:6px; color:#8b7a5a; font-size:12px; flex-wrap:wrap; }
+.prepare-source-issues { display:flex; flex-direction:column; gap:4px; }
+.prepare-source-issue { display:flex; align-items:flex-start; gap:8px; font-size:12px; line-height:1.6; color:#606266; }
+.prepare-source-name { font-weight:600; color:#303133; white-space:nowrap; }
+.task-issues { display:flex; flex-direction:column; gap:8px; }
+.task-issue { padding:8px 10px; border-left:3px solid #f56c6c; background:#fff5f5; border-radius:4px; line-height:1.55; }
+.task-issue-title { color:#c45656; font-weight:600; }
+.task-issue-reason, .task-issue-action { color:#606266; font-size:12px; }
+@keyframes batch-pulse { 0%,100% { opacity:1; transform:scale(1); } 50% { opacity:.45; transform:scale(.82); } }
+@media (max-width: 600px) { .duration-warning { margin-left: 0; } .batch-live-main { align-items:flex-start; } .batch-live-number { flex-basis:70px; } .batch-live-header { align-items:flex-start; flex-direction:column; } .batch-live-subline { align-items:flex-start; flex-direction:column; gap:3px; } }
+</style>
+
+<script setup>
+import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { useRoute, useRouter } from 'vue-router'
+import { api } from '../api'
+import { FIXED_ORDER_NAME, FIXED_ORDER_PRESETS, cloneFixedOrderPreset } from '../fixedOrderPresets'
+
+const legendItems = [
+  { key: 'intro', label: '鐗囧ご', color: '#722ed1' },
+  { key: 'hook', label: '閽╁瓙', color: '#f56c6c' },
+  { key: 'body', label: '瀹炴媿', color: '#409eff' },
+  { key: 'celebrity', label: '鏄庢槦', color: '#e6a23c' },
+  { key: 'product', label: '浜у搧', color: '#67c23a' },
+  { key: 'endcard', label: '鐗囧熬', color: '#909399' }
+]
+function slotLegend (slot) { return legendItems.find((item) => item.key === slot) }
+function slotLabel (slot) { return slotLegend(slot)?.label || slot || '鏈垎绫? }
+function slotColor (slot) { return slotLegend(slot)?.color || '#909399' }
+const ROLE_LABEL = Object.fromEntries(legendItems.map((item) => [item.key, item.label]))
+const route = useRoute()
+const router = useRouter()
+const STATUS_LABEL = { pending: '鎺掗槦涓?, running: '娓叉煋涓?, paused: '宸叉殏鍋?, awaiting_decision: '绛夊緟鍐崇瓥', done: '瀹屾垚', failed: '澶辫触', cancelled: '宸插彇娑? }
+const STATUS_TYPE = { pending: 'info', running: '', paused: 'warning', awaiting_decision: 'warning', done: 'success', failed: 'danger', cancelled: 'info' }
+
+const projects = ref([])
+const folders = ref([])
+const runtime = reactive({})
+const queue = ref(null)
+const workflows = ref([])
+const bgmList = ref([])
+const voiceList = ref([])
+const visualList = ref([])
+const jobs = ref([])
+const selectedJobIds = ref([])
+const jobLive = reactive({})
+const initialLoading = ref(false)
+const initialError = ref(false)
+const runtimeUnavailable = ref(false)
+const jobsLoading = ref(false)
+let queueRequest = null
+async function loadQueue () {
+  if (queueRequest) return queueRequest
+  queueRequest = api.queue({ silent: true })
+    .then((result) => {
+      queue.value = result
+      runtimeUnavailable.value = false
+      return result
+    })
+    .catch(() => {
+      queue.value = null
+      runtimeUnavailable.value = true
+      return null
+    })
+    .finally(() => { queueRequest = null })
+  return queueRequest
+}
+const jobsError = ref(false)
+
+const projectId = ref(null)
+const workflowId = ref(null)
+const fixedOrderSkillKey = ref('')
+const showAllFolderSteps = ref(false)
+const variant = ref(0)
+const count = ref(5)
+const continuous = ref(localStorage.getItem('mixcut-continuous') === '1')
+const jobName = ref('')
+// 0 琛ㄧず浣跨敤鏈嶅姟绔粯璁ゅ€硷紱鏈嶅姟绔寜绉掑瓨鍌ㄥ苟闄愬埗鏈€澶у€笺€?
+const jobTimeoutMin = ref(0)
+const jobStaleMin = ref(0)
+const plan = ref(null)
+const dry = ref(false)
+const preparing = ref(false)
+const prepareCancelled = ref(false)
+const submitting = ref(false)
+let dryRunRevision = 0
+
+const materialGap = ref(null)
+const preparationResult = ref(null)
+// 寮傛鍑虹墖鍑嗗锛歅OST /api/jobs/prepare 绔嬪嵆杩斿洖 { id, status }锛岄殢鍚庢寜鍥哄畾闂撮殧杞 GET /api/jobs/prepare/{id}
+const PREPARE_POLL_MS = 3000
+const PREPARE_POLL_MAX_MS = 240000
+const preparingSnapshot = ref(null)
+const usePreparedPoolForRun = ref(false)
+const autoUseCrawled = ref(true)
+const materialSourceMode = ref(localStorage.getItem('mework-material-source-mode') || 'builtin')
+// 鍏紑绱犳潗鑷姩琛ラ綈缁嗙矑搴﹀紑鍏筹細瀹夊叏鏄犲皠鍒版棦鏈?materialSourceMode / autoUseCrawledMaterials 鍙傛暟銆?
+// 浠呭奖鍝嶈鍙彲楠岃瘉鐨勫厤鐧诲綍鍏紑婧愶紙Wikimedia / Archive锛夛紝涓嶅畨瑁呯粍浠舵垨璋冪敤闇€瀵嗛挜鐨勪簯 API銆?
+const publicAutoFill = computed({
+  get: () => materialSourceMode.value !== 'local',
+  set: (enabled) => {
+    localStorage.setItem('mework-autonomy-auto-fill', enabled ? '1' : '0')
+    if (enabled && materialSourceMode.value === 'local') materialSourceMode.value = 'builtin'
+    if (!enabled && materialSourceMode.value !== 'local') materialSourceMode.value = 'local'
+  }
+})
+const autonomyConsentDlg = ref(false)
+const consentTargetMode = ref('assist')
+let consentResolver = null
+const consentModeLabel = computed(() => AUTONOMY_MODES.find((mode) => mode.key === consentTargetMode.value)?.label || consentTargetMode.value)
+function readAutonomyConsent () {
+  try {
+    const raw = JSON.parse(localStorage.getItem(AUTONOMY_CONSENT_KEY) || '{}')
+    return raw && typeof raw === 'object' ? raw : {}
+  } catch { return {} }
+}
+function autonomyConsentGranted (mode) {
+  const consent = readAutonomyConsent()
+  return consent[mode] === '1' || Number(consent[mode]) > 0
+}
+function requestAutonomyConsent (mode) {
+  return new Promise((resolve) => {
+    consentTargetMode.value = mode
+    consentResolver = resolve
+    autonomyConsentDlg.value = true
+  })
+}
+function onConsentConfirm () {
+  const consent = readAutonomyConsent()
+  consent[consentTargetMode.value] = String(Date.now())
+  localStorage.setItem(AUTONOMY_CONSENT_KEY, JSON.stringify(consent))
+  autonomyConsentDlg.value = false
+  const resolve = consentResolver
+  consentResolver = null
+  if (resolve) resolve(true)
+}
+function onConsentCancel () {
+  autonomyConsentDlg.value = false
+  const resolve = consentResolver
+  consentResolver = null
+  if (resolve) resolve(false)
+}
+const draftSource = ref('褰撳墠鑽夌')
+const activeIndustryPreset = ref('')
+const industryPresetSnapshot = ref(null)
+const gapLoading = ref(false)
+const autoFillLoading = ref(false)
+const autoFillResult = ref(null)
+const autoRefresh = ref(true)
+const advancedOpen = ref(false)
+const jobDlg = ref(false)
+const jobDetail = ref(null)
+let timer = null
+
+const DEFAULTS = {
+  minSec: 50, maxSec: 150, dense: true, targetSec: null, targetDurationSec: null,
+  durationAllocationMode: 'random', minSegmentSec: 1.5, maxSegmentSec: 5,
+  introEnabled: false, introMode: 'fixed', introMaterialId: null, introDurationSec: 3, introNoRepeat: true, introAllowRepeatWhenInsufficient: false,
+  materialSelectionMode: 'rules-only', projectRelevantOnly: true, folderIds: [], materialIds: [],
+  sliceSec: 3, sliceJitter: 0.4, explodeLongClips: true, maxSlicesPerMaterial: 5,
+  dedupStrictness: 'strict', allowSameSourceNonoverlap: true,
+  hookSec: 3, celebrityRatio: 0.25, productSlots: 3, productSec: 3, endcard: true,
+  width: 1080, height: 1920, fps: 30,
+  bgmVolume: 0.22, bgmMaterialId: null, voiceMaterialId: null,
+      hookAudioMaterialId: null, autoMatchAudio: true, hookAudioVolume: 1.0, autoUseCrawledMaterials: true,
+      folderReadSteps: [], strictFolderSequence: false,
+      audioMode: 'material-audio', originalAudioVolume: 0.28, ttsVoice: 'zh-CN-XiaoxiaoNeural', autoSubtitles: false,
+      burnAiVoiceCaptions: true, cleanSourceSubtitles: false, sourceSubtitleCleanMode: 'off',
+      aiHook: true, hookText: '', burnHookText: true,
+  hookStrategy: '', autoRehook: false, rehookText: '', burnRehookText: true,
+  hookFontSize: 64, hookFontColor: 'white',
+  fontFile: '', namePrefix: 'mix'
+}
+const INDUSTRY_PRESETS = {
+  beauty: { minSec: 50, maxSec: 90, dense: true, sliceSec: 2.5, sliceJitter: 0.35, celebrityRatio: 0.35, productSlots: 4, productSec: 2.5, hookSec: 3, bgmVolume: 0.2, namePrefix: 'beauty', folderKeywords: ['缇庡'], bgmKeywords: ['缇庡', '杞诲揩'], voiceKeywords: ['缇庡', '鍙ｆ挱'] },
+  skincare: { minSec: 60, maxSec: 110, dense: true, sliceSec: 3, sliceJitter: 0.3, celebrityRatio: 0.2, productSlots: 3, productSec: 3.5, hookSec: 3.5, bgmVolume: 0.18, namePrefix: 'skincare', folderKeywords: ['鎶よ偆'], bgmKeywords: ['鑸掔紦', '鎶よ偆'], voiceKeywords: ['鎴愬垎', '璁茶В'] },
+  food: { minSec: 50, maxSec: 80, dense: true, sliceSec: 2, sliceJitter: 0.45, celebrityRatio: 0.1, productSlots: 4, productSec: 2.5, hookSec: 2.5, bgmVolume: 0.24, namePrefix: 'food', folderKeywords: ['椋熷搧'], bgmKeywords: ['娆㈠揩', '椋熷搧'], voiceKeywords: ['鍚冩挱', '鍙ｆ挱'] },
+  maternal: { minSec: 50, maxSec: 90, dense: false, sliceSec: 2.5, sliceJitter: 0.25, celebrityRatio: 0.15, productSlots: 3, productSec: 3, hookSec: 3, bgmVolume: 0.16, namePrefix: 'maternal', folderKeywords: ['姣嶅┐'], bgmKeywords: ['娓╅Θ'], voiceKeywords: ['姣嶅┐', '鍙ｆ挱'] },
+  digital: { minSec: 45, maxSec: 75, dense: true, sliceSec: 2, sliceJitter: 0.3, celebrityRatio: 0.05, productSlots: 4, productSec: 2.5, hookSec: 2.5, bgmVolume: 0.2, namePrefix: 'digital', folderKeywords: ['鏁扮爜', '3C'], bgmKeywords: ['绉戞妧'], voiceKeywords: ['璇勬祴'] }
+}
+const PRESET_LABEL = { beauty: '缇庡', skincare: '鎶よ偆', food: '椋熷搧', maternal: '姣嶅┐', digital: '3C 鏁扮爜' }
+// AI 鐢熶骇妯″紡锛氬彧鍐冲畾鏈鍑虹墖鐨勬巿鏉冭竟鐣岋紙assist/auto/autonomous锛夛紝涓嶉┍鍔ㄤ换浣曟柊鐨勫閮ㄨ兘鍔涖€?
+const AUTONOMY_MODES = [
+  { key: 'assist', label: '杈呭姪妯″紡', desc: 'AI 鍙仛寤鸿涓庨妫€锛屽嚭鐗囩敱浣犳墜鍔ㄧ‘璁ゅ悗鎵ц锛涗笌鏃㈡湁娴佺▼瀹屽叏涓€鑷达紝鏃犻澶栨巿鏉冦€? },
+  { key: 'auto', label: '鍗婅嚜鍔ㄦā寮?, desc: 'AI 鎸夊綋鍓嶅弬鏁版壒閲忔墽琛屽嚭鐗囷紱绱犳潗涓嶈冻鏃朵粠鍥哄畾鍏紑婧愯ˉ榻愶紝澶辫触椤规寜瀹夊叏绛栫暐鑷姩淇銆? },
+  { key: 'autonomous', label: '鑷富妯″紡', desc: '鍏ㄦ祦绋嬭嚜涓荤敓浜э細鑷姩琛ラ綈銆佽嚜鍔ㄦ覆鏌撱€佷弗鏍艰川妫€涓庤嚜鍔ㄤ慨澶嶏紱榛樿寮€鍚弗鏍间氦浠樸€? }
+]
+const AUTONOMY_CONSENT_KEY = 'mework-autonomy-consent'
+const autonomyMode = ref(localStorage.getItem('mework-autonomy-mode') || 'assist')
+if (!AUTONOMY_MODES.some((mode) => mode.key === autonomyMode.value)) autonomyMode.value = 'assist'
+const p = reactive({ ...DEFAULTS })
+// 鎭㈠涓婃浼氳瘽鐨勮嚜涓绘ā寮忔椂锛岃涓ユ牸浜や粯寮€鍏崇殑鏄剧ず涓庣敓鏁堝€间竴鑷达紙榛樿寮€鍚級銆?
+if (autonomyMode.value === 'autonomous' && p.strictDelivery == null) p.strictDelivery = true
+const visibleFolderReadSteps = computed(() => showAllFolderSteps.value ? p.folderReadSteps : p.folderReadSteps.slice(0, 3))
+
+const durRange = computed({
+  get: () => [p.minSec, p.maxSec],
+  set: (v) => { p.minSec = v[0]; p.maxSec = v[1] }
+})
+const celebPct = computed({
+  get: () => Math.round((p.celebrityRatio || 0) * 100),
+  set: (v) => { p.celebrityRatio = v / 100 }
+})
+const bgmPct = computed({
+  get: () => Math.round((p.bgmVolume || 0) * 100),
+  set: (v) => { p.bgmVolume = v / 100 }
+})
+const originalAudioPct = computed({
+  get: () => Math.round((p.originalAudioVolume || 0) * 100),
+  set: (v) => { p.originalAudioVolume = v / 100 }
+})
+const hookAudioPct = computed({
+  get: () => Math.round((p.hookAudioVolume || 0) * 100),
+  set: (v) => { p.hookAudioVolume = v / 100 }
+})
+const canvasKey = computed({
+  get: () => `${p.width}x${p.height}`,
+  set: (v) => { const [w, h] = v.split('x'); p.width = +w; p.height = +h }
+})
+
+const inRange = computed(() =>
+  plan.value && plan.value.plannedSec >= p.minSec && plan.value.plannedSec <= p.maxSec)
+const durationWarning = computed(() => {
+  const value = Number(p.targetDurationSec)
+  if (!value) return ''
+  if (value < p.minSec) return `鎬绘椂闀?${value} 绉掍綆浜庡綋鍓嶄笅闄?${p.minSec} 绉掞紝鍚庣浼氳嚜鍔ㄦ敹鏁涖€俙
+  if (value > p.maxSec) return `鎬绘椂闀?${value} 绉掕秴杩囧綋鍓嶄笂闄?${p.maxSec} 绉掞紝鍚庣浼氳嚜鍔ㄦ敹鏁涖€俙
+  return ''
+})
+function normalizeDuration () {
+  const value = Number(p.targetDurationSec)
+  p.targetDurationSec = value < p.minSec ? p.minSec : p.maxSec
+}
+const targetSeconds = computed(() => p.targetDurationSec || p.targetSec || p.minSec)
+const selectedVisuals = computed(() => {
+  const selectedIds = new Set((p.materialIds || []).map(Number))
+  const selectedFolders = new Set((p.folderIds || []).map(Number))
+  const hasSelection = !usePreparedPoolForRun.value && (selectedIds.size > 0 || selectedFolders.size > 0)
+  const selected = visualList.value.filter((material) => {
+    const readable = material.status !== 'failed' && (material.fileType === 'image' || Number(material.durationSec) >= 0.6)
+    if (!readable) return false
+    return !hasSelection || selectedIds.has(Number(material.id)) || selectedFolders.has(Number(material.folderId))
+  })
+  // A folder may be empty because imported files have not been assigned a folder yet.
+  // Explicit material IDs remain strict, but an empty folder filter falls back to usable visuals.
+  if (!selected.length && !selectedIds.size && selectedFolders.size) {
+    return visualList.value.filter((material) => material.status !== 'failed'
+      && (material.fileType === 'image' || Number(material.durationSec) >= 0.6))
+  }
+  return selected
+})
+const usableVisualSeconds = computed(() => selectedVisuals.value.reduce((total, material) => {
+  return total + (material.fileType === 'image' ? 3 : Math.max(0, Number(material.durationSec) || 0))
+}, 0))
+const introCandidates = computed(() => selectedVisuals.value.filter((material) => material.fileType === 'image'
+  || Number(material.durationSec || 0) + 0.05 >= Number(p.introDurationSec || 3)))
+const introRequiredCount = computed(() => continuous.value ? 2 : Math.max(1, Number(count.value || 1)))
+const introHint = computed(() => {
+  if (p.introMode !== 'rotate') return '鍥哄畾鐗囧ご閫傚悎鍝佺墝澹版槑锛涙壒閲忎换鍔′細閲嶅鍚屼竴寮€澶淬€?
+  const available = introCandidates.value.length
+  if (!p.introNoRepeat) return `鐗囧ご鍊欓€?${available} 鏉★紱宸插厑璁搁噸澶嶃€俙
+  if (available >= introRequiredCount.value) return `鐗囧ご鍊欓€?${available} 鏉★紝鏈壒娆￠渶瑕?${introRequiredCount.value} 鏉★紱灏嗘寜鎵规杞崲涓斾笉閲嶅銆俙
+  return p.introAllowRepeatWhenInsufficient
+    ? `鐗囧ご鍊欓€変粎 ${available} 鏉★紝灏戜簬鏈壒娆?${introRequiredCount.value} 鏉★紱宸叉寜浣犵殑閫夋嫨鍏佽杞崲鍚庨噸澶嶃€俙
+    : `鐗囧ご鍊欓€変粎 ${available} 鏉★紝灏戜簬鏈壒娆?${introRequiredCount.value} 鏉★紱鎻愪氦浼氶樆鏂紝璇疯ˉ鍏呭€欓€夋垨鏄庣‘鍏佽閲嶅銆俙
+})
+const activeContinuousJob = computed(() => jobs.value.find((job) => job.continuous && ['running', 'pending', 'paused', 'awaiting_decision'].includes(job.status)) || null)
+const activeRenderJob = computed(() => {
+  const active = jobs.value.find((job) => ['running', 'pending', 'paused', 'awaiting_decision'].includes(job.status))
+  if (!active) return null
+  return { ...active, ...(jobLive[active.id] || {}) }
+})
+const activeRenderLive = computed(() => activeRenderJob.value || {})
+const liveCompletedCount = computed(() => Number(activeRenderLive.value.completedItems ?? activeRenderLive.value.current ?? 0))
+const liveTotalCount = computed(() => Number(activeRenderLive.value.totalItems ?? activeRenderLive.value.total ?? activeRenderLive.value.count ?? 1))
+const liveOverallProgress = computed(() => activeRenderLive.value.isContinuous
+  ? Math.min(99, Math.round(liveCompletedCount.value * 100 / Math.max(1, liveTotalCount.value + 1)))
+  : Math.max(0, Math.min(100, Number(activeRenderLive.value.overallProgress ?? activeRenderLive.value.progress ?? 0))))
+const liveItemProgress = computed(() => Math.max(0, Math.min(100, Number(activeRenderLive.value.currentItemProgress ?? activeRenderLive.value.phaseProgress ?? 0))))
+const activeRenderJobStatus = computed(() => ({ running: '姝ｅ湪澶勭悊', pending: '绛夊緟璧勬簮', paused: '宸叉殏鍋?, awaiting_decision: '绛夊緟鍐崇瓥' }[activeRenderJob.value?.status] || '鏈煡鐘舵€?))
+const livePanelTitle = computed(() => {
+  if (preparing.value) return '姝ｅ湪鍑嗗鏈鍑虹墖绱犳潗'
+  if (dry.value) return '姝ｅ湪鍋氬嚭鐗囬妫€'
+  if (submitting.value) return '姝ｅ湪鎻愪氦鍑虹墖浠诲姟'
+  if (activeRenderJob.value?.status === 'awaiting_decision') return '浠诲姟绛夊緟澶勭悊閫夋嫨'
+  if (activeRenderJob.value?.status === 'paused') return '浠诲姟宸叉殏鍋?
+  if (activeRenderJob.value?.status === 'pending') return '浠诲姟姝ｅ湪鎺掗槦'
+  return '鍚庡彴姝ｅ湪鍑虹墖'
+})
+const livePanelTag = computed(() => {
+  if (preparing.value) return '绱犳潗鍑嗗涓?
+  if (dry.value) return '棰勬涓?
+  if (submitting.value) return '鎻愪氦涓?
+  return activeRenderJobStatus.value
+})
+const livePanelTagType = computed(() => {
+  if (preparing.value || dry.value || submitting.value) return 'warning'
+  return activeRenderJob.value?.status === 'running' ? 'success' : 'warning'
+})
+const liveCurrentItemText = computed(() => {
+  const current = Math.min(liveTotalCount.value, liveCompletedCount.value + (activeRenderLive.value.status === 'running' ? 1 : 0))
+  return activeRenderLive.value.isContinuous ? `杩炵画鐢熸垚 路 绗?${current} 鏉 : `绗?${current} / ${liveTotalCount.value} 鏉
+})
+const livePhaseText = computed(() => translateTechnicalText(activeRenderLive.value.phaseLabel || activeRenderLive.value.step || activeRenderLive.value.summary || '绛夊緟璋冨害'))
+const liveElapsedText = computed(() => formatDuration(activeRenderLive.value.elapsedSec))
+const liveEtaText = computed(() => activeRenderLive.value.isContinuous ? '' : formatDuration(activeRenderLive.value.etaSec))
+const liveHeartbeatText = computed(() => {
+  const value = activeRenderLive.value.lastHeartbeatAt
+  if (!value) return '绛夊緟棣栨蹇冭烦'
+  const age = Math.max(0, Math.round((Date.now() - new Date(value).getTime()) / 1000))
+  return age <= 8 ? '鍒氬垰鏀跺埌杩涘害' : `${age} 绉掑墠鏈夎繘搴
+})
+const liveActionText = computed(() => {
+  if (preparing.value) return '姝ｅ湪鍏堝尮閰嶆湰鍦扮礌鏉愶紱浠呭湪浠嶆湁缂哄彛鏃朵娇鐢ㄥ浐瀹氬叕寮€鏉ユ簮琛ラ綈锛屽苟鍦ㄩ檺瀹氭椂闂村唴绛夊緟鎴愬姛鍏ュ簱鐨勭礌鏉愩€?
+  if (activeRenderLive.value.status === 'awaiting_decision') return '鑷姩淇宸插仠姝㈠苟淇濈暀璇婃柇璇佹嵁銆傝鍦ㄤ笅鏂逛换鍔¤〃浣跨敤鈥滄寜鐜版湁绛栫暐缁х画鈥濇垨鈥滈噸璇曞け璐ラ」鈥濓紝涔熷彲鏀惧純鏈畬鎴愪换鍔°€?
+  if (activeRenderLive.value.status === 'paused') return '浠诲姟宸叉殏鍋滐紝宸插畬鎴愭垚鐗囦細淇濈暀锛涚偣鍑烩€滅户缁敓鎴愨€濆悗浠庝笅涓€鏉＄户缁€?
+  if (activeRenderLive.value.status === 'pending') return '浠诲姟宸叉彁浜わ紝姝ｅ湪绛夊緟娓叉煋璧勬簮锛涢〉闈細鎸佺画鍒锋柊锛屼笉闇€瑕侀噸澶嶇偣鍑诲紑濮嬨€?
+  const age = activeRenderLive.value.lastHeartbeatAt
+    ? Math.max(0, Math.round((Date.now() - new Date(activeRenderLive.value.lastHeartbeatAt).getTime()) / 1000)) : 0
+  if (age > 20) return `宸?${age} 绉掓病鏈夋柊鐨勮繘搴﹀績璺筹紝鍙兘鍋滃湪濯掍綋澶勭悊闃舵锛涜鍏堣瀵熴€傝秴杩囦换鍔′繚鎶ゆ椂闂翠粛鏃犲彉鍖栨椂锛屽彲鍙栨秷浠诲姟鍚庢鏌ョ礌鏉愬拰濯掍綋宸ュ叿鍐嶉噸鏂版彁浜ゃ€俙
+  return '浠诲姟姝ｅ湪鍚庡彴澶勭悊锛涘綋鍓嶉樁娈靛畬鎴愬悗浼氳嚜鍔ㄨ繘鍏ヤ笅涓€鏉★紝澶辫触浼氬湪浠诲姟璇存槑涓粰鍑哄鐞嗘柟娉曘€?
+})
+const hasExternalAudio = computed(() => Boolean(plan.value?.voicePath || plan.value?.bgmPath))
+const needsExternalAudio = computed(() => Boolean(plan.value?.requiresExternalAudio))
+const hasAudioCoverage = computed(() => !needsExternalAudio.value || Boolean(plan.value?.bgmPath)
+  || Number(plan.value?.voiceDurationSec || 0) + 0.5 >= Number(plan.value?.plannedSec || 0))
+const preflightReady = computed(() => {
+  if (!runtime.ffmpeg || !runtime.ffprobe) return false
+  if (!selectedVisuals.value.length) return false
+  if (needsExternalAudio.value && (!hasExternalAudio.value || !hasAudioCoverage.value)) return false
+  // Do not let a rough material-capacity estimate bypass the actual dry-run.
+  return Boolean(plan.value?.usable) && inRange.value
+})
+const preflightMessage = computed(() => {
+  if (!runtime.ffmpeg || !runtime.ffprobe) return '鏈娴嬪埌 FFmpeg/FFprobe锛屾棤娉曞畨鍏ㄥ紑濮嬪嚭鐗囥€傝鍦ㄧ幆澧冧腑蹇冨畬鎴愰厤缃€?
+  if (!selectedVisuals.value.length) return '褰撳墠绛涢€夎寖鍥存病鏈夊彲璇诲彇鐨勭敾闈㈢礌鏉愶細妫€鏌ユ寚瀹氱礌鏉愩€佹巿鏉冩枃浠跺す锛屾垨鍥炲埌绱犳潗搴撻噸鏂版帰娴嬪け璐ユ枃浠躲€?
+  if (dry.value) return '姝ｅ湪鎸夊綋鍓嶅弬鏁版墽琛屽共璺戦妫€锛岀‘璁ゆ椂闀垮拰绱犳潗璐ㄩ噺鍚庝細鑷姩寮€濮嬨€?
+  if (!plan.value) return `鐐瑰嚮鈥滃紑濮嬧€濅細鍏堣嚜鍔ㄥ畬鎴愬共璺戯紱褰撳墠绱犳潗绾?${usableVisualSeconds.value.toFixed(1)} 绉掞紝涔熷彲鎵嬪姩鐐瑰嚮鈥滈瑙堢 N 鏉♀€濇煡鐪嬫椂闂寸嚎銆俙
+  if (needsExternalAudio.value && !hasExternalAudio.value) {
+    return '骞茶窇鏈€氳繃锛氬綋鍓嶁€滅礌鏉愰煶杞ㄢ€濇ā寮忔病鏈夊彲瑕嗙洊鍏ㄧ墖鐨?BGM鎴栧彛鎾€傝鑷冲皯瀵煎叆涓€鏉￠煶棰戯紝鎴栨槑纭€夋嫨鈥滀繚鐣欏師鐗囧０闊斥€?鈥淎I 浜哄０鈥濄€?
+  }
+  if (needsExternalAudio.value && !hasAudioCoverage.value) {
+    const voiceSec = Number(plan.value.voiceDurationSec || 0).toFixed(1)
+    const plannedSec = Number(plan.value.plannedSec || 0).toFixed(1)
+    return `骞茶窇鏈€氳繃锛氬彛鎾粎 ${voiceSec} 绉掞紝璁″垝 ${plannedSec} 绉掞紝鏈€夋嫨 BGM 浼氫骇鐢熼暱闈欓煶銆傚皢浠绘剰鍙闊抽閫変负鑳屾櫙闊充箰鍗冲彲瑕嗙洊鏁存潯銆俙
+  }
+  if (!plan.value.usable || !inRange.value) {
+    const actual = Number(plan.value.plannedSec || 0).toFixed(1)
+    return `骞茶窇鏈€氳繃锛氳鍒掑疄闄?${actual} 绉掞紝瑕佹眰 ${p.minSec}鈥?{p.maxSec} 绉掋€傝琛ュ厖鍙绱犳潗銆侀檷浣庝氦浠樹笅闄愭垨鍑忓皯缁撴瀯娈靛悗閲嶆柊棰勮銆俙
+  }
+  const recommended = Number(plan.value.targetSec || 0)
+  const targetNote = recommended > Number(plan.value.plannedSec)
+    ? `锛涗綆浜庢帹鑽愮洰鏍?${recommended.toFixed(1)} 绉掞紝浣嗕笉褰卞搷鎻愪氦`
+    : ''
+  return `棰勬閫氳繃锛氳鍒?${Number(plan.value.plannedSec).toFixed(1)} 绉掞紝宸叉弧瓒?${p.minSec}鈥?{p.maxSec} 绉?{targetNote}锛涘綋鍓嶇瓫閫夎寖鍥?${selectedVisuals.value.length} 鏉＄敾闈€佺害 ${usableVisualSeconds.value.toFixed(1)} 绉掋€傚彲浠ュ厛鍥哄畾鍑?1鈥? 鏉＄‘璁よ川閲忋€俙
+})
+
+function countSlot(k) {
+  return plan.value ? plan.value.segments.filter((s) => s.slot === k).length : 0
+}
+function segTitle(s) {
+  return `${slotLabel(s.slot)} 路 ${s.materialName} 路 ${s.sourceStart.toFixed(1)}s 璧?${s.duration.toFixed(2)}s`
+}
+function fileUrl(output) {
+  if (typeof output === 'object') return output.publicUrl || output.fileUrl || fileUrl(output.filePath)
+  const name = String(output || '').replace(/\\/g, '/').split('/').pop()
+  return api.protectedUrl(`/files/output/${name}`)
+}
+function formatDuration(seconds) {
+  const s = Math.max(0, Number(seconds) || 0)
+  if (s < 60) return `${Math.round(s)}绉抈
+  return `${Math.floor(s / 60)}鍒?{Math.round(s % 60)}绉抈
+}
+
+const TECHNICAL_TRANSLATIONS = [
+  [/\bAI voice\b|\bai-voice\b/gi, 'AI 浜哄０'],
+  [/\bBGM\b/gi, '鑳屾櫙闊充箰'],
+  [/\bASR\b/gi, '璇煶璇嗗埆'],
+  [/\bOCR\b/gi, '鐢婚潰鏂囧瓧璇嗗埆'],
+  [/\bFFmpeg\b/gi, '濯掍綋澶勭悊寮曟搸'],
+  [/\bffprobe\b/gi, '濯掍綋鎺㈡祴'],
+  [/\bQC\b/gi, '鎴愬搧璐ㄦ'],
+  [/\bducking\b/gi, '鑳屾櫙闊充箰鑷姩鍘嬩綆'],
+  [/\bconcat\b/gi, '瑙嗛鎷兼帴'],
+  [/\bmux(ing|ed)?\b/gi, '闊宠棰戝悎鎴?],
+  [/\bthumbnail\b/gi, '灏侀潰鐢熸垚'],
+  [/\bpending\b/gi, '鎺掗槦涓?],
+  [/\brunning\b/gi, '澶勭悊涓?],
+  [/\bfailed\b/gi, '澶辫触'],
+  [/\bcompleted\b/gi, '宸插畬鎴?]
+]
+
+function translateTechnicalText (value) {
+  let text = String(value ?? '')
+  TECHNICAL_TRANSLATIONS.forEach(([pattern, replacement]) => { text = text.replace(pattern, replacement) })
+  return text
+}
+
+function issueAction (text) {
+  const value = String(text || '')
+  if (/闈欓煶|闊抽|鍙ｆ挱|BGM|鑳屾櫙闊充箰|澹伴煶/.test(value)) {
+    return '妫€鏌ュ彛鎾枃浠舵槸鍚﹀彲鎾斁锛涙病鏈夎鐩栧叏鐗囨椂锛岃ˉ鍏呬竴鏉″彲璇昏儗鏅煶涔愶紝鎴栭噸鏂伴€夋嫨澹伴煶妯″紡鍚庡厛鎵ц骞茶窇銆?
+  }
+  if (/榛戝睆|鐢婚潰|瑙嗛|涓嶅彲瑙ｇ爜/.test(value)) {
+    return '鍥炲埌绱犳潗搴撻噸鏂版帰娴嬪け璐ョ礌鏉愶紝绉婚櫎榛戝睆鎴栨崯鍧忕墖娈靛悗閲嶆柊棰勮銆?
+  }
+  if (/鏃堕暱|鎴柇|闊崇敾|鍚屾/.test(value)) {
+    return '缂╃煭鏂囨鎴栬皟鏁寸洰鏍囨椂闀匡紝纭繚澹伴煶涓庣敾闈㈡椂闀夸竴鑷达紝鍐嶉噸鏂版墽琛屽共璺戙€?
+  }
+  if (/閲嶅|鍚屾簮|閽╁瓙/.test(value)) {
+    return '琛ュ厖涓嶅悓绱犳潗鎴栦慨鏀归挬瀛愮瓥鐣ュ悗閲嶈瘯锛涗笉瑕佽繛缁噸澶嶆彁浜ゅ悓涓€鎵瑰弬鏁般€?
+  }
+  if (/瓒呮椂|鏃犳椿鍔▅鍗′綇|绛夊緟/.test(value)) {
+    return '鍏堣瀵熷綋鍓嶉樁娈碉紱瓒呰繃淇濇姢鏃堕棿浠嶆棤蹇冭烦鏃跺彇娑堜换鍔★紝妫€鏌ョ礌鏉愬拰濯掍綋宸ュ叿鍚庨噸鏂版彁浜ゃ€?
+  }
+  return '鎵撳紑浠诲姟璇︽儏鍜岀礌鏉愬簱妫€鏌ュ搴旈樁娈碉紝淇鍚庨噸鏂版墽琛屽共璺戝啀鍑虹墖銆?
+}
+
+function taskIssueRows (job) {
+  const raw = String(job?.error || '').trim()
+  if (!raw) return []
+  return raw.split(/\r?\n|锛??=绗琝s*\d+\s*鏉?|(?<=杈撳嚭)\s+(?=绗琝s*\d+\s*鏉?/)
+    .map((item) => translateTechnicalText(item.trim()))
+    .filter(Boolean)
+    .map((text) => ({
+      title: /璐ㄦ鏈€氳繃|璐ㄦ澶辫触/.test(text) ? '鎴愬搧璐ㄦ鏈€氳繃' : '鍑虹墖澶勭悊寮傚父',
+      text,
+      action: issueAction(text)
+    }))
+}
+
+function shortTaskText (row) {
+  const text = String(row?.error || row?.summary || '')
+  if (!text) return '-'
+  if (row?.status === 'done' && /鎴愬搧璐ㄦ閫氳繃/.test(text)) return row.summary || '宸插畬鎴愬苟閫氳繃鎴愬搧璐ㄦ'
+  if (/Comparison method violates its general contract/.test(text)) return '璁″垝鎺掑簭寮傚父锛屽凡鍋滄锛涜鍒锋柊鍚庨噸鏂板共璺?
+  if (/娌℃湁鍙敤闊宠建|娌℃湁鍙敤 BGM|绱犳潗闊宠建妯″紡浼氫骇鐢熼潤闊?.test(text)) return '缂哄皯闊宠建锛氳瀵煎叆 BGM/鍙ｆ挱锛屾垨鏄庣‘閫夋嫨淇濈暀鍘熺墖澹伴煶/AI 浜哄０'
+  if (/绱犳潗涓嶈冻|閮ㄥ垎绱犳潗鍒囩墖澶辫触|瀹為檯鍙敤|鐭簬璁″垝/.test(text)) return '绱犳潗涓嶈冻锛屾湭鐢熸垚鍚堟牸鎴愮墖锛涜琛ョ礌鏉愭垨闄嶄綆浜や粯涓嬮檺'
+  if (/鍒囩墖.*澶辫触|鎷兼帴杈撳嚭鏃堕暱鏍￠獙澶辫触/.test(text)) return '绱犳潗鍒囩墖寮傚父锛岃鍒扮礌鏉愬簱閲嶆柊鎺㈡祴鍚庨噸璇?
+  if (/瓒呰繃鏃堕檺|鏃犳椿鍔?.test(text)) return '娓叉煋瓒呮椂鎴栨棤娲诲姩锛屽凡瀹夊叏鍋滄'
+  return text.length > 96 ? `${text.slice(0, 96)}鈥 : text
+}
+
+function onAudioModeChange (mode) {
+  if (mode === 'ai-voice' && p.voiceMaterialId) {
+    p.audioMode = 'material-audio'
+    ElMessage.warning('宸叉寚瀹氬彛鎾汉澹帮紱璇峰厛娓呴櫎璇ラ€夋嫨锛屾墠鑳戒富鍔ㄥ惎鐢?AI 浜哄０')
+    return
+  }
+  if (mode === 'silent') {
+    p.voiceMaterialId = null
+    p.bgmMaterialId = null
+    p.hookAudioMaterialId = null
+    p.autoSubtitles = false
+    p.burnAiVoiceCaptions = false
+    p.burnHookText = false
+    ElMessage.info('宸插惎鐢ㄧ湡姝ｉ潤闊宠棰戯細涓嶄細淇濈暀鎴栫敓鎴愪换浣曢煶棰戞祦鍜屾柊瀛楀箷')
+  }
+}
+
+function onVoiceMaterialChange (voiceId) {
+  if (voiceId && p.audioMode === 'ai-voice') {
+    p.audioMode = 'material-audio'
+    ElMessage.info('宸查攣瀹氭寚瀹氬彛鎾紝AI 浜哄０宸插叧闂?)
+  }
+}
+
+function onSourceSubtitleCleanChange (enabled) {
+  p.sourceSubtitleCleanMode = enabled ? 'subtitle-safe-band' : 'off'
+}
+
+const EIGHT_STAGE_NAMES = ['寮€澶撮挬瀛?, '鐥涚偣鍦烘櫙', '鐪熷疄鍙嶅簲', '鍘熺悊璇存槑', '浜у搧灞曠ず', '浣跨敤杩囩▼', '璐拱鐞嗙敱', '琛屽姩鏀跺熬']
+
+function makeFolderStep (name, order, targetSec = null) {
+  return { order, name, folderId: null, fallbackFolderId: null, required: true, enabled: true,
+    targetSec: targetSec || Math.max(3, Math.round((p.targetDurationSec || p.minSec || 80) / 8)),
+    aiSelect: true, shortagePolicy: 'block' }
+}
+
+function loadEightStageDefaults () {
+  p.folderReadSteps = EIGHT_STAGE_NAMES.map((name, index) => makeFolderStep(name, index + 1))
+  showAllFolderSteps.value = false
+}
+
+function applyFixedOrderStages (name, stages, announce = true) {
+  if (!Array.isArray(stages) || !stages.length || stages.length > 32) return
+  resetIndustryPresetState()
+  fixedOrderSkillKey.value = ''
+  p.strictFolderSequence = true
+  p.folderReadSteps = stages.map((step, index) => {
+    const item = makeFolderStep(String(step?.name || `璇诲彇姝ラ ${index + 1}`).slice(0, 80), index + 1, step?.targetSec)
+    item.shortagePolicy = step?.shortagePolicy === 'fallback' ? 'fallback' : 'block'
+    const match = firstMatch(folders.value, step?.folderKeywords)
+    if (match) item.folderId = match.id
+    return item
+  })
+  showAllFolderSteps.value = false
+  draftSource.value = name || '鍥哄畾椤哄簭寤鸿'
+  if (announce) ElMessage.success(`宸茶浇鍏?{name || '椤哄簭寤鸿'}锛屾楠ゅ拰鏂囦欢澶逛粛鍙户缁慨鏀筦)
+}
+
+function applyFixedOrderPreset (key, announce = true) {
+  const preset = cloneFixedOrderPreset(key)
+  if (!preset) return
+  fixedOrderSkillKey.value = preset.key
+  applyFixedOrderStages(preset.name, preset.stages, announce)
+  fixedOrderSkillKey.value = preset.key
+}
+
+function openFixedOrderSkill () {
+  const key = fixedOrderSkillKey.value || FIXED_ORDER_PRESETS[0]?.key
+  if (key) applyFixedOrderPreset(key)
+}
+
+function addFolderReadStep () {
+  const next = p.folderReadSteps.length + 1
+  p.folderReadSteps.push(makeFolderStep(`璇诲彇姝ラ ${next}`, next))
+  showAllFolderSteps.value = true
+}
+
+function removeFolderReadStep (index) {
+  if (p.folderReadSteps.length <= 1) {
+    ElMessage.warning('鑷冲皯淇濈暀涓€涓鍙栨楠?)
+    return
+  }
+  p.folderReadSteps.splice(index, 1)
+  p.folderReadSteps.forEach((step, stepIndex) => { step.order = stepIndex + 1 })
+}
+
+function onStrictFolderSequenceChange (enabled) {
+  if (enabled && !(p.folderReadSteps || []).length) {
+    p.folderReadSteps = [makeFolderStep('寮€澶撮挬瀛?, 1), makeFolderStep('鐥涚偣鍦烘櫙', 2), makeFolderStep('鐪熷疄鍙嶅簲', 3)]
+    showAllFolderSteps.value = false
+  }
+}
+
+function clearStepFolder (step) {
+  step.folderId = null
+  step.fallbackFolderId = null
+  step.shortagePolicy = 'block'
+  ElMessage.success(`宸插彇娑堢 ${step.order} 姝ョ殑鏂囦欢澶圭粦瀹歚)
+}
+
+function resetIndustryPresetState () {
+  activeIndustryPreset.value = ''
+  industryPresetSnapshot.value = null
+}
+
+function resetDraft () {
+  workflowId.value = null
+  fixedOrderSkillKey.value = ''
+  resetIndustryPresetState()
+  draftSource.value = '褰撳墠鑽夌'
+  applyParamPatch({}, { reset: true })
+  ElMessage.success('宸查噸缃嚭鐗囪崏绋匡紱绱犳潗閫夋嫨鍜屽浐瀹氶『搴忔楠や細淇濈暀渚涗綘缁х画璋冩暣')
+}
+
+function clearWorkflow () {
+  resetIndustryPresetState()
+  workflowId.value = null
+  const project = projects.value.find((item) => item.id === projectId.value)
+  let patch = {}
+  try { patch = project?.defaultParams ? JSON.parse(project.defaultParams) : {} } catch { patch = {} }
+  applyParamPatch(patch, { reset: true })
+  draftSource.value = project ? `椤圭洰銆?{project.name}銆嶉粯璁ゅ弬鏁癭 : '鍩虹榛樿鍙傛暟'
+  ElMessage.success('宸叉挙閿€宸ヤ綔娴侊紝鎭㈠鍙紪杈戠殑椤圭洰/鍩虹鍙傛暟')
+}
+
+function introPolicyError () {
+  if (!p.introEnabled || p.introMode !== 'rotate' || !p.introNoRepeat || p.introAllowRepeatWhenInsufficient) return ''
+  if (introCandidates.value.length < introRequiredCount.value) return `鐗囧ご鍊欓€変粎 ${introCandidates.value.length} 鏉★紝灏戜簬鏈壒娆?${introRequiredCount.value} 鏉★紱璇疯ˉ鍏呯墖澶村€欓€夋垨鏄庣‘鍏佽涓嶈冻鏃堕噸澶峘
+  return ''
+}
+
+function strictFolderSequenceError () {
+  const introError = introPolicyError()
+  if (introError) return introError
+  if (!p.strictFolderSequence) return ''
+  const steps = (p.folderReadSteps || []).filter((step) => step?.enabled !== false)
+  if (!steps.length) return '璇疯嚦灏戜繚鐣欎竴涓惎鐢ㄧ殑璇诲彇姝ラ'
+  const missing = steps.find((step) => step.required !== false && !step.folderId)
+  if (missing) return `绗?${missing.order || '?'} 姝ャ€?{missing.name || '鏈懡鍚嶆楠?}銆嶅皻鏈€夋嫨搴旂敤鍐呮枃浠跺す`
+  // 鍚屼竴鏂囦欢澶硅澶氫釜鍚敤姝ラ缁戝畾浼氬鑷磋鍙栬竟鐣屼笉鏄庣‘
+  const seen = new Map()
+  for (const step of steps) {
+    if (!step.folderId) continue
+    if (seen.has(step.folderId)) {
+      return `绗?${step.order || '?'} 姝ャ€?{step.name || '鏈懡鍚嶆楠?}銆嶄笌绗?${seen.get(step.folderId)} 姝ョ粦瀹氫簡鍚屼竴涓枃浠跺す`
+    }
+    seen.set(step.folderId, step.order || '?')
+  }
+  // 澶囩敤鏂囦欢澶逛笉鍏佽璺ㄦ楠ゅ€熺敤鍏朵粬姝ラ鐨勪富鏂囦欢澶?涔熶笉鍏佽鎸囧悜鏈楠よ嚜韬?
+  for (const step of steps) {
+    if (step.shortagePolicy !== 'fallback' || !step.fallbackFolderId) continue
+    if (step.fallbackFolderId === step.folderId) {
+      return `绗?${step.order || '?'} 姝ャ€?{step.name || '鏈懡鍚嶆楠?}銆嶇殑澶囩敤鏂囦欢澶逛笉鑳戒笌涓绘枃浠跺す鐩稿悓`
+    }
+    if (seen.has(step.fallbackFolderId)) {
+      return `绗?${step.order || '?'} 姝ャ€?{step.name || '鏈懡鍚嶆楠?}銆嶇殑澶囩敤鏂囦欢澶逛笌鍏朵粬姝ラ鐨勪富鏂囦欢澶瑰啿绐乣
+    }
+  }
+  return ''
+}
+
+function payload() {
+  const o = { ...p }
+  o.autoUseCrawledMaterials = materialSourceMode.value !== 'local'
+  o.materialSourceMode = materialSourceMode.value
+  // 鍐荤粨鏈鎻愪氦鐨?AI 鐢熶骇妯″紡锛涙墍鏈夊嚭鐗囩浉鍏宠姹傦紙骞茶窇/缂哄彛/鍑嗗/鎻愪氦锛夊叡鐢ㄦ杞借嵎銆?
+  o.autonomyMode = autonomyMode.value
+  // 鑷富妯″紡榛樿寮€鍚弗鏍间氦浠橈紱鐢ㄦ埛鏄惧紡鍏抽棴鏃跺皧閲嶉€夋嫨銆?
+  // 闈炶嚜涓?鏃ф祦绋嬩笉鎼哄甫璇ュ瓧娈碉紝淇濇寔鍚庣鏃㈡湁榛樿锛堜笉鎷︽埅锛夛紝鍏煎鎬т笉鍙樸€?
+  if (autonomyMode.value === 'autonomous') o.strictDelivery = p.strictDelivery == null ? true : p.strictDelivery
+  else delete o.strictDelivery
+  if (!o.cleanSourceSubtitles) o.sourceSubtitleCleanMode = 'off'
+  // Prepared public material is only widened for the current run; manual selections stay intact in the form.
+  if (usePreparedPoolForRun.value) {
+    delete o.materialIds
+    delete o.folderIds
+  }
+  // Backstop for stale project defaults or programmatic values: manual narration is authoritative.
+  if (o.voiceMaterialId) o.audioMode = 'material-audio'
+  if (!o.targetSec) delete o.targetSec
+  if (!o.targetDurationSec) delete o.targetDurationSec
+  if (!o.hookText) delete o.hookText
+  if (!o.hookStrategy) delete o.hookStrategy
+  if (!o.rehookText) delete o.rehookText
+  if (!o.bgmMaterialId) delete o.bgmMaterialId
+  if (!o.voiceMaterialId) delete o.voiceMaterialId
+  if (!o.hookAudioMaterialId) delete o.hookAudioMaterialId
+  return o
+}
+
+function applyParamPatch (patch, { reset = false } = {}) {
+  if (!patch || typeof patch !== 'object') return
+  if (reset) {
+    // 閲嶇疆鍒伴粯璁ゅ€?浣嗕繚鐣欑敤鎴锋墜鍔ㄩ厤缃?宸查€夌礌鏉?鏂囦欢澶?鍥哄畾椤哄簭姝ラ
+    const keep = {
+      materialIds: p.materialIds,
+      folderIds: p.folderIds,
+      folderReadSteps: p.folderReadSteps,
+      strictFolderSequence: p.strictFolderSequence
+    }
+    Object.keys(DEFAULTS).forEach((key) => { p[key] = DEFAULTS[key] instanceof Array ? [...DEFAULTS[key]] : DEFAULTS[key] })
+    p.materialIds = keep.materialIds || []
+    p.folderIds = keep.folderIds || []
+    p.folderReadSteps = keep.folderReadSteps || []
+    p.strictFolderSequence = keep.strictFolderSequence || false
+  }
+  Object.entries(patch).forEach(([key, value]) => {
+    if (Object.prototype.hasOwnProperty.call(DEFAULTS, key) && value !== undefined) {
+      p[key] = Array.isArray(value) ? [...value] : value
+    }
+  })
+  autoUseCrawled.value = p.autoUseCrawledMaterials !== false
+  if (p.cleanSourceSubtitles && !p.sourceSubtitleCleanMode) p.sourceSubtitleCleanMode = 'subtitle-safe-band'
+}
+
+function workflowParamPatch (definition) {
+  const parsed = typeof definition === 'string' ? (() => { try { return JSON.parse(definition) } catch { return {} } })() : (definition || {})
+  const patch = {}
+  for (const step of parsed.steps || []) {
+    const skill = step.skill || step.name
+    const args = step.args || {}
+    if (skill === 'set_duration' || skill === 'set_slice' || skill === 'set_structure' || skill === 'set_canvas' || skill === 'set_quality' || skill === 'pick_audio') {
+      Object.entries(args).forEach(([key, value]) => {
+        const mapped = { jitter: 'sliceJitter', explode: 'explodeLongClips', maxPerMaterial: 'maxSlicesPerMaterial' }[key] || key
+        if (Object.prototype.hasOwnProperty.call(DEFAULTS, mapped)) patch[mapped] = value
+      })
+    }
+  }
+  return patch
+}
+
+function onProjectChange (id) {
+  resetIndustryPresetState()
+  if (!id) {
+    // 娓呯┖椤圭洰閫夋嫨:鍙傛暟鎭㈠榛樿,淇濈暀鎵嬪姩閫夋潗涓庡浐瀹氶『搴忛厤缃?
+    applyParamPatch({}, { reset: true })
+    draftSource.value = '鍩虹榛樿鍙傛暟'
+    ElMessage.success('宸叉竻闄ら」鐩€夋嫨锛屽弬鏁版仮澶嶉粯璁?)
+    return
+  }
+  const pj = projects.value.find((x) => x.id === id)
+  if (!pj) return
+  let patch = {}
+  try { patch = pj.defaultParams ? JSON.parse(pj.defaultParams) : {} } catch { patch = {} }
+  applyParamPatch(patch, { reset: true })
+  draftSource.value = pj.defaultParams ? `椤圭洰銆?{pj.name}銆嶉粯璁ゅ弬鏁癭 : `椤圭洰銆?{pj.name}銆峘
+  ElMessage.success(pj.defaultParams ? '宸茶浇鍏ラ」鐩粯璁ゅ弬鏁帮紱浣犲彲浠ョ户缁慨鏀? : '宸查€夋嫨椤圭洰锛涗娇鐢ㄩ粯璁ゅ嚭鐗囧弬鏁?)
+}
+
+async function onWorkflowChange (id) {
+  resetIndustryPresetState()
+  if (!id) {
+    clearWorkflow()
+    return
+  }
+  const wf = workflows.value.find((item) => item.id === id)
+  if (!wf) return
+  applyParamPatch(workflowParamPatch(wf.def))
+  draftSource.value = `宸ヤ綔娴併€?{wf.name}銆嶅缓璁甡
+  ElMessage.success(`宸茶浇鍏ュ伐浣滄祦鈥?{wf.name}鈥濈殑榛樿鍙傛暟锛涗綘鍙互缁х画淇敼`)
+}
+
+function firstMatch (items, keywords) {
+  const words = keywords || []
+  return items.find((item) => words.some((word) => String(item.name || '').toLowerCase().includes(word.toLowerCase())))
+}
+function snapshotIndustryPreset () {
+  return {
+    params: Object.fromEntries(Object.keys(DEFAULTS).map((key) => [key, Array.isArray(p[key]) ? [...p[key]] : p[key]])),
+    draftSource: draftSource.value
+  }
+}
+
+function restoreIndustryPreset (snapshot) {
+  if (!snapshot?.params) return
+  Object.entries(snapshot.params).forEach(([key, value]) => { p[key] = Array.isArray(value) ? [...value] : value })
+  autoUseCrawled.value = p.autoUseCrawledMaterials !== false
+  draftSource.value = snapshot.draftSource || '褰撳墠鑽夌'
+}
+
+function clearIndustryPreset () {
+  if (!activeIndustryPreset.value || !industryPresetSnapshot.value) return
+  const label = activeIndustryPreset.value === 'longmix' ? '涓撲笟闀挎贩鍓? : PRESET_LABEL[activeIndustryPreset.value]
+  restoreIndustryPreset(industryPresetSnapshot.value)
+  resetIndustryPresetState()
+  ElMessage.success(`宸插彇娑?{label}棰勮锛屽苟鎭㈠搴旂敤鍓嶅弬鏁癭)
+}
+
+function activateIndustryPreset (key, apply) {
+  if (activeIndustryPreset.value === key) {
+    clearIndustryPreset()
+    return false
+  }
+  if (activeIndustryPreset.value) clearIndustryPreset()
+  industryPresetSnapshot.value = snapshotIndustryPreset()
+  activeIndustryPreset.value = key
+  apply()
+  draftSource.value = key === 'longmix' ? '涓撲笟闀挎贩鍓璁? : `琛屼笟棰勮銆?{PRESET_LABEL[key]}銆峘
+  return true
+}
+
+function applyPreset(key) {
+  const preset = INDUSTRY_PRESETS[key]
+  if (!preset || !activateIndustryPreset(key, () => {})) return
+  const { folderKeywords, bgmKeywords, voiceKeywords, ...params } = preset
+  Object.assign(p, params)
+  const matchedFolders = folders.value.filter((folder) => folderKeywords.some((word) => String(folder.name || '').toLowerCase().includes(word.toLowerCase())))
+  p.folderIds = matchedFolders.map((folder) => folder.id)
+  const bgm = firstMatch(bgmList.value, bgmKeywords)
+  const voice = firstMatch(voiceList.value, voiceKeywords)
+  p.bgmMaterialId = bgm?.id || null
+  p.voiceMaterialId = voice?.id || null
+  const fallback = [matchedFolders.length ? '' : '鏈尮閰嶆枃浠跺す', bgm ? '' : '鏈尮閰嶈儗鏅煶涔?, voice ? '' : '鏈尮閰嶅彛鎾?].filter(Boolean)
+  ElMessage.success(`宸插簲鐢?{PRESET_LABEL[key]}棰勮${fallback.length ? `锛?{fallback.join('銆?)}灏嗘寜瑙掕壊闅忔満` : '锛涘凡鍖归厤鐩殑绱犳潗'}`)
+}
+
+const HOOK_STRATEGY_LABEL = {
+  CONFLICT: '鍐茬獊', RESULT: '缁撴灉', SUSPENSE: '鎮康', REWARD: '濂栧姳',
+  COUNTERINTUITIVE: '鍙嶅父璇?, QUESTION: '鎻愰棶', VISUAL_IMPACT: '瑙嗚鍐插嚮'
+}
+function hookStrategyLabel(strategy) {
+  return HOOK_STRATEGY_LABEL[strategy] || strategy
+}
+
+function applyLongMixPreset() {
+  if (!activateIndustryPreset('longmix', () => {})) return
+  Object.assign(p, {
+    minSec: 120, maxSec: 150, dense: true, targetSec: null, targetDurationSec: null,
+    sliceSec: 3.5, sliceJitter: 0.3, maxSlicesPerMaterial: 4, explodeLongClips: true,
+    hookSec: 3, celebrityRatio: 0.25, productSlots: 4, productSec: 3.5, endcard: true,
+    dedupStrictness: 'strict', allowSameSourceNonoverlap: true,
+    autoRehook: true, namePrefix: 'longmix'
+  })
+  ElMessage.success('宸插簲鐢ㄤ笓涓氶暱娣峰壀棰勮锛?20鈥?50 绉掞紝涓ユ牸鍚屾簮涓嶉噸鍙?+ 鑷姩涓鍐嶉挬瀛愶級')
+}
+
+async function doDryRun() {
+  const strictError = strictFolderSequenceError()
+  if (strictError) {
+    ElMessage.warning(strictError)
+    return false
+  }
+  const revision = dryRunRevision
+  dry.value = true
+  try {
+    const result = await api.dryRun({
+      workflowId: workflowId.value, projectId: projectId.value,
+      params: payload(), variant: variant.value
+    })
+    if (revision !== dryRunRevision) return false
+    plan.value = result
+    if (!result.segments.length) {
+      ElMessage.warning('娌℃帓鍑虹墖娈碉紝鍏堝幓绱犳潗搴撳鍏ュ苟鎵撳ソ瑙掕壊鏍?)
+      doGapAnalysis({ silent: true })
+      return false
+    }
+    const ready = Boolean(result.usable)
+      && result.plannedSec >= p.minSec
+      && result.plannedSec <= p.maxSec
+      && !(result.requiresExternalAudio && !result.voicePath && !result.bgmPath)
+      && !(result.requiresExternalAudio && !result.bgmPath
+        && Number(result.voiceDurationSec || 0) + 0.5 < Number(result.plannedSec || 0))
+    if (!ready && (!result.usable || result.plannedSec < p.minSec)) doGapAnalysis({ silent: true })
+    return ready
+  } catch (error) {
+    if (revision === dryRunRevision) ElMessage.error(`骞茶窇棰勬澶辫触锛?{error.message || '璇锋鏌ュ悗绔拰绱犳潗鐘舵€?}`)
+    return false
+  } finally {
+    if (revision === dryRunRevision) dry.value = false
+  }
+}
+
+async function doGapAnalysis({ silent = false } = {}) {
+  gapLoading.value = true
+  try {
+    materialGap.value = await api.materialGap({
+      projectId: projectId.value,
+      params: payload()
+    })
+  } catch (error) {
+    if (!silent) ElMessage.error(`缂哄彛鍒嗘瀽澶辫触锛?{error.message || '璇锋鏌ュ悗绔姸鎬?}`)
+  } finally {
+    gapLoading.value = false
+  }
+}
+
+async function doAutoFill() {
+  if (autoFillLoading.value) return
+  autoFillLoading.value = true
+  autoFillResult.value = null
+  try {
+    autoFillResult.value = await api.materialAutoFill({
+      projectId: projectId.value,
+      params: payload(),
+      sources: ['wikimedia', 'archive'],
+      perSource: 5
+    })
+    if (autoFillResult.value.any) {
+      ElMessage.success(`宸叉帓闃?${autoFillResult.value.totalItemsQueued} 鏉″叕寮€绱犳潗锛屽彲鍦ㄧ礌鏉愭姄鍙栭〉闈㈡煡鐪嬭繘搴)
+      // Re-analyze gap after a short delay to let the crawl jobs start
+      setTimeout(() => doGapAnalysis({ silent: true }), 2000)
+    } else {
+      ElMessage.warning('鏈壘鍒板尮閰嶇殑鍏紑绱犳潗锛屽缓璁墜鍔ㄥ鍏ユ垨璋冩暣鍏抽敭璇?)
+    }
+  } catch (error) {
+    ElMessage.error(`鑷姩濉厖澶辫触锛?{error.message || '璇锋鏌ュ悗绔姸鎬?}`)
+  } finally {
+    autoFillLoading.value = false
+  }
+}
+
+function goToCrawlWithProject() {
+  const query = {}
+  if (projectId.value) query.projectId = projectId.value
+  if (materialGap.value?.projectKeyword) query.keyword = materialGap.value.projectKeyword
+  router.push({ path: '/crawl', query })
+}
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+// 鍏紑鏉ユ簮澶辫触 / 鐔旀柇鐨勮锛泀ueued / no_results 涓嶅睘浜庨棶棰?
+function sourceIssueRows (autoFill) {
+  return (autoFill?.sourceResults || []).filter((row) => row?.status === 'failed' || row?.status === 'skipped_breaker')
+}
+const preparingSourceIssues = computed(() => sourceIssueRows(preparingSnapshot.value?.autoFill))
+const preparationSourceIssueRows = computed(() => sourceIssueRows(preparationResult.value?.autoFill))
+// 杞鏈熼棿鐨勫綋鍓嶉樁娈碉細浼樺厛鍙栨渶鍚庝竴涓?working 闃舵锛屽惁鍒欏彇鏈€鍚庝竴鏉￠樁娈佃褰?
+const preparingStage = computed(() => {
+  const stages = preparingSnapshot.value?.stages || []
+  const working = [...stages].reverse().find((stage) => stage?.status === 'working')
+  return working || stages[stages.length - 1] || null
+})
+const preparingStageName = computed(() => preparingStage.value?.name || '鍑嗗绱犳潗涓?)
+const preparingStageMessage = computed(() => preparingStage.value?.message || '')
+const preparingElapsedSec = computed(() => Number(preparingSnapshot.value?.elapsedSec || 0))
+const preparingWaitedSec = computed(() => Number(preparingSnapshot.value?.waitedSeconds || 0))
+function prepareStageType (status) {
+  if (status === 'done') return 'success'
+  if (status === 'failed') return 'danger'
+  return status === 'working' || status === 'warning' ? 'warning' : 'info'
+}
+
+// 寮傛鍑虹墖鍑嗗锛歅OST 绔嬪嵆鎷垮埌 id/status 蹇収锛況unning 鏃舵寜 3 绉掗棿闅旇疆璇㈠埌缁堟€併€?
+// 闃舵銆佽€楁椂涓庢寜鏉ユ簮澶辫触/鐔旀柇淇℃伅浼氬疄鏃舵覆鏌撳埌鍙充晶闈㈡澘銆傛棤璁哄噯澶囩粨鏋滃浣曪紝
+// 鍚庣画閮戒細缁х画鎵ц骞茶窇鈥斺€斿叕寮€绱犳潗涓嶅彲鐢ㄥ彧鍥為€€鍒版湰鍦扮礌鏉愶紝缁濅笉闈欓粯涓鍑虹墖娴佺▼銆?
+async function prepareMaterials () {
+  preparing.value = true
+  prepareCancelled.value = false
+  preparingSnapshot.value = null
+  preparationResult.value = null
+  try {
+    const currentParams = payload()
+    const snapshot = await api.prepareRender({
+      projectId: projectId.value,
+      params: currentParams,
+      useAi: materialSourceMode.value !== 'local',
+      waitSeconds: 45
+    })
+    preparingSnapshot.value = snapshot
+    let final = snapshot
+    if (snapshot.status === 'running' && snapshot.id != null) {
+      const deadline = Date.now() + PREPARE_POLL_MAX_MS
+      let consecutiveFailures = 0
+      while (final && final.status === 'running' && !prepareCancelled.value && Date.now() < deadline) {
+        await sleep(PREPARE_POLL_MS)
+        try {
+          final = await api.prepareRenderStatus(snapshot.id, { silent: true })
+          consecutiveFailures = 0
+          preparingSnapshot.value = final
+        } catch {
+          // 鍗曟杞澶辫触涓嶄腑鏂細鍑嗗浠诲姟浠嶅湪鍚庡彴鎵ц锛岃繛缁け璐ユ墠鏀惧純浠ュ厤绌鸿浆
+          consecutiveFailures += 1
+          if (consecutiveFailures >= 5) { final = null; break }
+        }
+      }
+      if (final && final.status === 'running') final = null
+    }
+    if (prepareCancelled.value) {
+      ElMessage.info('宸插彇娑堢礌鏉愬噯澶囷紝鏈缁х画浣跨敤褰撳墠鏈湴绱犳潗鍑虹墖')
+      return
+    }
+    if (!final) {
+      ElMessage.warning('绱犳潗鍑嗗浠嶅湪鍚庡彴杩涜涓旇€楁椂杈冮暱锛屾湰娆″皢鐩存帴浣跨敤褰撳墠鏈湴绱犳潗缁х画棰勬锛涘叕寮€绱犳潗鎴愬姛鍏ュ簱鍚庡彲鍦ㄧ礌鏉愬簱鐪嬪埌')
+      return
+    }
+    preparingSnapshot.value = final
+    preparationResult.value = final
+    materialGap.value = final.finalGap || final.initialGap || materialGap.value
+    const hasManualScope = (currentParams.materialIds?.length || 0) > 0 || (currentParams.folderIds?.length || 0) > 0
+    if (final.autoFill?.any || (hasManualScope && final.ready)) {
+      usePreparedPoolForRun.value = true
+      ElMessage.success(final.autoFill?.any
+        ? `宸茶ˉ榻愬苟绛夊緟 ${final.autoFill.totalItemsQueued} 鏉″叕寮€绱犳潗锛涙湰娆′細涓存椂鎵╁睍绱犳潗鑼冨洿浠ョ撼鍏ユ柊绱犳潗`
+        : '椤圭洰绱犳潗搴撳凡婊¤冻鏈鍑虹墖锛涘皢涓存椂鎵╁睍鎵嬪伐鑼冨洿锛岃椤圭洰鐩稿叧绱犳潗鍙備笌鏈棰勬')
+    } else if (final.autoFill && !final.autoFill.any) {
+      // 鏄庣‘鍥為€€锛氭病鏈夊彲鐢ㄧ殑鍏紑绱犳潗鏃剁户缁敤鏈湴绱犳潗璧板共璺戯紝涓嶈娴佺▼闈欓粯鍋滀綇
+      const issues = sourceIssueRows(final.autoFill)
+      ElMessage.warning(issues.length
+        ? `鍏紑绱犳潗鏉ユ簮鏆備笉鍙敤锛?{issues.map((issue) => issue.source).join('銆?)}锛夛紱鏈缁х画浣跨敤鏈湴绱犳潗鍑虹墖锛屽彲绋嶅悗鍦ㄧ礌鏉愭姄鍙栭〉閲嶈瘯`
+        : '鏈壘鍒板彲鐢ㄧ殑鍏紑绱犳潗锛涙湰娆＄户缁娇鐢ㄦ湰鍦扮礌鏉愬嚭鐗囷紝鍙墠寰€绱犳潗鎶撳彇椤垫墜鍔ㄥ鍏?)
+    }
+    await loadInitial()
+  } catch (error) {
+    ElMessage.warning(`椤圭洰绱犳潗鍑嗗鏈畬鎴愶細${error.message || '灏嗙户缁娇鐢ㄥ綋鍓嶆湰鍦扮礌鏉?}`)
+  } finally {
+    preparing.value = false
+    preparingSnapshot.value = null
+    prepareCancelled.value = false
+  }
+}
+
+async function submit() {
+  if (preparing.value || dry.value || submitting.value) return
+  // 棣栨鎻愪氦鍗婅嚜鍔?鑷富妯″紡鍓嶅睍绀轰竴娆℃€ф潈闄愯鏄庯紱鏈悓鎰忓垯涓嶆彁浜ゃ€?
+  if (autonomyMode.value !== 'assist' && !autonomyConsentGranted(autonomyMode.value)) {
+    const granted = await requestAutonomyConsent(autonomyMode.value)
+    if (!granted) return
+  }
+  const strictError = strictFolderSequenceError()
+  if (strictError) {
+    ElMessage.warning(strictError)
+    return
+  }
+  if (materialSourceMode.value === 'local') usePreparedPoolForRun.value = false
+  if (materialSourceMode.value !== 'local') {
+    // 寮傛鍑嗗锛堝惈杞锛夛紱鍗充娇瓒呮椂/澶辫触/鏃犲叕寮€绱犳潗锛屼篃浼氱户缁蛋骞茶窇锛岀粷涓嶉潤榛樹腑姝?
+    await prepareMaterials()
+  }
+  if (!preflightReady.value && !await doDryRun()) {
+    usePreparedPoolForRun.value = false
+    return
+  }
+  if (!preflightReady.value) {
+    usePreparedPoolForRun.value = false
+    ElMessage.warning(preflightMessage.value)
+    return
+  }
+  submitting.value = true
+  try {
+    await api.submitJob({
+      workflowId: workflowId.value, projectId: projectId.value,
+      count: continuous.value ? 1 : count.value, continuous: continuous.value, name: jobName.value || null,
+      timeoutSec: jobTimeoutMin.value > 0 ? jobTimeoutMin.value * 60 : 0,
+      staleAfterSec: jobStaleMin.value > 0 ? jobStaleMin.value * 60 : 0,
+      params: payload()
+    })
+    ElMessage.success(continuous.value ? '宸插紑濮嬭繛缁嚭鐗囷紝闅忔椂鍙偣鍑绘殏鍋? : '宸叉彁浜わ紝姝ｅ湪鍚庡彴娓叉煋')
+    await loadJobs()
+  } finally {
+    submitting.value = false
+    usePreparedPoolForRun.value = false
+  }
+}
+
+let jobsRequest = null
+async function loadJobs({ silent = false } = {}) {
+  if (jobsRequest) return jobsRequest
+  jobsLoading.value = !silent
+  jobsRequest = api.jobs(silent ? { silent: true } : undefined)
+    .then(async (rows) => {
+      const nextRows = Array.isArray(rows) ? rows : []
+      const byId = new Map(jobs.value.map((job) => [String(job.id), job]))
+      nextRows.forEach((row) => {
+        const previous = byId.get(String(row.id))
+        if (previous) Object.assign(previous, row)
+        else byId.set(String(row.id), row)
+      })
+      const nextIds = new Set(nextRows.map((row) => String(row.id)))
+      jobs.value = jobs.value.filter((row) => nextIds.has(String(row.id)))
+      nextRows.forEach((row) => { if (!jobs.value.some((item) => String(item.id) === String(row.id))) jobs.value.push(byId.get(String(row.id))) })
+      const active = nextRows.filter((job) => job.status === 'running' || job.status === 'pending').slice(0, 8)
+      const activeIds = new Set(active.map((job) => String(job.id)))
+      Object.keys(jobLive).forEach((id) => { if (!activeIds.has(String(id))) delete jobLive[id] })
+      await Promise.all(active.map(async (job) => {
+        try { jobLive[job.id] = await api.job(job.id, { silent: true }) } catch { runtimeUnavailable.value = true }
+      }))
+      jobsError.value = false
+      return jobs.value
+    })
+    .catch((error) => {
+      if (!silent) jobsError.value = true
+      return jobs.value
+    })
+    .finally(() => {
+      jobsRequest = null
+      jobsLoading.value = false
+    })
+  return jobsRequest
+}
+
+async function openJob(row) {
+  jobDetail.value = await api.job(row.id)
+  jobDlg.value = true
+}
+
+async function cancel(row) {
+  await api.cancelJob(row.id)
+  loadJobs()
+}
+function cancelPrepare() {
+  prepareCancelled.value = true
+  ElMessage.info('姝ｅ湪鍙栨秷绱犳潗鍑嗗锛屽皢鐩存帴浣跨敤褰撳墠鏈湴绱犳潗缁х画')
+}
+async function onJobRowDblClick(row) {
+  const active = row.status === 'running' || row.status === 'pending' || row.status === 'paused' || row.status === 'awaiting_decision'
+  if (!active) return
+  try {
+    await ElMessageBox.confirm(`鍙屽嚮鍙栨秷浠诲姟 #${row.id}銆?{row.name || ''}銆嶏紵宸茬敓鎴愬唴瀹逛細淇濈暀銆俙, '鍙栨秷浠诲姟', { type: 'warning' })
+    await cancel(row)
+  } catch (e) { /* 鐢ㄦ埛鍙栨秷寮圭獥 */ }
+}
+async function pause(row) {
+  await api.pauseJob(row.id)
+  ElMessage.success('宸茶姹傛殏鍋滐紝褰撳墠涓€鏉℃垚鐗囧畬鎴愬悗浼氫繚鐣欏苟鍋滄')
+  loadJobs()
+}
+async function resume(row) {
+  await api.resumeJob(row.id)
+  ElMessage.success(row.status === 'awaiting_decision' ? '宸叉寜褰撳墠瀹夊叏绛栫暐閲嶆柊鎺掗槦' : '宸茬户缁嚭鐗?)
+  loadJobs()
+}
+async function retryFailed(row) {
+  try {
+    await api.retryFailedJob(row.id)
+    ElMessage.success('澶辫触椤瑰凡閲嶆柊杩涘叆淇娓叉煋闃熷垪锛屽凡閫氳繃鎴愮墖涓嶄細閲嶅鐢熸垚')
+    await loadJobs()
+  } catch (error) { ElMessage.error(`閲嶈瘯澶辫触椤瑰け璐ワ細${error.message}`) }
+}
+
+function canSelectJobForDelete(row) {
+  return !['running', 'pending', 'paused'].includes(row?.status)
+}
+
+function onJobSelectionChange(rows) {
+  selectedJobIds.value = (rows || []).filter(canSelectJobForDelete).map((row) => row.id)
+}
+
+async function delJob(row) {
+  try { await api.deleteJob(row.id); ElMessage.success('浠诲姟璁板綍鍜屽叧鑱旀垚鐗囧凡鍒犻櫎'); await loadJobs() } catch (error) { ElMessage.error(`鍒犻櫎浠诲姟澶辫触锛?{error.message}`) }
+}
+
+async function batchDeleteJobs() {
+  if (!selectedJobIds.value.length) return
+  try {
+    const result = await api.batchDeleteJobs({ ids: selectedJobIds.value })
+    selectedJobIds.value = []
+    const skipped = Array.isArray(result?.skipped) ? result.skipped : []
+    ElMessage.success(skipped.length
+      ? `宸插垹闄?${result.deleted || 0} 鏉★紱${skipped.length} 鏉℃湭鍒犻櫎锛岃鍏堝彇娑堣繍琛屼腑鐨勪换鍔
+      : `宸插垹闄?${result.deleted || 0} 鏉′换鍔″強鍏宠仈鎴愮墖`)
+    await loadJobs()
+  } catch (error) {
+    ElMessage.error(`鎵归噺鍒犻櫎浠诲姟澶辫触锛?{error.message}`)
+  }
+}
+
+async function cleanupJobs () {
+  try {
+    const count = await api.cleanupJobs()
+    ElMessage.success(`宸叉竻鐞?${count} 鏉＄粓鎬佷换鍔¤褰昤)
+    await loadJobs()
+  } catch (error) { ElMessage.error(`娓呯悊浠诲姟澶辫触锛?{error.message}`) }
+}
+
+watch(autoRefresh, (v) => (v ? startTimer() : stopTimer()))
+watch(continuous, (value) => localStorage.setItem('mixcut-continuous', value ? '1' : '0'))
+watch(autonomyMode, (mode) => {
+  localStorage.setItem('mework-autonomy-mode', mode)
+  // 杩涘叆鑷富妯″紡鏃堕粯璁ゅ紑鍚弗鏍间氦浠橈紱鐢ㄦ埛鏄惧紡鍏抽棴鍚庝繚鐣欏叾閫夋嫨锛堜笉鍋氳鐩栵級銆?
+  if (mode === 'autonomous' && p.strictDelivery == null) p.strictDelivery = true
+  invalidateDryRun()
+})
+watch(materialSourceMode, (value) => {
+  localStorage.setItem('mework-material-source-mode', value)
+  autoUseCrawled.value = value !== 'local'
+  preparationResult.value = null
+  usePreparedPoolForRun.value = false
+  doGapAnalysis({ silent: true })
+})
+// A dry-run is a contract for one exact parameter set. Any edit invalidates it.
+let invalidateTimer = null
+function invalidateDryRun () {
+  if (invalidateTimer) clearTimeout(invalidateTimer)
+  invalidateTimer = setTimeout(() => {
+    dryRunRevision++
+    dry.value = false
+    plan.value = null
+    materialGap.value = null
+    autoFillResult.value = null
+    usePreparedPoolForRun.value = false
+    invalidateTimer = null
+  }, 450)
+}
+watch(p, invalidateDryRun, { deep: true })
+watch([projectId, workflowId, variant], invalidateDryRun)
+
+let refreshInFlight = false
+function scheduleRefresh (delay = 12000) {
+  if (!autoRefresh.value) return
+  if (timer) clearTimeout(timer)
+  timer = setTimeout(async () => {
+    if (refreshInFlight) {
+      scheduleRefresh(15000)
+      return
+    }
+    refreshInFlight = true
+    try {
+      const hasActiveJobs = jobs.value.some((job) => ['running', 'pending'].includes(job.status))
+      const currentQueue = queue.value
+      const hasQueueWork = Number(currentQueue?.active || 0) > 0 || Number(currentQueue?.pendingJobs || 0) > 0 || Number(currentQueue?.queueSize || 0) > 0
+      if (initialError.value || runtimeUnavailable.value) {
+        await loadInitial()
+        await loadJobs({ silent: true })
+      } else if (hasActiveJobs) {
+        await loadJobs({ silent: true })
+      }
+      if (hasActiveJobs || hasQueueWork) await loadQueue()
+      else if (!currentQueue) await loadQueue()
+    } finally {
+      refreshInFlight = false
+      scheduleRefresh(hasActiveJobsOrQueueWork() ? 3000 : 15000)
+    }
+  }, delay)
+}
+function hasActiveJobsOrQueueWork () {
+  const hasActiveJobs = jobs.value.some((job) => ['running', 'pending'].includes(job.status))
+  return hasActiveJobs || Number(queue.value?.active || 0) > 0 || Number(queue.value?.pendingJobs || 0) > 0 || Number(queue.value?.queueSize || 0) > 0
+}
+function startTimer() {
+  stopTimer()
+  scheduleRefresh(12000)
+}
+function stopTimer() {
+  if (timer) clearTimeout(timer)
+  timer = null
+}
+
+let initialRequest = null
+async function loadInitial () {
+  if (initialRequest) return initialRequest
+  initialLoading.value = true
+  initialRequest = (async () => {
+    const results = await Promise.allSettled([
+      api.projects(),
+      api.workflows(),
+      api.materials({ type: 'all' }),
+      api.materialFolders(),
+      api.env()
+    ])
+    const [projectRows, workflowRows, materialsRows, folderRows, envRows] = results
+    if (projectRows.status === 'fulfilled') projects.value = Array.isArray(projectRows.value) ? projectRows.value : []
+    if (workflowRows.status === 'fulfilled') workflows.value = Array.isArray(workflowRows.value) ? workflowRows.value : []
+    if (materialsRows.status === 'fulfilled') {
+      const materials = Array.isArray(materialsRows.value) ? materialsRows.value : []
+      const readableAudio = materials.filter((material) => material.fileType === 'audio' && material.status !== 'failed')
+      bgmList.value = readableAudio
+      voiceList.value = readableAudio.filter((material) => material.role === 'voice')
+      visualList.value = materials.filter((material) => material.fileType === 'video' || material.fileType === 'image')
+    }
+    if (folderRows.status === 'fulfilled') folders.value = Array.isArray(folderRows.value) ? folderRows.value : []
+    if (envRows.status === 'fulfilled') Object.assign(runtime, envRows.value || {})
+    initialError.value = results.some((result) => result.status === 'rejected')
+    runtimeUnavailable.value = envRows.status === 'rejected'
+    try {
+      const selected = JSON.parse(localStorage.getItem('mework-selected-material-ids') || '[]')
+      if (Array.isArray(selected)) p.materialIds = selected.filter((id) => Number.isFinite(Number(id))).map(Number)
+      localStorage.removeItem('mework-selected-material-ids')
+    } catch { /* 蹇界暐鏃犳晥鏈湴閫夋嫨 */ }
+    if (!fixedOrderSkillKey.value) {
+      const fromRoute = typeof route.query.fixedOrderPreset === 'string' ? route.query.fixedOrderPreset : ''
+      const pendingOrder = fromRoute || sessionStorage.getItem('mework-fixed-order-preset')
+      const customOrder = route.query.fixedOrderCustom === '1' ? sessionStorage.getItem('mework-fixed-order-custom') : null
+      if (customOrder) {
+        try {
+          const pack = JSON.parse(customOrder)
+          applyFixedOrderStages(pack.name, pack.stages, false)
+          sessionStorage.removeItem('mework-fixed-order-custom')
+          router.replace({ path: '/studio' })
+        } catch { ElMessage.error('鑷畾涔夐『搴忔暟鎹棤鏁堬紝鏈簲鐢?) }
+      } else if (pendingOrder) {
+        sessionStorage.removeItem('mework-fixed-order-preset')
+        applyFixedOrderPreset(pendingOrder, false)
+        if (fromRoute) router.replace({ path: '/studio' })
+      }
+    }
+    // Let the parameter form paint before the heavier gap analysis starts.
+    window.setTimeout(() => doGapAnalysis({ silent: true }), 250)
+    return !initialError.value
+  })().finally(() => {
+    initialLoading.value = false
+    initialRequest = null
+  })
+  return initialRequest
+}
+
+onMounted(async () => {
+  await loadInitial()
+  loadJobs({ silent: true })
+  loadQueue()
+  startTimer()
+})
+
+onUnmounted(stopTimer)
+</script>
+

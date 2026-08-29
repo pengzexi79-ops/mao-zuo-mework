@@ -35,6 +35,8 @@ class OpenAiCompatibleMediaAdapterTest {
         String body = new String(captured.get().body(), StandardCharsets.UTF_8);
         assertTrue(body.contains("\"model\":\"image-model\""));
         assertTrue(body.contains("\"prompt\":\"a product\""));
+        assertTrue(body.contains("\"response_format\":\"b64_json\""));
+        assertTrue(body.contains("\"output_format\":\"png\""));
     }
 
     @Test
@@ -49,6 +51,31 @@ class OpenAiCompatibleMediaAdapterTest {
                 "a product", "image-model", "1024x1024", "medium");
 
         assertEquals("https://api.openai.com/v1/custom/image", captured.get().url());
+    }
+
+    @Test
+    void imageAcceptsDataUrlAndNestedBase64Response() throws Exception {
+        OpenAiCompatibleMediaAdapter adapter = new OpenAiCompatibleMediaAdapter(new ObjectMapper(), request ->
+                new MediaHttpTransport.Response(200, Map.of("Content-Type", "application/json"),
+                        "{\"result\":{\"image\":{\"base64\":\"data:image/png;base64,QUJD\"}}}".getBytes(StandardCharsets.UTF_8)));
+
+        var result = adapter.submitImage(new OpenAiCompatibleMediaAdapter.ProviderContext("https://api.openai.com", "secret", ""),
+                "a product", "image-model", "1024x1024", "medium");
+
+        assertEquals("QUJD", result.base64());
+        assertEquals("", result.url());
+    }
+
+    @Test
+    void imageAcceptsDirectBinaryResponse() throws Exception {
+        byte[] png = new byte[] { (byte) 0x89, 'P', 'N', 'G' };
+        OpenAiCompatibleMediaAdapter adapter = new OpenAiCompatibleMediaAdapter(new ObjectMapper(), request ->
+                new MediaHttpTransport.Response(200, Map.of("Content-Type", "image/png"), png));
+
+        var result = adapter.submitImage(new OpenAiCompatibleMediaAdapter.ProviderContext("https://api.openai.com", "secret", ""),
+                "a product", "image-model", "1024x1024", "medium");
+
+        assertEquals(java.util.Base64.getEncoder().encodeToString(png), result.base64());
     }
 
     @Test
@@ -81,6 +108,21 @@ class OpenAiCompatibleMediaAdapterTest {
         assertEquals("Bearer secret", captured.get().headers().get("Authorization"));
         assertTrue(captured.get().contentType().startsWith("multipart/form-data"));
         assertTrue(new String(captured.get().body(), StandardCharsets.UTF_8).contains("name=\"seconds\""));
+    }
+
+    @Test
+    void videoAcceptsSynchronousNestedBase64Response() throws Exception {
+        String encoded = java.util.Base64.getEncoder().encodeToString(new byte[] { 1, 2, 3 });
+        OpenAiCompatibleMediaAdapter adapter = new OpenAiCompatibleMediaAdapter(new ObjectMapper(), request ->
+                new MediaHttpTransport.Response(200, Map.of(),
+                        ("{\"output\":{\"video\":\"data:video/mp4;base64," + encoded + "\"}}").getBytes(StandardCharsets.UTF_8)));
+
+        var result = adapter.submitVideo(new OpenAiCompatibleMediaAdapter.ProviderContext("https://api.openai.com", "secret", ""),
+                "a product", "video-model", "1280x720", 4);
+
+        assertEquals("", result.remoteTaskId());
+        assertEquals(encoded, result.base64());
+        assertEquals("", result.url());
     }
 
     @Test
@@ -187,6 +229,41 @@ class OpenAiCompatibleMediaAdapterTest {
                         "hello", "voice-model", "coral", ""));
 
         assertEquals("RATE_LIMITED", error.code());
+    }
+
+    @Test
+    void dashScopeVoiceUsesNativeHttpBodyAndAcceptsBase64Audio() throws Exception {
+        AtomicReference<MediaHttpTransport.Request> captured = new AtomicReference<>();
+        OpenAiCompatibleMediaAdapter adapter = new OpenAiCompatibleMediaAdapter(new ObjectMapper(), request -> {
+            captured.set(request);
+            String encoded = java.util.Base64.getEncoder().encodeToString(new byte[2048]);
+            return new MediaHttpTransport.Response(200, Map.of("Content-Type", "application/json"),
+                    ("{\"output\":{\"audio\":{\"data\":\"" + encoded + "\"}}}").getBytes(StandardCharsets.UTF_8));
+        });
+
+        var result = adapter.submitVoice(new OpenAiCompatibleMediaAdapter.ProviderContext(
+                        "https://dashscope.aliyuncs.com", "secret", "", "", "/api/v1/services/aigc/multimodal-generation/generation", "dashscope_tts_http"),
+                "你好，猫作", "qwen3-tts-flash", "Cherry", "不要把说明字段发送给供应商");
+
+        assertEquals(2048, result.bytes().length);
+        String body = new String(captured.get().body(), StandardCharsets.UTF_8);
+        assertTrue(body.contains("\"text\":\"你好，猫作\""));
+        assertTrue(body.contains("\"voice\":\"Cherry\""));
+        assertFalse(body.contains("instructions"));
+        assertEquals("https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation", captured.get().url());
+    }
+
+    @Test
+    void openAiVoiceAcceptsNestedBase64JsonResponse() throws Exception {
+        String encoded = java.util.Base64.getEncoder().encodeToString(new byte[2048]);
+        OpenAiCompatibleMediaAdapter adapter = new OpenAiCompatibleMediaAdapter(new ObjectMapper(), request ->
+                new MediaHttpTransport.Response(200, Map.of("Content-Type", "application/json"),
+                        ("{\"result\":{\"audio\":{\"base64\":\"data:audio/mpeg;base64," + encoded + "\"}}}").getBytes(StandardCharsets.UTF_8)));
+
+        var result = adapter.submitVoice(new OpenAiCompatibleMediaAdapter.ProviderContext("https://api.openai.com", "secret", ""),
+                "hello", "voice-model", "coral", "");
+
+        assertEquals(2048, result.bytes().length);
     }
 
     @Test

@@ -11,6 +11,7 @@ import com.douyin.mixcut.security.CredentialCipher;
 import com.douyin.mixcut.security.UrlGuard;
 import com.douyin.mixcut.external.media.MediaAdapterRegistry;
 import com.douyin.mixcut.external.media.MediaHttpTransport;
+import com.douyin.mixcut.external.media.MediaFileTypes;
 import com.douyin.mixcut.external.media.OpenAiCompatibleMediaAdapter;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -26,15 +27,20 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URI;
 import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 import java.io.InputStream;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.Base64;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.Set;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
+import org.springframework.transaction.annotation.Transactional;
 
 /** Controlled paid media generation. Only fixed, documented provider contracts are allowed here. */
 @Service
@@ -77,6 +83,9 @@ public class MediaGenerationService {
     }
     private final Map<String, Task> tasks = new ConcurrentHashMap<>();
     private final java.util.Set<String> activePollingTasks = ConcurrentHashMap.newKeySet();
+    private static final Set<String> ACTIVE_TASK_STATUSES = Set.of(
+            "accepted", "pending", "submitting", "running", "remote_submitted",
+            "polling", "downloading", "validating");
 
     @EventListener(ApplicationReadyEvent.class)
     public void recoverGenerationTasksAtStartup() { recoverGenerationTasks(); }
@@ -217,12 +226,12 @@ public class MediaGenerationService {
     public Task image(ImageRequest request) {
         if (request == null || !Boolean.TRUE.equals(request.getConfirm())) throw new IllegalArgumentException("付费 AI 图片生成必须确认供应商、模型和官方计费后才能提交");
         String prompt = request.getPrompt() == null ? "" : request.getPrompt().trim();
-        if (prompt.length() < 2 || prompt.length() > 4000) throw new IllegalArgumentException("提示词长度必须在 2 到 4000 个字符之间");
+        if (prompt.length() < 1 || prompt.length() > 4000) throw new IllegalArgumentException("提示词长度必须在 1 到 4000 个字符之间");
         AiProvider provider = supportedProvider(request.getProviderId());
         MediaProviderCatalog.Capability capability = mediaCapability(provider);
         mediaAdapterRegistry.adapterFor(provider, "image", capability);
         String model = requiredModel(provider, "image", request.getModel());
-        String size = List.of("1024x1024", "1024x1536", "1536x1024").contains(request.getSize()) ? request.getSize() : "1024x1024";
+        String size = supportedImageSize(request.getSize());
         String quality = List.of("low", "medium", "high").contains(request.getQuality()) ? request.getQuality() : "medium";
         Task task = newTask("ai-image", "已确认官方计费，正在提交图片生成", provider, model,
                 Map.of("providerId", provider.getId(), "prompt", prompt, "model", model, "size", size, "quality", quality));
@@ -276,6 +285,13 @@ public class MediaGenerationService {
         return requested;
     }
 
+    private String supportedImageSize(String requested) {
+        // These are the standard image API sizes. "auto" lets gateways/models choose
+        // their native canvas; other values are passed through only when explicitly supported here.
+        return List.of("1024x1024", "1024x1536", "1536x1024", "auto")
+                .contains(requested) ? requested : "1024x1024";
+    }
+
     private String normalizeVoice(AiProvider provider, String model, String requested) {
         String value = requested == null ? "" : requested.trim();
         if (!value.matches("[A-Za-z0-9._:/-]{1,80}")) value = "";
@@ -303,7 +319,7 @@ public class MediaGenerationService {
             return new OpenAiCompatibleMediaAdapter.ProviderContext(normalizedBase(provider), secret(provider), "");
         }
         return new OpenAiCompatibleMediaAdapter.ProviderContext(normalizedBase(provider), secret(provider),
-                capability.imageEndpoint(), capability.videoEndpoint(), capability.voiceEndpoint());
+                capability.imageEndpoint(), capability.videoEndpoint(), capability.voiceEndpoint(), capability.voiceProtocol());
     }
 
     private Task newTask(String kind, String message) { return newTask(kind, message, null, null, Map.of()); }
@@ -337,6 +353,110 @@ public class MediaGenerationService {
         return fromPersisted(persisted);
     }
 
+    /**
+     * Generation results are registered in the material library as part of completion.
+     * Saving here is therefore an idempotent confirmation, never a second material import.
+     */
+    public Map<String, Object> save(String id) {
+        MediaGenerationTask task = findPersisted(id);
+        if (task.getMaterialId() == null) {
+            throw new IllegalArgumentException("该任务没有可保存的生成结果");
+        }
+        return Map.of("taskKey", task.getTaskKey(), "materialId", task.getMaterialId(), "saved", true,
+                "alreadySaved", true);
+    }
+
+    public Map<String, Object> saveBatch(List<String> ids) {
+        List<String> keys = normalizeKeys(ids);
+        if (keys.isEmpty()) throw new IllegalArgumentException("请选择要保存的生成任务");
+        int saved = 0;
+        int alreadySaved = 0;
+        int unavailable = 0;
+        for (String key : keys) {
+            MediaGenerationTask task = generationTaskRepo.findByTaskKey(key).orElse(null);
+            if (task == null || task.getMaterialId() == null) {
+                unavailable++;
+            } else {
+                saved++;
+                alreadySaved++;
+            }
+        }
+        return Map.of("requested", keys.size(), "saved", saved, "alreadySaved", alreadySaved,
+                "unavailable", unavailable);
+    }
+
+    @Transactional
+    public void delete(String id) {
+        MediaGenerationTask task = findPersisted(id);
+        ensureDeletable(task);
+        tasks.remove(task.getTaskKey());
+        generationTaskRepo.delete(task);
+    }
+
+    @Transactional
+    public Map<String, Object> deleteBatch(List<String> ids) {
+        List<String> keys = normalizeKeys(ids);
+        if (keys.isEmpty()) throw new IllegalArgumentException("请选择要删除的生成任务");
+        int deleted = 0;
+        List<Map<String, String>> skipped = new ArrayList<>();
+        for (String key : keys) {
+            MediaGenerationTask task = generationTaskRepo.findByTaskKey(key).orElse(null);
+            if (task == null) {
+                skipped.add(Map.of("taskKey", key, "reason", "任务不存在或已删除"));
+                continue;
+            }
+            try {
+                ensureDeletable(task);
+                tasks.remove(task.getTaskKey());
+                generationTaskRepo.delete(task);
+                deleted++;
+            } catch (IllegalArgumentException error) {
+                skipped.add(Map.of("taskKey", key, "reason", error.getMessage()));
+            }
+        }
+        return Map.of("requested", keys.size(), "deleted", deleted, "skipped", skipped);
+    }
+
+    @Transactional
+    public Map<String, Object> clearFinished() {
+        int deleted = 0;
+        List<Map<String, String>> skipped = new ArrayList<>();
+        for (MediaGenerationTask task : generationTaskRepo.findByStatusNotInOrderByIdDesc(new ArrayList<>(ACTIVE_TASK_STATUSES))) {
+            if (ACTIVE_TASK_STATUSES.contains(task.getStatus())) continue;
+            try {
+                ensureDeletable(task);
+                tasks.remove(task.getTaskKey());
+                generationTaskRepo.delete(task);
+                deleted++;
+            } catch (IllegalArgumentException error) {
+                skipped.add(Map.of("taskKey", task.getTaskKey(), "reason", error.getMessage()));
+            }
+        }
+        return Map.of("deleted", deleted, "skipped", skipped);
+    }
+
+    private MediaGenerationTask findPersisted(String id) {
+        if (id == null || id.isBlank()) throw new IllegalArgumentException("任务编号不能为空");
+        return generationTaskRepo.findByTaskKey(id.trim())
+                .orElseThrow(() -> new IllegalArgumentException("AI 生成任务不存在"));
+    }
+
+    private List<String> normalizeKeys(List<String> ids) {
+        if (ids == null) return List.of();
+        LinkedHashSet<String> unique = new LinkedHashSet<>();
+        for (String id : ids) {
+            if (id != null && !id.isBlank()) unique.add(id.trim());
+        }
+        if (unique.size() > 100) throw new IllegalArgumentException("一次最多处理 100 条生成任务");
+        return new ArrayList<>(unique);
+    }
+
+    private void ensureDeletable(MediaGenerationTask task) {
+        if (ACTIVE_TASK_STATUSES.contains(task.getStatus())) {
+            throw new IllegalArgumentException("任务正在处理中，请完成或失败后再删除");
+        }
+    }
+
     private Task fromPersisted(MediaGenerationTask persisted) {
         Task task = new Task();
         task.setId(persisted.getTaskKey()); task.setKind(persisted.getKind()); task.setStatus(persisted.getStatus()); task.setPhase(persisted.getPhase());
@@ -350,7 +470,12 @@ public class MediaGenerationService {
         try {
             beginSubmission(task, 10, "正在调用 OpenAI-compatible 视频生成接口");
             OpenAiCompatibleMediaAdapter mediaAdapter = mediaAdapterRegistry.adapterFor(provider, "video", mediaCapability(provider));
-            String remoteId = mediaAdapter.submitVideo(mediaContext(provider), prompt, model, size, seconds).remoteTaskId();
+            var submission = mediaAdapter.submitVideo(mediaContext(provider), prompt, model, size, seconds);
+            if (!submission.base64().isBlank() || !submission.url().isBlank()) {
+                finishSynchronousVideo(task, provider, model, submission);
+                return;
+            }
+            String remoteId = submission.remoteTaskId();
             task.setRemoteTaskId(remoteId);
             update(task, "remote_submitted", 25, "视频任务已提交，等待受控轮询 worker");
             pollVideoWorker(task, provider, model, remoteId);
@@ -411,6 +536,46 @@ public class MediaGenerationService {
             if (!registered) try { Files.deleteIfExists(output); } catch (Exception ignored) { }
             clearStagingFilePath(task.getId());
             throw error;
+        }
+    }
+
+    private void finishSynchronousVideo(Task task, AiProvider provider, String model,
+                                        OpenAiCompatibleMediaAdapter.VideoSubmission submission) throws Exception {
+        update(task, "running", 75, "正在校验并登记生成视频");
+        Path dir = props.mediaToolsOutput().resolve("generated-ai-videos");
+        Files.createDirectories(dir);
+        Path output = dir.resolve("video-" + task.getId() + ".mp4");
+        try {
+            if (!submission.base64().isBlank()) Files.write(output, decodeBase64(submission.base64(), "供应商返回的视频 Base64 无效"));
+            else downloadGeneratedMedia(submission.url(), output, provider, "视频");
+            if (!Files.isRegularFile(output) || Files.size(output) < 2048) throw new IllegalStateException("供应商返回的视频文件无效");
+            Material material = materialService.register(output.toString(), null, false, Material.Source.generated, normalizedBase(provider));
+            material.setRole(MaterialRole.body);
+            material.setTags("AI生成,视频," + model);
+            material = materialService.save(material);
+            materialService.attachBrowserUrls(material);
+            task.setMaterialId(material.getId());
+            update(task, "done", 100, "视频生成完成，已作为新素材入库");
+        } catch (Exception error) {
+            try { Files.deleteIfExists(output); } catch (Exception ignored) { }
+            throw error;
+        }
+    }
+
+    private byte[] decodeBase64(String value, String message) {
+        String normalized = value == null ? "" : value.trim();
+        if (normalized.startsWith("data:")) {
+            int comma = normalized.indexOf(',');
+            if (comma > 0) normalized = normalized.substring(comma + 1);
+        }
+        try {
+            return Base64.getMimeDecoder().decode(normalized);
+        } catch (IllegalArgumentException error) {
+            try {
+                return Base64.getUrlDecoder().decode(normalized);
+            } catch (IllegalArgumentException ignored) {
+                throw new OpenAiCompatibleMediaAdapter.MediaAdapterException("MEDIA_RESPONSE_INVALID", message);
+            }
         }
     }
 
@@ -485,35 +650,59 @@ public class MediaGenerationService {
     private String concise(Exception e) { String message = e.getMessage() == null ? "生成任务失败" : e.getMessage(); return message.length() > 300 ? message.substring(0, 300) : message; }
 
     private void generateOpenAiImage(Task task, AiProvider provider, String prompt, String model, String size, String quality) {
+        Path staging = null;
+        Path output = null;
         try {
             beginSubmission(task, 15, "正在调用 OpenAI-compatible 图片生成接口");
             OpenAiCompatibleMediaAdapter mediaAdapter = mediaAdapterRegistry.adapterFor(provider, "image", mediaCapability(provider));
             var submission = mediaAdapter.submitImage(mediaContext(provider), prompt, model, size, quality);
 
-            update(task, "running", 75, "正在校验并登记生成图片"); Path dir = props.mediaToolsOutput().resolve("generated-ai-images"); Files.createDirectories(dir); Path output = dir.resolve("openai-" + Instant.now().toEpochMilli() + ".png");
-            if (!submission.base64().isBlank()) Files.write(output, Base64.getDecoder().decode(submission.base64()));
-            else downloadGeneratedImage(submission.url(), output);
-            if (!Files.isRegularFile(output) || Files.size(output) < 512) throw new IllegalStateException("生成图片无效");
+            update(task, "running", 75, "正在校验并登记生成图片");
+            Path dir = props.mediaToolsOutput().resolve("generated-ai-images");
+            Files.createDirectories(dir);
+            String filename = "openai-" + Instant.now().toEpochMilli() + "-" + task.getId();
+            staging = dir.resolve("." + filename + ".part");
+            if (!submission.base64().isBlank()) Files.write(staging, decodeBase64(submission.base64(), "供应商返回的图片 Base64 无效"));
+            else downloadGeneratedMedia(submission.url(), staging, provider, "图片");
+            if (!Files.isRegularFile(staging) || Files.size(staging) < 512) throw new IllegalStateException("生成图片无效");
+            MediaFileTypes.ImageFormat format = MediaFileTypes.detectImage(staging)
+                    .orElseThrow(() -> new IllegalStateException("供应商返回的图片格式无法识别，仅支持 PNG、JPEG、GIF、WebP、AVIF 或 BMP"));
+            output = dir.resolve(filename + "." + format.extension());
+            Files.move(staging, output, StandardCopyOption.REPLACE_EXISTING);
             Material material = materialService.register(output.toString(), null, false, Material.Source.generated, normalizedBase(provider)); material.setRole(MaterialRole.product); material.setTags("AI生成,OpenAI," + model); material = materialService.save(material); materialService.attachBrowserUrls(material);
             task.setMaterialId(material.getId()); update(task, "done", 100, "图片生成完成，已作为新素材入库");
         } catch (Exception e) {
+            try { if (staging != null) Files.deleteIfExists(staging); } catch (Exception ignored) { }
+            try { if (output != null) Files.deleteIfExists(output); } catch (Exception ignored) { }
             persistErrorCode(task.getId(), e);
             update(task, "failed", task.getProgress(), e.getMessage() == null ? "图片生成失败" : e.getMessage());
         }
     }
 
-    private void downloadGeneratedImage(String rawUrl, Path output) throws Exception {
-        if (rawUrl == null || rawUrl.isBlank()) throw new IllegalStateException("官方服务未返回图片数据");
+    private void downloadGeneratedMedia(String rawUrl, Path output, AiProvider provider, String label) throws Exception {
+        if (rawUrl == null || rawUrl.isBlank()) throw new IllegalStateException("供应商未返回" + label + "数据");
         URI uri = URI.create(UrlGuard.validate(rawUrl));
-        if (!"https".equalsIgnoreCase(uri.getScheme())) throw new IllegalStateException("生成图片下载地址必须是 HTTPS");
+        if (!"https".equalsIgnoreCase(uri.getScheme())) throw new IllegalStateException("生成" + label + "下载地址必须是 HTTPS");
         HttpURLConnection conn = (HttpURLConnection) new URL(uri.toString()).openConnection();
         conn.setConnectTimeout(20000);
         conn.setReadTimeout(180000);
-        conn.setRequestProperty("Accept", "image/png,image/jpeg,image/webp,*/*");
+        conn.setRequestProperty("Accept", "视频".equals(label)
+                ? "video/mp4,video/*,application/octet-stream,*/*"
+                : "音频".equals(label)
+                ? "audio/mpeg,audio/*,application/octet-stream,*/*"
+                : "image/png,image/jpeg,image/webp,image/*,application/octet-stream,*/*");
+        // Some OpenAI-compatible gateways return an authenticated URL on the same
+        // origin. Keep the key off third-party/CDN URLs, but authenticate same-origin
+        // downloads so a valid generation is not turned into a misleading 403.
+        URI providerUri = URI.create(UrlGuard.validate(normalizedBase(provider)));
+        if (sameOrigin(uri, providerUri)) conn.setRequestProperty("Authorization", "Bearer " + secret(provider));
         long max = props.getNetworkMaxDownloadBytes();
         try {
             int status = conn.getResponseCode();
-            if (status < 200 || status >= 300) throw new IllegalStateException("生成图片下载失败（HTTP " + status + "）");
+            if (status < 200 || status >= 300) {
+                if (status == 401 || status == 403) throw new OpenAiCompatibleMediaAdapter.MediaAdapterException("AUTH_REQUIRED", "生成" + label + "下载被供应商拒绝（HTTP " + status + "），请检查 API Key 和媒体权限");
+                throw new IllegalStateException("生成" + label + "下载失败（HTTP " + status + "）");
+            }
             long written = 0;
             try (InputStream in = conn.getInputStream(); var out = Files.newOutputStream(output)) {
                 byte[] buf = new byte[8192];
@@ -531,6 +720,13 @@ public class MediaGenerationService {
         } finally {
             conn.disconnect();
         }
+    }
+
+    private boolean sameOrigin(URI left, URI right) {
+        int leftPort = left.getPort() < 0 ? 443 : left.getPort();
+        int rightPort = right.getPort() < 0 ? 443 : right.getPort();
+        return left.getHost() != null && right.getHost() != null
+                && left.getHost().equalsIgnoreCase(right.getHost()) && leftPort == rightPort;
     }
 
     private void beginSubmission(Task task, int progress, String message) {

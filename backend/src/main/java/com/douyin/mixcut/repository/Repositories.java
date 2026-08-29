@@ -161,6 +161,7 @@ public interface Repositories {
     interface MediaGenerationTaskRepo extends JpaRepository<MediaGenerationTask, Long> {
         Optional<MediaGenerationTask> findByTaskKey(String taskKey);
         List<MediaGenerationTask> findTop50ByOrderByIdDesc();
+        List<MediaGenerationTask> findByStatusNotInOrderByIdDesc(List<String> statuses);
         List<MediaGenerationTask> findByStatusOrderByIdAsc(String status);
         List<MediaGenerationTask> findByPhaseAndRemoteTaskIdIsNotNullOrderByIdAsc(String phase);
         List<MediaGenerationTask> findByPhaseInOrderByIdAsc(List<String> phases);

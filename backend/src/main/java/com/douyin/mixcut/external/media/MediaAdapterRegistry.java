@@ -13,6 +13,7 @@ public class MediaAdapterRegistry {
     public static final String OPENAI_IMAGE_GENERATION = "openai_image_generation";
     public static final String OPENAI_VIDEO_GENERATION = "openai_video_generation";
     public static final String OPENAI_AUDIO_SPEECH = "openai_audio_speech";
+    public static final String DASHSCOPE_TTS_HTTP = "dashscope_tts_http";
     public static final String MEDIA_PROTOCOL_UNSUPPORTED = "MEDIA_PROTOCOL_UNSUPPORTED";
 
     private final List<MediaAdapter> adapters;
@@ -45,7 +46,7 @@ public class MediaAdapterRegistry {
                 .findFirst()
                 .orElseThrow(() -> unsupported(""));
         String protocol = capability.protocol(operation);
-        if (!List.of(OPENAI_IMAGE_GENERATION, OPENAI_VIDEO_GENERATION, OPENAI_AUDIO_SPEECH).contains(protocol)) {
+        if (!List.of(OPENAI_IMAGE_GENERATION, OPENAI_VIDEO_GENERATION, OPENAI_AUDIO_SPEECH, DASHSCOPE_TTS_HTTP).contains(protocol)) {
             throw unsupported(protocol);
         }
         return adapters.stream()

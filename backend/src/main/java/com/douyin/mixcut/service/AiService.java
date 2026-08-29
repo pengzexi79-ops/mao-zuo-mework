@@ -112,8 +112,16 @@ public class AiService {
     /** 连通性测试 */
     public Answer test(Long providerId, String model) {
         AiProvider p = providerRepo.findById(providerId).orElse(null);
+        String textModel = firstTextModel(p);
+        String mediaModel = firstMediaModel(p);
+        if (p != null && textModel.isBlank() && !mediaModel.isBlank()) {
+            return new Answer(true, "该供应商为媒体专用，已识别到媒体模型 " + mediaModel
+                    + "；文本连通性测试不适用，请在 AI 创作页测试对应的媒体生成。",
+                    null, p.getName(), mediaModel);
+        }
         if (p == null) return new Answer(false, null, "供应商不存在", null, null);
         String m = (model == null || model.isBlank()) ? p.getDefaultModel() : model;
+        if (m == null || m.isBlank()) m = textModel;
         if (m == null || m.isBlank()) return new Answer(false, null, "未指定模型", p.getName(), null);
         AiClient.ChatResult r = client.ping(p, m);
         Cand c = new Cand(p, m);
@@ -121,6 +129,35 @@ public class AiService {
         return r.isOk()
                 ? new Answer(true, r.getText(), null, p.getName(), m)
                 : new Answer(false, null, r.getError(), p.getName(), m);
+    }
+
+    private String firstTextModel(AiProvider provider) {
+        if (provider == null) return "";
+        try {
+            JsonNode root = om.readTree(provider.getModels() == null ? "{}" : provider.getModels());
+            JsonNode text = root != null && root.isObject() ? root.path("text") : root;
+            return text != null && text.isArray() && !text.isEmpty() ? text.get(0).asText("").trim() : "";
+        } catch (Exception ignored) {
+            return "";
+        }
+    }
+
+    private String firstMediaModel(AiProvider provider) {
+        if (provider == null) return "";
+        try {
+            JsonNode root = om.readTree(provider.getModels() == null ? "{}" : provider.getModels());
+            JsonNode media = root != null && root.isObject() ? root.path("media") : null;
+            if (media == null || !media.isObject()) return "";
+            for (String key : List.of("image", "video", "voice", "vision")) {
+                JsonNode models = media.path(key);
+                if (models.isArray() && !models.isEmpty()) {
+                    String value = models.get(0).asText("").trim();
+                    if (!value.isBlank()) return value;
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return "";
     }
 
     // ---------------- 内部 ----------------

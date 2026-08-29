@@ -121,12 +121,13 @@ public class AiClient {
                 if (id.isBlank()) continue;
                 Set<String> declared = declaredCapabilities(item);
                 String lower = id.toLowerCase(java.util.Locale.ROOT);
-                boolean isImage = isImageGenerationModel(lower, declared);
+                boolean isImage = isImageGenerationModel(lower, declared)
+                        || hasAny(declared, "output_image", "image_output");
                 boolean isVideo = hasAny(declared, "video_generation", "video-generation", "text-to-video", "text_to_video")
                         || lower.matches(".*(sora|veo|seedance|kling|runway|cogvideo|wan[0-9.]*[-_]?video|video-gen|video-generation|text-to-video).*" );
-                boolean isVoice = hasAny(declared, "speech", "tts", "audio_generation", "audio", "voice")
+                boolean isVoice = hasAny(declared, "speech", "tts", "audio_generation", "voice_generation", "output_audio", "output_voice", "text-to-speech", "text_to_speech")
                         || lower.matches(".*(tts|speech|voice|audio-gen|audiogen|cosyvoice|fish-speech).*" );
-                boolean isVision = hasAny(declared, "vision", "image_input", "image_understanding", "multimodal")
+                boolean isVision = hasAny(declared, "vision", "image_input", "image-input", "input_image", "image_understanding", "multimodal")
                         || lower.matches(".*(vision|vl|multimodal|qwen2-vl|qwen-vl|gemini).*" )
                         || looksVisionCapableGpt(lower);
                 if (!isImage && !isVideo && !isVoice) addUnique(text, id);
@@ -159,12 +160,56 @@ public class AiClient {
 
     private Set<String> declaredCapabilities(JsonNode item) {
         java.util.LinkedHashSet<String> result = new java.util.LinkedHashSet<>();
-        for (String field : List.of("capabilities", "modalities", "supported_modalities", "input_modalities", "output_modalities", "supportedGenerationMethods")) {
-            JsonNode node = item.path(field);
-            if (node.isArray()) for (JsonNode value : node) result.add(value.asText("").toLowerCase(java.util.Locale.ROOT));
-            else if (node.isTextual()) result.add(node.asText().toLowerCase(java.util.Locale.ROOT));
-        }
+        collectDeclaredCapabilities(item, result, 0);
         return result;
+    }
+
+    /**
+     * Gateways put capability metadata at different nesting levels, for example
+     * capabilities.input/output or model.modalities. Read only capability-shaped
+     * fields and never infer media support from the model name alone unless the
+     * name is an unambiguous generation model.
+     */
+    private void collectDeclaredCapabilities(JsonNode node, Set<String> result, int depth) {
+        if (node == null || depth > 4) return;
+        if (node.isObject()) {
+            node.fields().forEachRemaining(entry -> {
+                String field = entry.getKey().toLowerCase(java.util.Locale.ROOT);
+                if (field.contains("capabilit") || field.contains("modalit") || field.contains("supported")
+                        || field.contains("generation") || field.contains("input") || field.contains("output")
+                        || field.contains("feature") || field.contains("method")) {
+                    String prefix = field.contains("output") ? "output_" : field.contains("input") ? "input_" : "";
+                    collectCapabilityValues(entry.getValue(), result, depth + 1, prefix);
+                } else if (entry.getValue().isObject() && depth < 3) {
+                    collectDeclaredCapabilities(entry.getValue(), result, depth + 1);
+                }
+            });
+        } else if (node.isArray()) {
+            for (JsonNode value : node) collectDeclaredCapabilities(value, result, depth + 1);
+        }
+    }
+
+    private void collectCapabilityValues(JsonNode node, Set<String> result, int depth, String prefix) {
+        if (node == null || depth > 4) return;
+        if (node.isTextual()) {
+            String value = node.asText("").trim().toLowerCase(java.util.Locale.ROOT);
+            if (!value.isBlank()) {
+                result.add(value);
+                if (!prefix.isBlank()) result.add(prefix + value.replace('-', '_'));
+            }
+            return;
+        }
+        if (node.isArray()) {
+            for (JsonNode value : node) collectCapabilityValues(value, result, depth + 1, prefix);
+            return;
+        }
+        if (node.isObject()) {
+            node.fields().forEachRemaining(entry -> {
+                String field = entry.getKey().toLowerCase(java.util.Locale.ROOT);
+                String nestedPrefix = field.contains("output") ? "output_" : field.contains("input") ? "input_" : prefix;
+                collectCapabilityValues(entry.getValue(), result, depth + 1, nestedPrefix);
+            });
+        }
     }
 
     private boolean hasAny(Set<String> values, String... expected) {

@@ -1,0 +1,81 @@
+# 猫作·Mework Git History
+
+This index records the sanitized commit chain and the later D-drive working-tree delivery records for the Mework project.
+
+- Local branch: `codex/ai2-history-closeout-20260825`
+- Commit count: 67
+- Latest recorded committed baseline: `40dc8cb` (`fix(ai): support declared media models across compatible gateways`)
+- GitHub `main`: the sanitized share snapshot built from that working tree.
+- GitHub `legacy-history-sanitized`: the complete sanitized commit chain.
+
+The 2026-08-28 to 2026-08-29 source changes were accumulated in the D-drive worktree and are described factually in [`DEVELOPMENT_LOG_20260828_20260829.md`](DEVELOPMENT_LOG_20260828_20260829.md). The publication commit that carries those changes is the current tip after this delivery; it is intentionally summarized in that dated log instead of inventing per-day commits.
+
+## Commits
+
+- `2261192` `2026-08-21T14:26:32+08:00` chore: archive working baseline
+- `9879445` `2026-08-21T16:42:48+08:00` chore: register hyperframes-upstream submodule and repair worktree
+- `abc0ca5` `2026-08-22T12:54:28+08:00` feat(studio): clarify fixed-order presets and speed up draft creation
+- `b413ed9` `2026-08-22T14:36:55+08:00` feat(capabilities): define media runtime contract
+- `f77e30f` `2026-08-22T15:14:02+08:00` feat(media): route diagnostics through controlled capabilities
+- `d9bda4f` `2026-08-22T15:37:54+08:00` feat(capabilities): explain media runtime configuration
+- `6174d26` `2026-08-22T16:07:39+08:00` feat(packaging): enforce offline runtime verification
+- `7a23429` `2026-08-22T16:29:17+08:00` test(packaging): add isolated offline media smoke
+- `2ed43de` `2026-08-22T16:53:43+08:00` fix(windows): harden portable install compatibility
+- `0d3a003` `2026-08-22T17:09:37+08:00` feat(network): add bounded outbound HTTP policy
+- `aa07018` `2026-08-22T17:23:27+08:00` feat(network): show explicit connectivity status
+- `967aa4f` `2026-08-22T18:45:43+08:00` feat(crawl): isolate Wikimedia source adapter
+- `41579dc` `2026-08-22T19:00:46+08:00` feat(crawl): add Internet Archive source adapter
+- `227462c` `2026-08-22T19:32:07+08:00` feat(media): persist media tool task lifecycle
+- `975910a` `2026-08-22T19:40:21+08:00` feat(ai): persist media generation task state
+- `8133d36` `2026-08-22T19:43:01+08:00` fix(ai): recover generation tasks without duplicate billing
+- `c56b090` `2026-08-22T19:54:31+08:00` feat(tasks): add unified task center
+- `dc1edb5` `2026-08-22T20:19:23+08:00` fix(tasks): cancel preparation and recover remote video
+- `4f11d9c` `2026-08-22T20:43:04+08:00` feat(media): add controlled task cancellation
+- `94d997a` `2026-08-22T20:58:53+08:00` fix(tasks): harden cancellation and recovery concurrency
+- `59c1d8e` `2026-08-22T22:03:40+08:00` fix(tasks): propagate media cancellation context
+- `576fafd` `2026-08-22T22:21:16+08:00` fix(tasks): terminate media processes by task context
+- `36a2932` `2026-08-22T22:42:50+08:00` test(acceptance): add deterministic media fixture manifest
+- `aeca5e4` `2026-08-23T10:45:28+08:00` test(acceptance): add isolated database and local http mock
+- `7661b60` `2026-08-23T11:12:18+08:00` test(acceptance): cover offline media pipeline through qc
+- `4cdb754` `2026-08-23T11:39:21+08:00` test(acceptance): verify job recovery on isolated mysql
+- `c2670bb` `2026-08-23T11:47:06+08:00` test(acceptance): gate fresh install and restart recovery
+- `42a66b7` `2026-08-23T12:17:53+08:00` docs(release): record August 22-23 delivery history
+- `37d3886` `2026-08-23T14:59:24+08:00` docs(release): rebuild August 22-23 version timeline
+- `0fc739b` `2026-08-23T16:26:04+08:00` fix(ai): support qwen media capabilities and tts diagnostics
+- `3039749` `2026-08-23T18:12:49+08:00` fix(studio): unify preflight blockers and duration semantics
+- `1415bb9` `2026-08-23T18:50:37+08:00` fix(studio): clarify task heartbeat and stale states
+- `80953dc` `2026-08-23T20:31:09+08:00` fix(tasks): fence stale job workers and watchdog recovery
+- `ec7eb29` `2026-08-24T12:45:12+08:00` fix(render): isolate cancellation contexts and outputs
+- `8619868` `2026-08-24T14:51:52+08:00` fix(render): finish cancellation generation cleanup
+- `7bbd9e4` `2026-08-24T15:32:52+08:00` feat(media-task): unify lifecycle diagnostics and recovery
+- `4bdd060` `2026-08-24T16:10:47+08:00` fix(media-task): fence recovery generations and retry state
+- `821b66e` `2026-08-24T16:19:45+08:00` fix(audio): preserve multi-segment narration coverage
+- `961d714` `2026-08-24T16:32:22+08:00` feat(audio): add measured audio contract and loudness qc
+- `dddfb25` `2026-08-24T16:46:24+08:00` fix(audio): enforce measured contract at delivery qc
+- `df852a0` `2026-08-24T16:50:46+08:00` fix(audio): validate generated provider voice before import
+- `572945c` `2026-08-24T16:55:23+08:00` fix(audio): align local tts admission with audio contract
+- `ce1177d` `2026-08-24T17:02:45+08:00` test(audio): verify ducking reduces bgm band energy
+- `8bbef71` `2026-08-24T17:21:25+08:00` fix(audio): fence voice selection and decode admission
+- `77b0dea` `2026-08-24T17:42:28+08:00` fix(audio): reject invalid voice timeline and clean failures
+- `e62b633` `2026-08-24T18:18:29+08:00` test(audio): add bgm and silence acceptance fixtures
+- `4cce56a` `2026-08-25T11:59:55+08:00` fix(audio): render narration on declared timeline
+- `aac519d` `2026-08-25T12:23:10+08:00` fix(audio): close narration and cancellation races
+- `05de45c` `2026-08-25T12:49:50+08:00` test(audio): verify contract fixtures and output cleanup safety
+- `6d4a898` `2026-08-25T13:26:33+08:00` refactor(ai): isolate openai compatible media adapter
+- `d069ea1` `2026-08-25T13:43:49+08:00` refactor(ai): move video polling into media adapter
+- `8466f2e` `2026-08-25T14:00:57+08:00` fix(web): redirect direct env navigation to app
+- `436190e` `2026-08-25T16:08:51+08:00` fix(ai): close video generation and history verification gaps
+- `f6c2554` `2026-08-25T16:35:50+08:00` fix(windows): authenticate MySQL startup health check
+- `1f9bc6a` `2026-08-25T22:45:32+08:00` feat(render): enforce preflight admission and audio contracts
+- `e4abc51` `2026-08-25T22:57:28+08:00` feat(ai): register explicit provider media adapters
+- `341f0e6` `2026-08-25T23:13:15+08:00` test(render): cover batch recovery and task controls
+- `9e2e315` `2026-08-25T23:18:59+08:00` fix(render): recompute admission status on submit
+- `35418f0` `2026-08-25T23:50:22+08:00` fix(render): close audio and snapshot review gaps
+- `9a9c800` `2026-08-25T23:54:20+08:00` test(release): align local history with 2.2.148
+- `1cdacab` `2026-08-26T00:07:38+08:00` fix(ai): make adapter registry bootable
+- `3abd8dc` `2026-08-26T00:49:40+08:00` fix(ai): qualify media executor at runtime
+- `cf26ae9` `2026-08-26T16:03:35+08:00` feat(render): expose actionable preflight and semantic fallback
+- `7604b98` `2026-08-26T18:56:08+08:00` fix(frontend): stabilize mapped builds and studio messages
+- `fd86067` `2026-08-26T19:27:01+08:00` docs: add Mework handoff archive and D-drive launcher
+- `f59cee6` `2026-08-26T21:29:02+08:00` fix(ai): enforce explicit capabilities and preserve provider config
+- `40dc8cb` `2026-08-26T22:27:14+08:00` fix(ai): support declared media models across compatible gateways

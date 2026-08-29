@@ -415,7 +415,7 @@ public class WorkflowController {
         if (!trim(req == null ? null : req.getCharacters()).isBlank()) user.append("；角色=").append(trim(req.getCharacters()));
         if (!trim(req == null ? null : req.getStyle()).isBlank()) user.append("；画风=").append(trim(req.getStyle()));
         if (!trim(req == null ? null : req.getRequirement()).isBlank()) user.append("；额外要求=").append(trim(req.getRequirement()));
-        JsonNode response = aiService.askJson(UseCase.general, system, user.toString(), 0.45, 2200, project == null ? null : project.getRouteOverrides());
+        JsonNode response = aiService.askJson(UseCase.plan, system, user.toString(), 0.45, 2200, project == null ? null : project.getRouteOverrides());
         if (response == null || !response.isObject() || !response.path("shots").isArray() || response.path("shots").isEmpty()) {
             fallback.put("aiUsed", false);
             fallback.put("message", "AI 返回格式无效，已使用本地漫剧分镜草稿");
@@ -450,7 +450,7 @@ public class WorkflowController {
                 + "数组包含 3 到 12 个对象，每个对象只可有 name、targetSec、folderKeywords、shortagePolicy。"
                 + "name 为 2-80 个普通文字；targetSec 为 1-300；folderKeywords 是至多 5 个普通关键词；shortagePolicy 只能是 block 或 fallback。";
         try {
-            var answer = aiService.ask(UseCase.general, system, projectText + "\n用户要求：" + requirement, 0.2, 700,
+            var answer = aiService.ask(UseCase.plan, system, projectText + "\n用户要求：" + requirement, 0.2, 700,
                     project == null ? null : project.getRouteOverrides());
             if (!answer.ok()) return R.ok(Map.of("stages", fallback, "aiUsed", false, "message", "AI 暂不可用，已使用基础顺序建议"));
             List<Map<String, Object>> stages = sanitizeFixedOrderStages(answer.text());

@@ -13,6 +13,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -180,9 +181,7 @@ public class AiController {
         }
         try {
             provider.setModels(mergeDiscoveredModels(provider.getModels(), discovery));
-            if (provider.getDefaultModel() == null || provider.getDefaultModel().isBlank()) {
-                if (!discovery.textModels().isEmpty()) provider.setDefaultModel(discovery.textModels().get(0));
-            }
+            selectDefaultTextModel(provider, discovery.textModels());
             AiProvider saved = providerRepo.save(provider);
             result.put("providerView", providerView(saved));
             result.put("recommendations", recommendModels(discovery.textModels(), provider.getKind()));
@@ -285,7 +284,7 @@ public class AiController {
         if (user.length() == 0) return R.fail("请输入对话内容");
         Project project = req.getProjectId() == null ? null : projectRepo.findById(req.getProjectId()).orElse(null);
                 String context = project == null ? "" : buildProjectContext(project);
-        AiService.Answer answer = aiService.ask(UseCase.general,
+        AiService.Answer answer = aiService.ask(UseCase.chat,
                 buildAssistantSystem(context),
                 user.toString(), 0.75, Math.max(128, Math.min(1800, req.getMaxTokens() == null ? 900 : req.getMaxTokens())), project == null ? null : project.getRouteOverrides());
         if (!answer.ok()) return R.fail(answer.error());
@@ -361,9 +360,7 @@ public class AiController {
         try {
             if (discovery.ok()) {
                 provider.setModels(mergeDiscoveredModels(provider.getModels(), discovery));
-                if (provider.getDefaultModel() == null || provider.getDefaultModel().isBlank()) {
-                    if (!discovery.textModels().isEmpty()) provider.setDefaultModel(discovery.textModels().get(0));
-                }
+                selectDefaultTextModel(provider, discovery.textModels());
             } else {
                 provider.setModels(markDiscoveryFailure(provider.getModels(), discovery.error()));
             }
@@ -371,6 +368,26 @@ public class AiController {
         } catch (Exception ignored) {
             // Discovery is advisory and must never make a valid provider save fail.
         }
+    }
+
+    private void selectDefaultTextModel(AiProvider provider, List<String> models) {
+        if (provider == null || models == null || models.isEmpty()) return;
+        String strongest = models.stream()
+                .filter(model -> model != null && !model.isBlank())
+                .max(Comparator.comparingInt(this::modelStrengthScore)
+                        .thenComparing(model -> model, String.CASE_INSENSITIVE_ORDER))
+                .orElse("");
+        if (!strongest.isBlank()) provider.setDefaultModel(strongest);
+    }
+
+    private int modelStrengthScore(String model) {
+        String id = model == null ? "" : model.toLowerCase(java.util.Locale.ROOT);
+        int score = 0;
+        if (id.matches(".*(gpt-5|gpt-4|o1|o3|o4|opus|sonnet|pro|max|reason|reasoning|deepseek-r1|qwen-max|glm-4-plus).*")) score += 100;
+        if (id.matches(".*(mini|flash|haiku|small|lite|turbo|instant|nano|micro|free).*")) score -= 30;
+        java.util.regex.Matcher size = java.util.regex.Pattern.compile("\\b([0-9]{1,3})b\\b").matcher(id);
+        if (size.find()) score += Integer.parseInt(size.group(1));
+        return score;
     }
 
     private void addDiscoveryState(Map<String, Object> view, AiProvider provider) {

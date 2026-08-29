@@ -89,12 +89,17 @@ public class MediaProviderCatalog {
             List<String> imageModels = models(media.path("image"));
             List<String> videoModels = models(media.path("video"));
             List<String> voiceModels = models(media.path("voice"));
+            String voiceProtocol = resolveVoiceProtocol(provider, media, voiceModels);
+            String voiceEndpoint = safeEndpoint(media.path("voiceEndpoint").asText(""));
+            if (voiceEndpoint.isBlank() && "dashscope_tts_http".equals(voiceProtocol)) {
+                voiceEndpoint = dashScopeTtsEndpoint(provider);
+            }
             Capability existing = new Capability(imageModels, videoModels, voiceModels, models(media.path("vision")),
                     safeEndpoint(media.path("imageEndpoint").asText("")), safeEndpoint(media.path("videoEndpoint").asText("")),
-                    safeEndpoint(media.path("voiceEndpoint").asText("")),
+                    voiceEndpoint,
                     safeProtocol(media.path("imageProtocol").asText(""), defaultProtocol("image", imageModels)),
                     safeProtocol(media.path("videoProtocol").asText(""), defaultProtocol("video", videoModels)),
-                    safeProtocol(media.path("voiceProtocol").asText(""), defaultProtocol("voice", voiceModels)),
+                    voiceProtocol,
                     setup.isBlank() ? officialSetup(provider) : setup,
                     billing.isBlank() ? officialBilling(provider) : billing);
             return withOfficialLinks(provider, existing);
@@ -204,6 +209,35 @@ public class MediaProviderCatalog {
             case "voice" -> "openai_audio_speech";
             default -> "";
         };
+    }
+
+    private String resolveVoiceProtocol(AiProvider provider, JsonNode media, List<String> models) {
+        String raw = media.path("voiceProtocol").asText("").trim().toLowerCase(java.util.Locale.ROOT);
+        String inferred = defaultProtocol("voice", models);
+        // DashScope exposes Qwen TTS through its multimodal HTTP contract, not
+        // /v1/audio/speech. Correct old auto-detected configs at read time so
+        // users do not have to edit an internal protocol field manually.
+        if (isDashScope(provider) && models.stream().anyMatch(this::isQwenTts)
+                && (raw.isBlank() || "openai_audio_speech".equals(raw))) {
+            return "dashscope_tts_http";
+        }
+        return safeProtocol(raw, inferred);
+    }
+
+    private boolean isDashScope(AiProvider provider) {
+        return provider != null && provider.getBaseUrl() != null
+                && provider.getBaseUrl().toLowerCase(java.util.Locale.ROOT).contains("dashscope.aliyuncs.com");
+    }
+
+    private boolean isQwenTts(String model) {
+        String lower = model == null ? "" : model.toLowerCase(java.util.Locale.ROOT);
+        return lower.contains("qwen3-tts") || lower.contains("qwen-tts");
+    }
+
+    private String dashScopeTtsEndpoint(AiProvider provider) {
+        return isDashScope(provider)
+                ? "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
+                : "";
     }
 
     private List<String> models(JsonNode node) {

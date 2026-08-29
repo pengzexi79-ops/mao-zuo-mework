@@ -227,6 +227,7 @@ export const api = {
 
   // 素材
   materials: (params, config = {}) => get('/api/materials', { ...config, params }),
+  material: (id, config = {}) => get(`/api/materials/${id}`, config),
   materialStats: () => get('/api/materials/stats'),
   // Directory scans probe every readable media file locally; keep this request alive for large desktop folders.
   scanFolder: (body) => http.post('/api/materials/scan', body, { timeout: 1800000 }),
@@ -314,6 +315,11 @@ export const api = {
   generateAiVoice: (body) => http.post('/api/ai-generation/voice', body, { timeout: 180000 }),
   aiGenerationTasks: (config) => get('/api/ai-generation/tasks', config),
   aiGenerationTask: (id, config) => get(`/api/ai-generation/tasks/${id}`, config),
+  saveAiGenerationTask: (id) => http.post(`/api/ai-generation/tasks/${id}/save`),
+  batchSaveAiGenerationTasks: (body) => http.post('/api/ai-generation/tasks/batch-save', body),
+  deleteAiGenerationTask: (id) => http.delete(`/api/ai-generation/tasks/${id}`),
+  batchDeleteAiGenerationTasks: (body) => http.post('/api/ai-generation/tasks/batch-delete', body),
+  clearFinishedAiGenerationTasks: () => http.post('/api/ai-generation/tasks/clear-finished'),
 
   // 插件
   plugins: (config) => get('/api/plugins', config),

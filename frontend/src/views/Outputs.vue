@@ -5,14 +5,23 @@
         <div class="outputs-summary">成片库 <span class="hint">共 {{ list.length }} 条，可直接播放、下载，或按任务筛选</span></div>
         <span class="output-location">保存位置：<code>{{ outputLocation.path || '读取中…' }}</code><el-button size="small" link type="primary" @click="locationVisible = true">设置</el-button></span>
         <span class="outputs-spacer"></span>
+        <el-input v-model="searchQuery" clearable size="small" style="width:190px" placeholder="搜索文件名 / 任务" />
+        <el-select v-model="deliveryFilter" size="small" style="width:130px" placeholder="交付状态">
+          <el-option label="全部状态" value="all" />
+          <el-option label="可发布" value="pass" />
+          <el-option label="需复核" value="warn" />
+          <el-option label="已拦截" value="fail" />
+          <el-option label="无文件" value="missing" />
+        </el-select>
         <el-select v-model="jobFilter" clearable size="small" style="width:200px" placeholder="全部任务">
           <el-option v-for="j in jobs" :key="j.id" :label="`#${j.id} ${j.name || ''}`" :value="j.id" />
         </el-select>
         <el-button size="small" style="margin-left:8px" :loading="scanning" title="扫描输出目录中的已有成片并补录到成片库，不导入原始素材" @click="scanCandidates">扫描输出目录中的成片</el-button>
         <el-button size="small" @click="load">刷新</el-button>
         <el-button v-if="selectedIds.length" size="small" type="danger" plain :loading="batchDeleting" style="margin-left:8px" @click="batchDelete">批量删除（{{ selectedIds.length }}）</el-button>
-        <el-button v-if="selectedIds.length" size="small" type="primary" plain style="margin-left:8px" @click="batchDownload">批量下载（{{ selectedIds.length }}）</el-button>
-        <el-checkbox :model-value="allChecked" :indeterminate="someChecked" style="margin-left:12px" @change="toggleAll">全选</el-checkbox>
+        <el-button v-if="selectedIds.length" size="small" type="primary" plain style="margin-left:8px" @click="batchDownload">批量下载（{{ downloadableSelectedCount }}）</el-button>
+        <el-button v-if="selectedIds.length" size="small" link @click="clearSelection">清空选择</el-button>
+        <el-checkbox :model-value="allChecked" :indeterminate="someChecked" style="margin-left:12px" @change="toggleAll">全选当前筛选</el-checkbox>
       </div>
 
       <el-alert v-if="loadError" type="error" :closable="false" show-icon style="margin-bottom:10px"
@@ -184,6 +193,8 @@ const router = useRouter()
 const list = ref([])
 const jobs = ref([])
 const jobFilter = ref(null)
+const deliveryFilter = ref('all')
+const searchQuery = ref('')
 const loading = ref(false)
 const loadError = ref(false)
 
@@ -228,29 +239,48 @@ const selectedIds = ref([])
 const playingVideo = ref(null)
 function onVideoPlay (el) { if (playingVideo.value && playingVideo.value !== el) { try { playingVideo.value.pause() } catch (e) {} } playingVideo.value = el }
 const batchDeleting = ref(false)
-const allChecked = computed(() => filtered.value.length > 0 && selectedIds.value.length === filtered.value.length)
-const someChecked = computed(() => selectedIds.value.length > 0 && !allChecked.value)
-function toggleAll (val) { selectedIds.value = val ? filtered.value.map((o) => o.id) : [] }
+const visibleSelectedIds = computed(() => new Set(filtered.value.map((output) => output.id).filter((id) => selectedIds.value.includes(id))))
+const allChecked = computed(() => filtered.value.length > 0 && visibleSelectedIds.value.size === filtered.value.length)
+const someChecked = computed(() => visibleSelectedIds.value.size > 0 && !allChecked.value)
+const downloadableSelectedCount = computed(() => list.value.filter((output) => selectedIds.value.includes(output.id) && output.filePath).length)
+function toggleAll (val) {
+  const visibleIds = filtered.value.map((output) => output.id)
+  const hiddenIds = selectedIds.value.filter((id) => !visibleIds.includes(id))
+  selectedIds.value = val ? [...new Set([...hiddenIds, ...visibleIds])] : hiddenIds
+}
+function clearSelection () { selectedIds.value = [] }
 async function batchDelete () {
   if (!selectedIds.value.length) return
   batchDeleting.value = true
   try {
     const ids = [...selectedIds.value]
     let ok = 0
-    for (const id of ids) { try { await api.deleteOutput(id); ok++ } catch (e) { /* 继续删其余 */ } }
-    ElMessage.success('已删除 ' + ok + ' 条')
-    selectedIds.value = []
+    const failed = []
+    for (const id of ids) { try { await api.deleteOutput(id); ok++ } catch (e) { failed.push(id) } }
+    ElMessage[failed.length ? 'warning' : 'success'](failed.length ? `已删除 ${ok} 条，${failed.length} 条失败，请刷新后重试` : `已删除 ${ok} 条`)
+    clearSelection()
     await load()
   } finally { batchDeleting.value = false }
 }
 function batchDownload () {
   if (!selectedIds.value.length) return
-  for (const id of selectedIds.value) window.open(api.downloadUrl(id), '_blank')
-  ElMessage.success('已开始下载')
+  const downloadable = list.value.filter((output) => selectedIds.value.includes(output.id) && output.filePath)
+  if (!downloadable.length) return ElMessage.warning('当前选择没有可下载的文件')
+  for (const output of downloadable) window.open(api.downloadUrl(output.id), '_blank')
+  ElMessage.success(`已开始下载 ${downloadable.length} 条`)
 }
 
-const filtered = computed(() =>
-  jobFilter.value ? list.value.filter((o) => o.jobId === jobFilter.value) : list.value)
+const filtered = computed(() => {
+  const query = searchQuery.value.trim().toLowerCase()
+  return list.value.filter((output) => {
+    if (jobFilter.value && output.jobId !== jobFilter.value) return false
+    if (deliveryFilter.value === 'missing' && output.filePath) return false
+    if (deliveryFilter.value !== 'all' && deliveryFilter.value !== 'missing' && output.qcStatus !== deliveryFilter.value) return false
+    if (!query) return true
+    const text = `${baseName(output.filePath)} ${output.jobId || ''} ${output.idx || ''} ${output.qcReport || ''}`.toLowerCase()
+    return text.includes(query)
+  })
+})
 
 const qcReportData = computed(() => parseJson(qcSource.value && qcSource.value.qcJson))
 const downgradeList = computed(() => {
@@ -434,6 +464,8 @@ async function load() {
   try {
     const [outputRows, jobRows, location] = await Promise.all([api.allOutputs(), api.jobs(), api.outputLocation()])
     list.value = outputRows
+    const availableIds = new Set((Array.isArray(outputRows) ? outputRows : []).map((output) => output.id))
+    selectedIds.value = selectedIds.value.filter((id) => availableIds.has(id))
     jobs.value = (Array.isArray(jobRows) ? jobRows : []).map((row) => row?.job || row)
     outputLocation.value.path = location.path || ''
     loadError.value = false

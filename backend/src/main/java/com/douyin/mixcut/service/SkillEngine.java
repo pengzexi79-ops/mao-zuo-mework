@@ -679,7 +679,7 @@ public class SkillEngine {
                 .append(nz(project.getCategory())).append("；产品=").append(nz(project.getProduct())).append("；卖点=")
                 .append(nz(project.getSellingPoints())).append("；人群=").append(nz(project.getAudience()));
         if (requirement != null && !requirement.isBlank()) user.append("\n本次要求：").append(requirement.substring(0, Math.min(1000, requirement.length())));
-        JsonNode response = aiService.askJson(UseCase.general, sys, user.toString(), 0.5, 1800,
+        JsonNode response = aiService.askJson(UseCase.capability, sys, user.toString(), 0.5, 1800,
                 project == null ? null : project.getRouteOverrides());
         try {
             String validated = validateAiWorkflow(response, callable.stream().map(item -> String.valueOf(item.get("name"))).collect(java.util.stream.Collectors.toSet()));

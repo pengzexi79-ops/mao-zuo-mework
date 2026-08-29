@@ -3,6 +3,7 @@ package com.douyin.mixcut.web;
 import com.douyin.mixcut.domain.Material;
 import com.douyin.mixcut.domain.MaterialFolder;
 import com.douyin.mixcut.domain.MaterialRole;
+import com.douyin.mixcut.external.media.MediaFileTypes;
 import com.douyin.mixcut.repository.Repositories.MaterialFolderRepo;
 import com.douyin.mixcut.repository.MaterialStore;
 import com.douyin.mixcut.service.AudioEngineService;
@@ -71,6 +72,15 @@ public class MaterialController {
         return R.ok(service.stats());
     }
 
+    /** Direct lookup used by generated-task navigation; it must not depend on the current library filters. */
+    @GetMapping("/{id}")
+    public R<Material> get(@PathVariable Long id) {
+        Material material = repo.findById(id).orElse(null);
+        if (material == null) return R.fail("素材不存在或已被移出素材库");
+        service.attachBrowserUrls(material);
+        return R.ok(material);
+    }
+
     /** 稳定预览入口：用素材 ID 映射文件，直接输出字节避免本机 MVC 转换器差异。 */
     @GetMapping("/{id}/preview")
     public void preview(@PathVariable Long id,
@@ -91,8 +101,9 @@ public class MaterialController {
             }
             long size = Files.size(path);
             String filename = path.getFileName().toString();
-            MediaType mediaType = MediaTypeFactory.getMediaType(filename)
-                    .orElseGet(() -> fallbackMediaType(filename));
+            MediaType mediaType = material.getFileType() == Material.FileType.image
+                    ? detectedImageMediaType(path)
+                    : MediaTypeFactory.getMediaType(filename).orElseGet(() -> fallbackMediaType(filename));
             if (!Set.of("image", "video", "audio").contains(mediaType.getType())) {
                 mediaType = switch (material.getFileType()) {
                     case image -> detectedImageMediaType(path);
@@ -430,6 +441,12 @@ public class MaterialController {
     }
 
     private MediaType detectedImageMediaType(Path path) {
+        try {
+            var detected = MediaFileTypes.detectImage(path);
+            if (detected.isPresent()) return MediaType.parseMediaType(detected.get().mediaType());
+        } catch (Exception ignored) {
+            // Fall through to ImageIO and the JPEG fallback for legacy records.
+        }
         try (var input = Files.newInputStream(path);
              var imageInput = javax.imageio.ImageIO.createImageInputStream(input)) {
             var readers = javax.imageio.ImageIO.getImageReaders(imageInput);

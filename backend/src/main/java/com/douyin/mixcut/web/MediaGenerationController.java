@@ -1,6 +1,7 @@
 package com.douyin.mixcut.web;
 
 import com.douyin.mixcut.service.MediaGenerationService;
+import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
@@ -33,6 +34,31 @@ public class MediaGenerationController {
 
     @GetMapping("/tasks/{id}")
     public R<MediaGenerationService.Task> task(@PathVariable String id) { return R.ok(service.get(id)); }
+
+    @PostMapping("/tasks/{id}/save")
+    public R<Map<String, Object>> save(@PathVariable String id) { return R.ok(service.save(id)); }
+
+    @Data
+    public static class TaskKeysRequest { private List<String> ids; }
+
+    @PostMapping("/tasks/batch-save")
+    public R<Map<String, Object>> batchSave(@RequestBody TaskKeysRequest request) {
+        return R.ok(service.saveBatch(request == null ? null : request.getIds()));
+    }
+
+    @DeleteMapping("/tasks/{id}")
+    public R<Void> delete(@PathVariable String id) {
+        service.delete(id);
+        return R.ok();
+    }
+
+    @PostMapping("/tasks/batch-delete")
+    public R<Map<String, Object>> batchDelete(@RequestBody TaskKeysRequest request) {
+        return R.ok(service.deleteBatch(request == null ? null : request.getIds()));
+    }
+
+    @PostMapping("/tasks/clear-finished")
+    public R<Map<String, Object>> clearFinished() { return R.ok(service.clearFinished()); }
 
     @GetMapping("/capabilities")
     public R<Map<String, Object>> capabilities() {

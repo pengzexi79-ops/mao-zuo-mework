@@ -254,7 +254,7 @@
       <el-collapse v-if="Object.keys(folderContents).length" style="margin-top:12px"><el-collapse-item v-for="folder in folders.filter((item) => folderContents[item.id])" :key="folder.id" :name="String(folder.id)" :title="`${folder.name} 内的素材`"><div v-if="folderContentsLoading === folder.id" v-loading="true" style="height:64px"></div><div v-else v-for="group in folderMediaSummary(folder)" :key="group.type" class="folder-media-type"><b>{{ group.type === 'video' ? '视频' : group.type === 'audio' ? '音频' : '图片' }}</b><span class="muted">{{ group.items.length }} 条</span><div v-if="group.items.length" class="folder-media-items">{{ group.items.map((item) => item.name).join(' · ') }}</div></div></el-collapse-item></el-collapse>
     </el-dialog>
 
-    <el-dialog v-model="previewVisible" :title="previewing?.name || '素材预览'" width="760px" destroy-on-close>
+    <el-dialog v-model="previewVisible" class="material-preview-dialog" :title="previewing?.name || '素材预览'" width="min(760px, calc(100vw - 28px))" destroy-on-close>
       <div v-if="previewing" class="material-preview">
         <img v-if="previewing.fileType === 'image'" :src="materialUrl(previewing)" :alt="previewing.name" @error="markPreviewError(previewing)" />
         <audio v-else-if="previewing.fileType === 'audio'" :src="materialUrl(previewing)" controls preload="metadata" @error="markPreviewError(previewing)" style="width:100%"></audio>
@@ -571,6 +571,20 @@ async function load() {
     list.value = await api.materials({ role: q.role, type: q.type, kw: q.kw, folderId: q.folderId === 'all' ? undefined : q.folderId })
   } finally {
     loading.value = false
+  }
+}
+
+async function openMaterialFromRoute () {
+  const materialId = Number(route.query.materialId)
+  if (!Number.isFinite(materialId)) return
+  try {
+    const target = await api.material(materialId)
+    openPreview(target)
+    const query = { ...route.query }
+    delete query.materialId
+    await router.replace({ path: '/materials', query })
+  } catch (error) {
+    ElMessage.error(`打开生成素材失败：${error.message || '素材不存在或已被移除'}`)
   }
 }
 
@@ -1043,6 +1057,7 @@ async function saveEdit() {
 onMounted(async () => {
   if (route.query.folderId) q.folderId = String(route.query.folderId)
   await Promise.all([load(), loadAudioEngineStatus(), loadFolders().catch(() => { folders.value = [] }), api.projects().then((rows) => { projects.value = rows || [] }).catch(() => { projects.value = [] })])
+  await openMaterialFromRoute()
   window.addEventListener('mework-global-upload-complete', load)
 })
 onBeforeUnmount(() => {
@@ -1067,7 +1082,43 @@ onBeforeUnmount(() => {
 .tts-ai-actions { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:8px; }
 .upload-status-list { margin:10px 0; padding:10px; background:#fafafa; border-radius:6px; }
 .upload-status-row { display:grid; grid-template-columns:220px minmax(180px,1fr) 260px; gap:10px; align-items:center; padding:5px 0; }
-.upload-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+ .upload-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+ .material-preview { width:100%; max-width:100%; min-width:0; overflow:hidden; box-sizing:border-box; }
+ .material-preview img, .material-preview video { display:block; width:auto; max-width:100%; max-height:calc(100vh - 190px); height:auto; object-fit:contain; margin:0 auto; }
+ .material-preview audio { display:block; width:100%; max-width:100%; }
+ .material-preview-dialog :deep(.el-dialog__body) { max-width:100%; max-height:calc(100vh - 140px); overflow:auto; box-sizing:border-box; }
 .ocr-text { margin-top:6px; line-height:1.7; word-break:break-word; }
-.diagnosis-issues { margin:6px 0 0; padding-left:20px; color:#b54708; line-height:1.7; }
+ .diagnosis-issues { margin:6px 0 0; padding-left:20px; color:#b54708; line-height:1.7; }
+</style>
+
+<style>
+/* Element Plus teleports dialogs outside this component, so preview sizing must be global. */
+.material-preview {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+.material-preview img,
+.material-preview video {
+  display: block;
+  width: auto !important;
+  max-width: 100% !important;
+  max-height: calc(100vh - 220px) !important;
+  height: auto !important;
+  object-fit: contain;
+  margin: 0 auto;
+}
+.material-preview audio {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+}
+.el-dialog__body:has(.material-preview) {
+  max-width: 100%;
+  max-height: calc(100vh - 150px);
+  overflow: auto;
+  box-sizing: border-box;
+}
 </style>

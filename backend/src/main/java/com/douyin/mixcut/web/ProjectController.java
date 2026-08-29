@@ -181,7 +181,7 @@ public class ProjectController {
                 ? "请为通用美妆护肤产品生成一个项目草稿"
                 : "需求：" + requirement + "\n请据此生成项目草稿";
 
-        AiService.Answer answer = aiService.ask(UseCase.general, sys, user, 0.7, 1200, null);
+        AiService.Answer answer = aiService.ask(UseCase.product, sys, user, 0.7, 1200, null);
         if (!answer.ok()) {
             log.warn("project-draft: AI returned error: {}", answer.error());
             return buildFallback(requirement);

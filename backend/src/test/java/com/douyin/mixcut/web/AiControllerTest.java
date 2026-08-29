@@ -64,7 +64,7 @@ class AiControllerTest {
 
         assertTrue(result.isOk());
         var root = new ObjectMapper().readTree(provider.getModels());
-        assertEquals("manual-model", provider.getDefaultModel());
+        assertEquals("new-model", provider.getDefaultModel());
         assertTrue(root.path("text").toString().contains("manual-model"));
         assertTrue(root.path("text").toString().contains("new-model"));
         assertEquals("adopted-image", root.path("media").path("image").path(0).asText());

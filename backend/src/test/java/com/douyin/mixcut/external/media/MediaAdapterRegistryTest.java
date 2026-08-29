@@ -27,7 +27,8 @@ class MediaAdapterRegistryTest {
 
     @Test
     void rejectsDashScopeHttpAndQwenWebsocketProtocols() {
-        assertUnsupported(capability("", "", "dashscope_tts_http"), "voice");
+        org.mockito.Mockito.when(openAi.supportsProtocol(org.mockito.ArgumentMatchers.anyString())).thenReturn(true);
+        assertSame(openAi, registry.adapterFor(provider, "voice", capability("", "", "dashscope_tts_http")));
         assertUnsupported(capability("", "", "dashscope_tts_websocket"), "voice");
     }
 

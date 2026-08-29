@@ -224,9 +224,11 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { api } from '../api'
 import VisualPicker from '../components/media/VisualPicker.vue'
+import { useRoute } from 'vue-router'
 
 // Keep every tool collapsed on entry; users may open one or several panels explicitly.
 const openTools = ref([])
+const route = useRoute()
 const materials = ref([])
 const tasks = ref([])
 const aiProviders = ref([])
@@ -400,6 +402,24 @@ async function loadMaterials () {
   }
 }
 
+function focusMaterialFromRoute () {
+  const id = Number(route.query.materialId)
+  if (!Number.isFinite(id)) return
+  const material = materials.value.find(item => Number(item.id) === id)
+  if (!material) return
+  if (material.fileType === 'image') {
+    imageForm.materialId = material.id
+    openTools.value = [...new Set([...openTools.value, 'image'])]
+  } else if (material.fileType === 'video') {
+    selectTimelineMaterial(material.id)
+    separateMaterialId.value = material.id
+    openTools.value = [...new Set([...openTools.value, 'video'])]
+  } else if (material.fileType === 'audio') {
+    separateMaterialId.value = material.id
+    openTools.value = [...new Set([...openTools.value, 'audio'])]
+  }
+}
+
 async function loadLocation () {
   try {
     const value = await api.mediaToolOutputLocation()
@@ -569,6 +589,7 @@ function startPolling () {
 
 onMounted(async () => {
   await Promise.all([loadMaterials(), loadTasks(), loadLocation(), loadAiProviders()])
+  focusMaterialFromRoute()
   if (tasks.value.some(task => ['pending', 'running'].includes(task.status))) startPolling()
 })
 
