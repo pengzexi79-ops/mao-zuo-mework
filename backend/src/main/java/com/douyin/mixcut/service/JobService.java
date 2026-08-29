@@ -405,6 +405,61 @@ public class JobService {
     }
 
     /**
+     * Explicitly skip the next failed item and continue the existing job. This is deliberately
+     * separate from resume/retry: it never claims that the skipped item passed QC.
+     */
+    @Transactional
+    public void forceResume(Long jobId) {
+        jobRepo.findById(jobId).ifPresentOrElse(job -> {
+            if (JobStatus.pending.name().equals(job.getStatus()) || JobStatus.running.name().equals(job.getStatus())) {
+                throw new IllegalArgumentException("任务正在执行，不能重复发起强制继续");
+            }
+            if (JobStatus.cancelled.name().equals(job.getStatus())) {
+                throw new IllegalArgumentException("已取消的任务不能继续");
+            }
+            int total = totalFor(job);
+            Set<Integer> processed = successfulIndexes(jobId, Integer.MAX_VALUE, true);
+            int next = nextFreeIndex(processed);
+            if (next <= total || isContinuous(job)) {
+                saveForcedSkipCheckpoint(jobId, next, "用户选择强制继续：跳过该条失败项，保留质检证据");
+            }
+            try {
+                job.setParams(updateSchedulingFlag(job.getParams(), "forceContinue", true));
+            } catch (Exception e) {
+                throw new IllegalStateException("无法保存强制继续设置", e);
+            }
+            int completed = successfulIndexes(jobId, Integer.MAX_VALUE, true).size();
+            job.setStatus(JobStatus.pending.name());
+            job.setCurrent(completed);
+            job.setProgress(progress(Math.min(completed, total), total));
+            job.setSummary("已开启强制继续：有误项保留记录，后续成片继续处理");
+            job.setError(null);
+            heartbeat(job, "强制继续排队");
+            jobRepo.save(job);
+            replaceProcessContext(jobId);
+            dispatch(jobId);
+        }, () -> { throw new IllegalArgumentException("任务不存在"); });
+    }
+
+    /** Update the task-level policy without changing its checkpoint or retry state. */
+    @Transactional
+    public void setForceContinue(Long jobId, boolean enabled) {
+        jobRepo.findById(jobId).ifPresentOrElse(job -> {
+            if (isTerminal(job.getStatus())) throw new IllegalArgumentException("已结束的任务不能修改失败处理策略");
+            try {
+                job.setParams(updateSchedulingFlag(job.getParams(), "forceContinue", enabled));
+            } catch (Exception e) {
+                throw new IllegalStateException("无法保存失败处理策略", e);
+            }
+            job.setSummary(enabled
+                    ? "已开启全局强制继续：有误项保留记录，后续成片继续处理"
+                    : "已关闭全局强制继续：下一次失败将暂停等待处理");
+            heartbeat(job, enabled ? "开启全局强制继续" : "关闭全局强制继续");
+            jobRepo.save(job);
+        }, () -> { throw new IllegalArgumentException("任务不存在"); });
+    }
+
+    /**
      * Continue only with a recommendation that is safe without more user input. Replacing BGM
      * remains a deliberate manual decision because silently selecting an arbitrary track would
      * recreate the audio mismatch the repair flow is meant to avoid.
@@ -454,6 +509,12 @@ public class JobService {
             if (completed >= totalFor(job) && !JobStatus.awaiting_decision.name().equals(job.getStatus())) {
                 throw new IllegalArgumentException("任务没有待修复的失败项");
             }
+            try {
+                // A deliberate retry must make failed checkpoints eligible again.
+                job.setParams(updateSchedulingFlag(job.getParams(), "forceContinue", false));
+            } catch (Exception e) {
+                throw new IllegalStateException("无法关闭强制继续设置", e);
+            }
             job.setStatus(JobStatus.pending.name());
             job.setCurrent(completed);
             job.setProgress(progress(completed, totalFor(job)));
@@ -484,7 +545,8 @@ public class JobService {
 
         int total = totalFor(job);
         boolean continuous = isContinuous(job);
-        Set<Integer> successful = successfulIndexes(jobId, continuous ? Integer.MAX_VALUE : total);
+        boolean forceContinue = isForceContinue(job);
+        Set<Integer> successful = successfulIndexes(jobId, continuous ? Integer.MAX_VALUE : total, forceContinue);
         Set<String> usedSegments = loadUsedSegments(jobId);
         Map<String, Integer> batchReuseUsage = new LinkedHashMap<>();
         Long projectId = job.getProjectId();
@@ -522,7 +584,7 @@ public class JobService {
         }
         int admissionVariant = jobVariant(job);
         if (continuous) {
-            runContinuous(jobId, job, project, params, def, successful, usedSegments, batchReuseUsage, admissionVariant);
+            runContinuous(jobId, job, project, params, def, successful, usedSegments, batchReuseUsage, admissionVariant, forceContinue);
             return;
         }
 
@@ -549,6 +611,7 @@ public class JobService {
                 liveStep.remove(jobId);
                 return;
             }
+            boolean forceContinueNow = isForceContinue(latest);
 
             liveStep.put(jobId, "第 " + idx + "/" + total + " 条：准备中");
             heartbeat(latest, "第 " + idx + "/" + total + " 条：准备中");
@@ -586,71 +649,89 @@ public class JobService {
                     return;
                 }
                 if (attempt.awaitingDecision) {
-                    saveQcBlockedOutput(jobId, idx, result, plan == null ? Set.of() : plan.segmentKeys(), attempt.retries,
+                    if (!forceContinueNow) {
+                        saveQcBlockedOutput(jobId, idx, result, plan == null ? Set.of() : plan.segmentKeys(), attempt.retries,
+                                plan == null ? null : plan.getHookStrategy(), buildDowngradeInfo(plan, result, attempt.retries),
+                                buildUsedMaterials(plan), false);
+                        Job waiting = reloadOrNull(jobId);
+                        if (waiting != null) markAwaitingDecision(waiting, idx, result.getError());
+                        liveStep.remove(jobId);
+                        return;
+                    }
+                    saveForcedFailureCheckpoint(jobId, idx, result, plan == null ? Set.of() : plan.segmentKeys(), attempt.retries,
                             plan == null ? null : plan.getHookStrategy(), buildDowngradeInfo(plan, result, attempt.retries),
                             buildUsedMaterials(plan));
-                    Job waiting = reloadOrNull(jobId);
-                    if (waiting != null) markAwaitingDecision(waiting, idx, result.getError());
-                    liveStep.remove(jobId);
-                    return;
-                }
-                if (!plan.isUsable() || missingRequiredAudio(plan) || insufficientAudioCoverage(plan)) {
+                    successful.add(idx);
+                    fail++;
+                    warnings.add("第 " + idx + " 条质检有误，已按全局强制继续跳过");
+                } else if (!plan.isUsable() || missingRequiredAudio(plan) || insufficientAudioCoverage(plan)) {
                     boolean noAudio = missingRequiredAudio(plan);
                     boolean shortAudio = insufficientAudioCoverage(plan);
                     String reason = noAudio ? missingRequiredAudioMessage()
                             : (shortAudio ? insufficientAudioCoverageMessage(plan) : String.join("；", plan.getNotes()));
-                    Job failed = reloadOrNull(jobId);
-                    if (failed != null) {
-                        String prefix = noAudio ? "批量出片已停止：当前计划没有可用音轨。"
-                                : (shortAudio ? "批量出片已停止：当前口播无法覆盖全片。"
-                                : "批量出片已停止：当前素材无法满足时长要求。");
-                        markFailed(failed, prefix
-                                + (reason.isBlank() ? "请补充可读素材或降低目标时长后重新干跑。" : reason));
-                    }
-                    liveStep.remove(jobId);
-                    return;
-                }
-                Job afterRender = reloadOrNull(jobId);
-                if (afterRender == null || !ownsLease(afterRender)) {
-                    discardRenderResult(result);
-                    liveStep.remove(jobId);
-                    return;
-                }
-                if (JobStatus.cancelled.name().equals(afterRender.getStatus()) || cancelled.contains(jobId)) {
-                    cancelPersisted(afterRender, successful.size());
-                    discardRenderResult(result);
-                    return;
-                }
-                if (afterRender != null && JobStatus.failed.name().equals(afterRender.getStatus())) {
-                    discardRenderResult(result);
-                    liveStep.remove(jobId);
-                    return;
-                }
-                if (result.isOk()) {
-                    if (saveOutputIfAbsent(jobId, idx, result, plan.segmentKeys(), attempt.retries,
-                            plan.getHookStrategy(), buildDowngradeInfo(plan, result, attempt.retries),
-                            buildUsedMaterials(plan), result.getQcJson())) {
-                        forgetPersistedRenderOutputs(result, processContext(jobId));
-                        usedSegments.addAll(plan.segmentKeys());
-                        recordBatchAudioUsage(params.getRecentAudioUsage(), plan, warnings, idx);
-                        recordBatchReuse(batchReuseUsage, plan);
+                    String prefix = noAudio ? "当前计划没有可用音轨。"
+                            : (shortAudio ? "当前口播无法覆盖全片。" : "当前素材无法满足时长要求。");
+                    String failure = prefix + (reason.isBlank() ? "请补充可读素材或降低目标时长后重新干跑。" : reason);
+                    if (forceContinueNow) {
+                        saveForcedSkipCheckpoint(jobId, idx, failure);
                         successful.add(idx);
-                        ok++;
-                    } else if (hasSuccessfulOutput(jobId, idx)) {
-                        // 另一个恢复执行已成功写入同一 idx，按检查点继续而不是重复计数。
-                        successful.add(idx);
-                    }
-                    if (!result.getWarnings().isEmpty()) {
-                        warnings.add("第 " + idx + " 条: " + String.join("；", result.getWarnings()));
+                        fail++;
+                        warnings.add("第 " + idx + " 条无法生成，已按全局强制继续跳过：" + reason);
+                    } else {
+                        Job failed = reloadOrNull(jobId);
+                        if (failed != null) markFailed(failed, "批量出片已停止：" + failure);
+                        liveStep.remove(jobId);
+                        return;
                     }
                 } else {
-                    fail++;
-                    if ("fail".equals(result.getQcStatus())) {
-                        saveQcBlockedOutput(jobId, idx, result, plan.segmentKeys(), attempt.retries,
-                                plan.getHookStrategy(), buildDowngradeInfo(plan, result, attempt.retries),
-                                buildUsedMaterials(plan));
+                    Job afterRender = reloadOrNull(jobId);
+                    if (afterRender == null || !ownsLease(afterRender)) {
+                        discardRenderResult(result);
+                        liveStep.remove(jobId);
+                        return;
                     }
-                    warnings.add("第 " + idx + " 条渲染失败: " + result.getError());
+                    if (JobStatus.cancelled.name().equals(afterRender.getStatus()) || cancelled.contains(jobId)) {
+                        cancelPersisted(afterRender, successful.size());
+                        discardRenderResult(result);
+                        return;
+                    }
+                    if (JobStatus.failed.name().equals(afterRender.getStatus())) {
+                        discardRenderResult(result);
+                        liveStep.remove(jobId);
+                        return;
+                    }
+                    if (result.isOk()) {
+                        if (saveOutputIfAbsent(jobId, idx, result, plan.segmentKeys(), attempt.retries,
+                                plan.getHookStrategy(), buildDowngradeInfo(plan, result, attempt.retries),
+                                buildUsedMaterials(plan), result.getQcJson())) {
+                            forgetPersistedRenderOutputs(result, processContext(jobId));
+                            usedSegments.addAll(plan.segmentKeys());
+                            recordBatchAudioUsage(params.getRecentAudioUsage(), plan, warnings, idx);
+                            recordBatchReuse(batchReuseUsage, plan);
+                            successful.add(idx);
+                            ok++;
+                        } else if (hasSuccessfulOutput(jobId, idx)) {
+                            // 另一个恢复执行已成功写入同一 idx，按检查点继续而不是重复计数。
+                            successful.add(idx);
+                        }
+                        if (!result.getWarnings().isEmpty()) {
+                            warnings.add("第 " + idx + " 条: " + String.join("；", result.getWarnings()));
+                        }
+                    } else {
+                        fail++;
+                        if (isForceContinue(afterRender)) {
+                            saveForcedFailureCheckpoint(jobId, idx, result, plan.segmentKeys(), attempt.retries,
+                                    plan.getHookStrategy(), buildDowngradeInfo(plan, result, attempt.retries),
+                                    buildUsedMaterials(plan));
+                            successful.add(idx);
+                            warnings.add("第 " + idx + " 条渲染失败，已按全局强制继续跳过：" + result.getError());
+                        } else if ("fail".equals(result.getQcStatus())) {
+                            saveQcBlockedOutput(jobId, idx, result, plan.segmentKeys(), attempt.retries,
+                                    plan.getHookStrategy(), buildDowngradeInfo(plan, result, attempt.retries),
+                                    buildUsedMaterials(plan), false);
+                        }
+                        warnings.add("第 " + idx + " 条渲染失败: " + result.getError());
+                    }
                 }
             } catch (Exception e) {
                 fail++;
@@ -724,6 +805,7 @@ public class JobService {
         output.setQcStatus(result.getQcStatus() == null ? "pass" : result.getQcStatus());
         output.setQcReport(result.getQcReport());
         output.setQcJson(qcJson);
+        output.setForcedContinue(false);
         output.setRetryCount(retryCount);
         output.setHookStrategy(hookStrategy);
         output.setDowngradeInfo(downgradeInfo);
@@ -765,33 +847,64 @@ public class JobService {
         }
     }
 
-    /** Save a QC-blocked item for diagnostics only; it is not a delivery checkpoint or downloadable file. */
+    /** Save a failed candidate for review. A QC failure remains non-deliverable, but its video is previewable. */
     private void saveQcBlockedOutput(Long jobId, int idx, RenderService.RenderResult result, Set<String> segmentKeys,
-                                     int retryCount, String hookStrategy, String downgradeInfo, String usedMaterials) {
+                                     int retryCount, String hookStrategy, String downgradeInfo, String usedMaterials,
+                                     boolean forcedContinue) {
         Optional<JobOutput> existing = outputRepo.findByJobIdAndIdx(jobId, idx);
         if (existing.isPresent() && hasSuccessfulOutput(jobId, idx)) return;
         JobOutput output = existing.orElseGet(JobOutput::new);
         output.setJobId(jobId);
         output.setIdx(idx);
-        // QC-blocked candidates stay in the controlled workspace. A public JobOutput only exposes diagnostics.
-        output.setFilePath(null);
-        output.setDurationSec(null);
-        output.setThumbnail(null);
+        // Keep the isolated candidate so the user can inspect the exact failed result.
+        output.setFilePath(result == null ? null : result.getFilePath());
+        output.setDurationSec(result == null ? null : result.getDurationSec());
+        output.setThumbnail(result == null ? null : result.getThumbnail());
         output.setQcStatus("fail");
-        output.setQcReport(result.getQcReport());
-        output.setQcJson(result.getQcJson());
+        output.setQcReport(result == null ? null : (result.getQcReport() == null ? result.getError() : result.getQcReport()));
+        output.setQcJson(result == null ? null : result.getQcJson());
         output.setRetryCount(retryCount);
         output.setHookStrategy(hookStrategy);
         output.setDowngradeInfo(downgradeInfo);
         output.setUsedMaterials(usedMaterials);
+        output.setForcedContinue(forcedContinue);
         try {
             output.setSegmentKeys(om.writeValueAsString(segmentKeys == null ? Set.of() : segmentKeys));
             outputRepo.saveAndFlush(output);
+            if (result != null) forgetPersistedRenderOutputs(result, processContext(jobId));
         } catch (org.springframework.dao.DataIntegrityViolationException ignored) {
             log.debug("QC-blocked output already recorded for job {} item {}", jobId, idx);
         } catch (Exception e) {
             log.warn("cannot persist QC diagnostics for job {} item {}: {}", jobId, idx, e.toString());
         }
+    }
+
+    /** Record a hard failure as a resumable checkpoint only after force-continue was chosen. */
+    private void saveForcedSkipCheckpoint(Long jobId, int idx, String reason) {
+        if (idx < 1) return;
+        Optional<JobOutput> existing = outputRepo.findByJobIdAndIdx(jobId, idx);
+        if (existing.isPresent() && hasSuccessfulOutput(jobId, idx)) return;
+        JobOutput output = existing.orElseGet(JobOutput::new);
+        output.setJobId(jobId);
+        output.setIdx(idx);
+        output.setQcStatus("fail");
+        if (output.getQcReport() == null || output.getQcReport().isBlank()) output.setQcReport(reason);
+        output.setForcedContinue(true);
+        try {
+            outputRepo.saveAndFlush(output);
+        } catch (org.springframework.dao.DataIntegrityViolationException ignored) {
+            log.debug("forced failure checkpoint already recorded for job {} item {}", jobId, idx);
+        }
+    }
+
+    private void saveForcedFailureCheckpoint(Long jobId, int idx, RenderService.RenderResult result,
+                                             Set<String> segmentKeys, int retryCount, String hookStrategy,
+                                             String downgradeInfo, String usedMaterials) {
+        if (result != null && (result.getQcReport() == null || result.getQcReport().isBlank())) {
+            result.setQcReport(result.getError());
+        }
+        saveQcBlockedOutput(jobId, idx, result, segmentKeys, retryCount, hookStrategy, downgradeInfo,
+                usedMaterials, true);
     }
 
     /**
@@ -1263,11 +1376,19 @@ public class JobService {
 
     /** 每个已持久化的 idx 都是恢复检查点；不要重新渲染或覆盖已有输出。 */
     Set<Integer> successfulIndexes(Long jobId, int total) {
+        return successfulIndexes(jobId, total, false);
+    }
+
+    /** 强制继续只跳过已明确记录为 forced_continue 的失败项。 */
+    Set<Integer> successfulIndexes(Long jobId, int total, boolean includeForcedFailures) {
         Set<Integer> indexes = new HashSet<>();
         for (JobOutput output : outputRepo.findByJobIdOrderByIdxAsc(jobId)) {
             Integer idx = output.getIdx();
-            if (idx != null && idx >= 1 && idx <= total && !"fail".equalsIgnoreCase(output.getQcStatus())
-                    && output.getFilePath() != null && !output.getFilePath().isBlank()) indexes.add(idx);
+            if (idx == null || idx < 1 || idx > total) continue;
+            boolean delivered = !"fail".equalsIgnoreCase(output.getQcStatus())
+                    && output.getFilePath() != null && !output.getFilePath().isBlank();
+            boolean forced = includeForcedFailures && Boolean.TRUE.equals(output.getForcedContinue());
+            if (delivered || forced) indexes.add(idx);
         }
         return indexes;
     }
@@ -1278,6 +1399,11 @@ public class JobService {
             MixParams effective = admissionConfig == null ? mergeProjectDefaults(submittedJson, project) : admissionConfig.getParams();
             // Admission resolution already finalized seed and effective parameters. Do not mutate them here.
             com.fasterxml.jackson.databind.node.ObjectNode root = om.createObjectNode();
+            // continuous controls the scheduler, so keep it beside the effective config instead of
+            // relying on MixParams to retain an unknown scheduling field.
+            JsonNode submittedRoot = om.readTree(submittedJson == null || submittedJson.isBlank() ? "{}" : submittedJson);
+            root.put("continuous", submittedRoot.path("continuous").asBoolean(false));
+            root.put("forceContinue", submittedRoot.path("forceContinue").asBoolean(false));
             root.set("effectiveParams", om.valueToTree(effective));
             root.put("snapshotVersion", 1);
             root.put("frozenAt", LocalDateTime.now().toString());
@@ -1378,9 +1504,10 @@ public class JobService {
     /** 持续任务每次只生成一条，成功后即刻继续；连续失败上限防止素材或 ffmpeg 异常时无限空转。 */
     private void runContinuous(Long jobId, Job job, Project project, MixParams params, String def,
                                Set<Integer> successful, Set<String> usedSegments, Map<String, Integer> batchReuseUsage,
-                               int admissionVariant) {
+                               int admissionVariant, boolean forceContinue) {
         int consecutiveFailures = 0;
         String lastFailureReason = null;
+        Deque<String> hookPool = new ArrayDeque<>();
         Long projectId = job.getProjectId();
         Set<String> projectFuzzyKeys = projectId != null
                 ? loadProjectUsedFuzzyKeys(projectId, jobId) : new HashSet<>();
@@ -1390,6 +1517,7 @@ public class JobService {
                 liveStep.remove(jobId);
                 return;
             }
+            boolean forceContinueNow = isForceContinue(latest);
             if (isTerminal(latest.getStatus()) || cancelled.contains(jobId)) {
                 if (latest != null && JobStatus.cancelled.name().equals(latest.getStatus())) cancelPersisted(latest, successful.size());
                 return;
@@ -1403,10 +1531,15 @@ public class JobService {
             try {
                 MixParams itemParams = copyParams(params);
                 itemParams.setHookStrategy(HookStrategy.select(project, idx - 1).name());
-                List<String> hooks = createHooks(project, itemParams, 1, idx - 1,
-                        buildHookEvidence(project, itemParams), new ArrayList<>());
-                if (!hooks.isEmpty()) {
-                    itemParams.setHookText(hooks.get(0));
+                // Generate a small hook pool once instead of making one AI request per output.
+                if (Boolean.TRUE.equals(itemParams.getAiHook())
+                        && (itemParams.getHookText() == null || itemParams.getHookText().isBlank())
+                        && hookPool.isEmpty()) {
+                    hookPool.addAll(createHooks(project, itemParams, 4, idx - 1,
+                            buildHookEvidence(project, itemParams), new ArrayList<>()));
+                }
+                if (!hookPool.isEmpty()) {
+                    itemParams.setHookText(hookPool.removeFirst());
                     itemParams.setAutoGeneratedHook(true);
                 }
                 if (Boolean.TRUE.equals(itemParams.getAutoRehook())
@@ -1428,74 +1561,95 @@ public class JobService {
                     return;
                 }
                 if (attempt.awaitingDecision) {
-                    saveQcBlockedOutput(jobId, idx, result, plan == null ? Set.of() : plan.segmentKeys(), attempt.retries,
+                    if (!forceContinueNow) {
+                        saveQcBlockedOutput(jobId, idx, result, plan == null ? Set.of() : plan.segmentKeys(), attempt.retries,
+                                plan == null ? null : plan.getHookStrategy(), buildDowngradeInfo(plan, result, attempt.retries),
+                                buildUsedMaterials(plan), false);
+                        markAwaitingDecision(latest, idx, result.getError());
+                        return;
+                    }
+                    saveForcedFailureCheckpoint(jobId, idx, result, plan == null ? Set.of() : plan.segmentKeys(), attempt.retries,
                             plan == null ? null : plan.getHookStrategy(), buildDowngradeInfo(plan, result, attempt.retries),
                             buildUsedMaterials(plan));
-                    markAwaitingDecision(latest, idx, result.getError());
-                    return;
-                }
-                if (!plan.isUsable() || missingRequiredAudio(plan) || insufficientAudioCoverage(plan)) {
+                    successful.add(idx);
+                    consecutiveFailures++;
+                    lastFailureReason = "质检有误，已按全局强制继续跳过";
+                } else if (!plan.isUsable() || missingRequiredAudio(plan) || insufficientAudioCoverage(plan)) {
                     boolean noAudio = missingRequiredAudio(plan);
                     boolean shortAudio = insufficientAudioCoverage(plan);
                     String reason = noAudio ? missingRequiredAudioMessage()
                             : (shortAudio ? insufficientAudioCoverageMessage(plan) : String.join("；", plan.getNotes()));
-                    Job failed = reloadOrNull(jobId);
-                    if (failed != null) {
-                        String prefix = noAudio ? "连续出片已停止：当前计划没有可用音轨。"
-                                : (shortAudio ? "连续出片已停止：当前口播无法覆盖全片。"
-                                : "连续出片已停止：当前素材无法满足时长要求。");
-                        markFailed(failed, prefix
-                                + (reason.isBlank() ? "请补充可读素材或降低目标时长后重新干跑。" : reason));
+                    String prefix = noAudio ? "当前计划没有可用音轨。"
+                            : (shortAudio ? "当前口播无法覆盖全片。" : "当前素材无法满足时长要求。");
+                    String failure = prefix + (reason.isBlank() ? "请补充可读素材或降低目标时长后重新干跑。" : reason);
+                    if (forceContinueNow) {
+                        saveForcedSkipCheckpoint(jobId, idx, failure);
+                        successful.add(idx);
+                        consecutiveFailures++;
+                        lastFailureReason = reason;
+                    } else {
+                        Job failed = reloadOrNull(jobId);
+                        if (failed != null) markFailed(failed, "连续出片已停止：" + failure);
+                        return;
                     }
-                    return;
-                }
-                Job afterRender = reloadOrNull(jobId);
-                if (afterRender == null || !ownsLease(afterRender)) {
-                    discardRenderResult(result);
-                    return;
-                }
-                if (JobStatus.cancelled.name().equals(afterRender.getStatus()) || cancelled.contains(jobId)) {
-                    discardRenderResult(result);
-                    if (afterRender != null) cancelPersisted(afterRender, successful.size());
-                    return;
-                }
-                if (result.isOk() && saveOutputIfAbsent(jobId, idx, result, plan.segmentKeys(), attempt.retries,
-                        plan.getHookStrategy(), buildDowngradeInfo(plan, result, attempt.retries),
-                        buildUsedMaterials(plan), result.getQcJson())) {
-                    forgetPersistedRenderOutputs(result, processContext(jobId));
-                    usedSegments.addAll(plan.segmentKeys());
-                    recordBatchAudioUsage(params.getRecentAudioUsage(), plan, new ArrayList<>(), idx);
-                    recordBatchReuse(batchReuseUsage, plan);
-                    successful.add(idx);
-                    consecutiveFailures = 0;
-                    lastFailureReason = null;
-                } else if (hasSuccessfulOutput(jobId, idx)) {
-                    successful.add(idx);
-                    consecutiveFailures = 0;
-                    lastFailureReason = null;
                 } else {
-                    if ("fail".equals(result.getQcStatus())) {
-                        saveQcBlockedOutput(jobId, idx, result, plan.segmentKeys(), attempt.retries,
-                                plan.getHookStrategy(), buildDowngradeInfo(plan, result, attempt.retries),
-                                buildUsedMaterials(plan));
+                    Job afterRender = reloadOrNull(jobId);
+                    if (afterRender == null || !ownsLease(afterRender)) {
+                        discardRenderResult(result);
+                        return;
                     }
-                    consecutiveFailures++;
-                    lastFailureReason = result.isOk()
-                            ? "成片已渲染但保存记录失败"
-                            : truncate(result.getError());
-                }
-                if (JobStatus.paused.name().equals(afterRender.getStatus())) {
-                    afterRender.setCurrent(successful.size());
-                    afterRender.setSummary("已暂停，已保留 " + successful.size() + " 条成片；点击继续会从下一条开始");
-                    heartbeat(afterRender, "已暂停");
-                    jobRepo.save(afterRender);
-                    liveStep.remove(jobId);
-                    return;
+                    if (JobStatus.cancelled.name().equals(afterRender.getStatus()) || cancelled.contains(jobId)) {
+                        discardRenderResult(result);
+                        if (afterRender != null) cancelPersisted(afterRender, successful.size());
+                        return;
+                    }
+                    if (result.isOk() && saveOutputIfAbsent(jobId, idx, result, plan.segmentKeys(), attempt.retries,
+                            plan.getHookStrategy(), buildDowngradeInfo(plan, result, attempt.retries),
+                            buildUsedMaterials(plan), result.getQcJson())) {
+                        forgetPersistedRenderOutputs(result, processContext(jobId));
+                        usedSegments.addAll(plan.segmentKeys());
+                        recordBatchAudioUsage(params.getRecentAudioUsage(), plan, new ArrayList<>(), idx);
+                        recordBatchReuse(batchReuseUsage, plan);
+                        successful.add(idx);
+                        consecutiveFailures = 0;
+                        lastFailureReason = null;
+                    } else if (hasSuccessfulOutput(jobId, idx)) {
+                        successful.add(idx);
+                        consecutiveFailures = 0;
+                        lastFailureReason = null;
+                    } else {
+                        if (isForceContinue(afterRender)) {
+                            saveForcedFailureCheckpoint(jobId, idx, result, plan.segmentKeys(), attempt.retries,
+                                    plan.getHookStrategy(), buildDowngradeInfo(plan, result, attempt.retries),
+                                    buildUsedMaterials(plan));
+                            successful.add(idx);
+                        } else if ("fail".equals(result.getQcStatus())) {
+                            saveQcBlockedOutput(jobId, idx, result, plan.segmentKeys(), attempt.retries,
+                                    plan.getHookStrategy(), buildDowngradeInfo(plan, result, attempt.retries),
+                                    buildUsedMaterials(plan), false);
+                        }
+                        consecutiveFailures++;
+                        lastFailureReason = result.isOk()
+                                ? "成片已渲染但保存记录失败"
+                                : truncate(result.getError());
+                    }
+                    if (JobStatus.paused.name().equals(afterRender.getStatus())) {
+                        afterRender.setCurrent(successful.size());
+                        afterRender.setSummary("已暂停，已保留 " + successful.size() + " 条成片；点击继续会从下一条开始");
+                        heartbeat(afterRender, "已暂停");
+                        jobRepo.save(afterRender);
+                        liveStep.remove(jobId);
+                        return;
+                    }
                 }
             } catch (Exception e) {
                 consecutiveFailures++;
                 lastFailureReason = concise(e);
                 log.error("continuous job {} item failed", jobId, e);
+                if (isForceContinue(reloadOrNull(jobId))) {
+                    saveForcedSkipCheckpoint(jobId, idx, "渲染异常，已按全局强制继续跳过：" + lastFailureReason);
+                    successful.add(idx);
+                }
             }
             if (consecutiveFailures >= 5) {
                 Job failed = reloadOrNull(jobId);
@@ -1951,10 +2105,33 @@ public class JobService {
     private boolean isContinuous(Job job) {
         if (job == null || job.getParams() == null || job.getParams().isBlank()) return false;
         try {
-            return om.readTree(job.getParams()).path("continuous").asBoolean(false);
+            JsonNode root = om.readTree(job.getParams());
+            // Root-level value is authoritative for new snapshots; fall back to the historical
+            // effectiveParams location so an interrupted legacy continuous job can resume.
+            if (root.has("continuous")) return root.path("continuous").asBoolean(false);
+            return root.path("effectiveParams").path("continuous").asBoolean(false);
         } catch (Exception ignored) {
             return false;
         }
+    }
+
+    private boolean isForceContinue(Job job) {
+        if (job == null || job.getParams() == null || job.getParams().isBlank()) return false;
+        try {
+            JsonNode root = om.readTree(job.getParams());
+            if (root.has("forceContinue")) return root.path("forceContinue").asBoolean(false);
+            return root.path("effectiveParams").path("forceContinue").asBoolean(false);
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    private String updateSchedulingFlag(String existingJson, String field, boolean value) throws Exception {
+        JsonNode parsed = om.readTree(existingJson == null || existingJson.isBlank() ? "{}" : existingJson);
+        com.fasterxml.jackson.databind.node.ObjectNode root = parsed != null && parsed.isObject()
+                ? (com.fasterxml.jackson.databind.node.ObjectNode) parsed : om.createObjectNode();
+        root.put(field, value);
+        return om.writeValueAsString(root);
     }
 
     private boolean exceededJobTimeout(Job job) {
@@ -2047,8 +2224,11 @@ public class JobService {
         return jobRepo.findTop100ByOrderByIdDesc();
     }
 
+    @Transactional
     public List<JobOutput> outputs(Long jobId) {
-        return outputRepo.findByJobIdOrderByIdxAsc(jobId);
+        return outputRepo.findByJobIdOrderByIdxAsc(jobId).stream()
+                .map(this::hydrateQcCandidate)
+                .toList();
     }
 
     @Transactional
@@ -2125,12 +2305,65 @@ public class JobService {
      * 成片库只返回通过新渲染器时长校验的正常记录。
      * 历史版本可能留下几小时的循环无效文件；不自动删除磁盘文件，先从正常成片库隔离。
      */
+    @Transactional
     public List<JobOutput> allOutputs() {
         return outputRepo.findTop200ByOrderByIdDesc().stream()
                 .filter(output -> "fail".equalsIgnoreCase(output.getQcStatus())
                         || (output.getDurationSec() != null && output.getDurationSec() >= 1
                         && output.getDurationSec() <= 300))
+                .map(this::hydrateQcCandidate)
                 .toList();
+    }
+
+    /**
+     * Older runs could successfully isolate a QC candidate but lose the database path
+     * while a concurrent repair attempt was updating the same output row. Reconnect only
+     * failed outputs, using the renderer's strict filename contract and newest candidate.
+     */
+    private JobOutput hydrateQcCandidate(JobOutput output) {
+        if (output == null || !"fail".equalsIgnoreCase(output.getQcStatus())) return output;
+        if (isRegularFile(output.getFilePath())) return output;
+        Path candidate = findQcCandidate(output.getJobId(), output.getIdx()).orElse(null);
+        if (candidate == null) return output;
+        output.setFilePath(candidate.toString());
+        try {
+            outputRepo.save(output);
+        } catch (Exception e) {
+            log.debug("cannot backfill QC candidate path for output {}: {}", output.getId(), e.toString());
+        }
+        return output;
+    }
+
+    private boolean isRegularFile(String value) {
+        if (value == null || value.isBlank()) return false;
+        try {
+            return Files.isRegularFile(Path.of(value).toAbsolutePath().normalize());
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    private Optional<Path> findQcCandidate(Long jobId, Integer idx) {
+        if (jobId == null || idx == null || idx < 1) return Optional.empty();
+        Path directory = props.cache().resolve("qc-candidates").toAbsolutePath().normalize();
+        if (!Files.isDirectory(directory)) return Optional.empty();
+        String item = String.format(Locale.ROOT, "%02d", idx);
+        java.util.regex.Pattern pattern = java.util.regex.Pattern.compile(
+                "^.+_" + java.util.regex.Pattern.quote(String.valueOf(jobId)) + "_"
+                        + java.util.regex.Pattern.quote(item)
+                        + "_v\\d+_\\d+-qc-[0-9a-fA-F]+\\.mp4$",
+                java.util.regex.Pattern.CASE_INSENSITIVE);
+        try (var files = Files.list(directory)) {
+            return files.filter(Files::isRegularFile)
+                    .filter(path -> pattern.matcher(path.getFileName().toString()).matches())
+                    .max(Comparator.comparingLong(path -> {
+                        try { return Files.getLastModifiedTime(path).toMillis(); }
+                        catch (Exception ignored) { return 0L; }
+                    }));
+        } catch (Exception e) {
+            log.debug("cannot scan QC candidates for job {} item {}: {}", jobId, idx, e.toString());
+            return Optional.empty();
+        }
     }
 
     @Transactional
@@ -2162,6 +2395,7 @@ public class JobService {
         }
         for (JobOutput output : outputRepo.findByJobIdOrderByIdxAsc(jobId)) {
             if (output.getFilePath() != null && !output.getFilePath().isBlank()) candidatePaths.add(output.getFilePath());
+            else findQcCandidate(jobId, output.getIdx()).map(Path::toString).ifPresent(candidatePaths::add);
         }
         for (String filePath : candidatePaths) {
             try {

@@ -576,6 +576,18 @@ async function refresh (force = false) {
   }
 }
 
+function openRequestedSource () {
+  const requested = String(route.query.source || '').trim().toLowerCase()
+  if (!requested) return
+  const target = items.value.find((item) => {
+    const credential = item?.credential
+    return credential && [credential.configId, credential.provider, item.key]
+      .filter(Boolean).some((value) => String(value).toLowerCase() === requested)
+  })
+  if (target) openSourceKey(target)
+  else ElMessage.warning(`当前版本未接入 ${requested} 的应用内 API Key 配置，请使用官方页面或导入已授权本地文件`)
+}
+
 onMounted(async () => {
   await Promise.all([
     refresh(true),
@@ -583,6 +595,7 @@ onMounted(async () => {
     activeView.value === 'environment' ? loadEnvironment(true) : Promise.resolve(),
     activeView.value === 'history' ? loadHistory() : Promise.resolve()
   ])
+  openRequestedSource()
 })
 </script>
 

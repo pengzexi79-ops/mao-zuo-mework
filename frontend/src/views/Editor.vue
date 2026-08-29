@@ -107,7 +107,18 @@
             <span class="visual-segment-index">{{ index + 1 }}</span>
             <span class="visual-segment-label">{{ material(row.materialId)?.name || '未命名素材' }}</span>
             <small>{{ Number(row.sourceStart || 0).toFixed(1) }}s · {{ Number(row.duration || 0).toFixed(1) }}s</small>
+            <span v-if="material(row.materialId)?.fileType === 'video'" class="timeline-handle timeline-handle-left" title="拖动设置入点" @pointerdown.stop="beginTimelineTrim($event, row, 'start')" @click.stop.prevent></span>
+            <span v-if="material(row.materialId)?.fileType === 'video'" class="timeline-handle timeline-handle-right" title="拖动设置出点" @pointerdown.stop="beginTimelineTrim($event, row, 'end')" @click.stop.prevent></span>
           </button>
+        </div>
+        <div class="audio-track-row">
+          <span class="timeline-track-label">音频</span>
+          <div class="audio-track-content">
+            <span v-if="draft.audio.mode === 'silent'" class="muted">静音</span>
+            <span v-else-if="draft.audio.mode === 'original'" class="audio-track-chip">原片声音</span>
+            <span v-else class="audio-track-chip">{{ audioMaterialName(draft.audio.bgmMaterialId) || '未选择背景音乐' }}</span>
+            <span v-if="draft.audio.mode === 'material-audio' && draft.audio.voiceMaterialId" class="audio-track-chip voice-chip">口播：{{ audioMaterialName(draft.audio.voiceMaterialId) }}</span>
+          </div>
         </div>
         <el-table :data="draft.segments" size="small" max-height="480" class="timeline-table">
           <el-table-column label="#" width="60"><template #default="{ $index }">{{ $index + 1 }}</template></el-table-column>
@@ -130,7 +141,12 @@
             <el-option v-for="material in state.materials || []" :key="material.id" :value="material.id" :label="`${material.name} · ${roleLabel(material.role)}`" />
           </el-select>
           <el-button :disabled="!insertMaterialId" @click="insertMaterial">插入到末尾</el-button>
+          <input ref="visualUploadInput" type="file" accept="video/*,image/*" hidden @change="onVisualFilePicked" />
+          <el-button type="primary" plain :loading="uploadingVisual" @click="openVisualPicker">导入视频/图片</el-button>
+          <input ref="audioUploadInput" type="file" accept="audio/*" hidden @change="onAudioFilePicked" />
+          <el-button type="primary" plain :loading="uploadingAudio" @click="openAudioPicker">导入音乐/音频</el-button>
         </div>
+        <div v-if="uploadMessage" class="form-hint upload-message">{{ uploadMessage }}</div>
       </section>
 
       <section class="editor-panel commit-panel">
@@ -181,10 +197,10 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { api, ROLE_LABEL } from '../api'
+import { api, ROLE_LABEL, uploadFile } from '../api'
 
 const route = useRoute()
 const router = useRouter()
@@ -214,6 +230,12 @@ const trimRange = ref([0, 0])
 const trimStart = ref(0)
 const trimEnd = ref(0)
 const audioNotice = ref('')
+const visualUploadInput = ref(null)
+const audioUploadInput = ref(null)
+const uploadingVisual = ref(false)
+const uploadingAudio = ref(false)
+const uploadMessage = ref('')
+const timelineDrag = ref(null)
 const draft = ref({ segments: [], audio: { mode: 'original', bgmMaterialId: null, voiceMaterialId: null, volume: 1 }, subtitle: { enabled: false, cleanSourceSubtitles: false, safeBandMode: 'off' }, comment: '' })
 const slots = [
   { value: 'hook', label: '钩子' }, { value: 'body', label: '实拍主体' }, { value: 'product', label: '产品' },
@@ -236,7 +258,11 @@ const sessionTag = computed(() => {
 })
 function categoryLabel (value) { return ({ audio: '音频', video: '画面', subtitle: '字幕', duplicate: '重复镜头', hook: '钩子', semantic: '素材关联性' })[value] || value || '编辑' }
 function roleLabel (role) { return ROLE_LABEL[role] || role || '未分类' }
-function fileUrl (path) { return api.protectedUrl(`/files/output/${String(path).replace(/\\/g, '/').split('/').pop()}`) }
+function fileUrl (path) {
+  const normalized = String(path || '').replace(/\\/g, '/')
+  const name = normalized.split('/').pop()
+  return api.protectedUrl(normalized.includes('/qc-candidates/') ? `/files/qc-candidates/${name}` : `/files/output/${name}`)
+}
 function copy (value) { return JSON.parse(JSON.stringify(value)) }
 function material (id) { return (state.value?.materials || []).find((item) => Number(item.id) === Number(id)) }
 function segmentSourceDuration (row) { const item = material(row.materialId); return Number(item?.durationSec || row.sourceDuration || 0) }
@@ -248,7 +274,30 @@ function markDirty () { dirty.value = true }
 function move (index, direction) { const target = index + direction; if (target < 0 || target >= draft.value.segments.length) return; const rows = draft.value.segments; [rows[index], rows[target]] = [rows[target], rows[index]]; markDirty() }
 function remove (index) { if (draft.value.segments.length <= 1) return ElMessage.warning('请至少保留一个画面片段'); draft.value.segments.splice(index, 1); markDirty() }
 function replaceMaterial (row, id) { const item = material(id); if (!item) return; row.sourceStart = 0; row.sourceDuration = Number(item.durationSec || 0); row.duration = item.fileType === 'image' ? 3 : Math.min(Math.max(0.5, Number(item.durationSec || 0)), 6); row.slot = item.role && item.role !== 'none' ? editorSlot(item.role) : row.slot; markDirty() }
-function insertMaterial () { const item = material(insertMaterialId.value); if (!item) return; draft.value.segments.push({ index: draft.value.segments.length + 1, materialId: item.id, sourceStart: 0, sourceDuration: Number(item.durationSec || 0), duration: item.fileType === 'image' ? 3 : Math.min(Math.max(0.5, Number(item.durationSec || 0)), 6), slot: item.role && item.role !== 'none' ? editorSlot(item.role) : 'body', enabled: true }); insertMaterialId.value = null; markDirty() }
+function audioMaterialName (id) {
+  const rows = [...(state.value?.readableBgms || []), ...(state.value?.readableVoices || [])]
+  return rows.find((item) => Number(item.id) === Number(id))?.name || ''
+}
+function insertMaterialItem (item) {
+  if (!item || item.fileType === 'audio') return false
+  const duration = item.fileType === 'image' ? 3 : Math.min(Math.max(0.5, Number(item.durationSec || 0)), 6)
+  draft.value.segments.push({
+    index: draft.value.segments.length + 1,
+    materialId: item.id,
+    sourceStart: 0,
+    sourceDuration: Number(item.durationSec || 0),
+    duration,
+    slot: item.role && item.role !== 'none' ? editorSlot(item.role) : 'body',
+    enabled: true
+  })
+  markDirty()
+  return true
+}
+function insertMaterial () {
+  const item = material(insertMaterialId.value)
+  if (!insertMaterialItem(item)) return
+  insertMaterialId.value = null
+}
 function onAudioModeChange () { if (draft.value.audio.mode === 'silent') { draft.value.audio.bgmMaterialId = null; draft.value.audio.voiceMaterialId = null; draft.value.subtitle.enabled = false; draft.value.subtitle.cleanSourceSubtitles = false } else if (draft.value.audio.mode === 'original') { draft.value.audio.bgmMaterialId = null; draft.value.audio.voiceMaterialId = null }; markDirty() }
 function payload () { return { segments: draft.value.segments.map((row, index) => ({ ...row, index: index + 1 })), audio: { mode: draft.value.audio.mode, bgmMaterialId: draft.value.audio.mode === 'material-audio' ? draft.value.audio.bgmMaterialId : null, voiceMaterialId: draft.value.audio.mode === 'material-audio' ? draft.value.audio.voiceMaterialId : null, bgmVolume: draft.value.audio.mode === 'material-audio' ? draft.value.audio.volume : 0, originalAudioVolume: draft.value.audio.mode === 'original' ? draft.value.audio.volume : 0 }, subtitle: { enabled: draft.value.subtitle.enabled, cleanSourceSubtitles: draft.value.subtitle.cleanSourceSubtitles, safeBandMode: draft.value.subtitle.cleanSourceSubtitles ? 'subtitle-safe-band' : 'off' }, comment: draft.value.comment } }
 const trimPreviewUrl = computed(() => trimMaterial.value?.id ? api.materialPreviewUrl(trimMaterial.value.id) : '')
@@ -256,6 +305,118 @@ function openTrim (row) { const item = material(row.materialId); if (!item || it
 function syncTrimFromRange (value) { if (!Array.isArray(value)) return; trimStart.value = Number(value[0] || 0); trimEnd.value = Number(value[1] || 0) }
 function syncTrimFromFields () { trimStart.value = Math.max(0, Number(trimStart.value || 0)); trimEnd.value = Math.min(trimSourceDuration.value, Math.max(trimStart.value + (trimMaterial.value?.fileType === 'image' ? 0.1 : 0.5), Number(trimEnd.value || 0))); trimRange.value = [trimStart.value, trimEnd.value] }
 function applyTrim () { if (!trimRow.value || !trimValid.value) return; trimRow.value.sourceStart = trimMaterial.value.fileType === 'image' ? 0 : trimStart.value; trimRow.value.sourceDuration = trimSourceDuration.value; trimRow.value.duration = trimDuration.value; trimVisible.value = false; markDirty(); ElMessage.success('修剪已应用到草稿，请保存后再生成候选') }
+function beginTimelineTrim (event, row, edge) {
+  const item = material(row.materialId)
+  const element = event.currentTarget?.parentElement
+  const sourceDuration = Number(item?.durationSec || row.sourceDuration || 0)
+  if (!element || item?.fileType !== 'video' || sourceDuration <= 0) return
+  timelineDrag.value = {
+    row,
+    edge,
+    element,
+    startX: event.clientX,
+    initialStart: Number(row.sourceStart || 0),
+    initialDuration: Number(row.duration || 0),
+    sourceDuration
+  }
+  element.setPointerCapture?.(event.pointerId)
+  window.addEventListener('pointermove', onTimelinePointerMove)
+  window.addEventListener('pointerup', endTimelineTrim)
+  window.addEventListener('pointercancel', endTimelineTrim)
+}
+function onTimelinePointerMove (event) {
+  const drag = timelineDrag.value
+  if (!drag) return
+  const width = Math.max(1, drag.element.getBoundingClientRect().width)
+  const delta = (event.clientX - drag.startX) / width * drag.sourceDuration
+  if (drag.edge === 'start') {
+    const maxStart = Math.max(0, drag.sourceDuration - drag.initialDuration)
+    drag.row.sourceStart = Math.round(Math.max(0, Math.min(maxStart, drag.initialStart + delta)) * 10) / 10
+  } else {
+    const maxDuration = Math.max(0.5, drag.sourceDuration - Number(drag.row.sourceStart || 0))
+    drag.row.duration = Math.round(Math.max(0.5, Math.min(maxDuration, drag.initialDuration + delta)) * 10) / 10
+  }
+  drag.row.sourceDuration = drag.sourceDuration
+  markDirty()
+}
+function endTimelineTrim () {
+  if (!timelineDrag.value) return
+  window.removeEventListener('pointermove', onTimelinePointerMove)
+  window.removeEventListener('pointerup', endTimelineTrim)
+  window.removeEventListener('pointercancel', endTimelineTrim)
+  timelineDrag.value = null
+}
+function openVisualPicker () { visualUploadInput.value?.click() }
+function openAudioPicker () { audioUploadInput.value?.click() }
+async function refreshEditorMaterials () {
+  const latest = await api.outputEditor(jobId, idx)
+  if (!state.value) return latest
+  state.value = {
+    ...state.value,
+    materials: latest.materials || [],
+    readableBgms: latest.readableBgms || [],
+    readableVoices: latest.readableVoices || []
+  }
+  return latest
+}
+async function waitForUploadedMaterial (uploaded) {
+  if (!uploaded?.id) throw new Error('服务器没有返回素材编号')
+  let latest = uploaded
+  for (let attempt = 0; attempt < 150; attempt += 1) {
+    latest = await api.material(uploaded.id, { silent: true })
+    const status = String(latest?.status || '').toLowerCase()
+    if (status === 'ready') return latest
+    if (status === 'failed') throw new Error('素材探测失败：文件可能不完整或没有可读取的媒体轨道')
+    await new Promise((resolve) => setTimeout(resolve, 800))
+  }
+  throw new Error('素材探测超时：素材已入库，请稍后刷新编辑器再使用')
+}
+async function onVisualFilePicked (event) {
+  const file = event.target?.files?.[0]
+  event.target.value = ''
+  if (!file || uploadingVisual.value) return
+  uploadingVisual.value = true
+  uploadMessage.value = `正在导入 ${file.name}...`
+  try {
+    const uploaded = await uploadFile(file, { role: 'body' }, (progress) => { uploadMessage.value = `正在上传 ${file.name} · ${progress}%` })
+    const item = await waitForUploadedMaterial(uploaded)
+    await refreshEditorMaterials()
+    const current = material(item.id) || item
+    if (!insertMaterialItem(current)) throw new Error('图片或视频素材类型无法识别')
+    uploadMessage.value = `${file.name} 已加入时间线，请保存草稿后生成`
+    ElMessage.success('视频/图片已加入时间线')
+  } catch (error) {
+    uploadMessage.value = error.message || '视频/图片导入失败'
+    ElMessage.error(uploadMessage.value)
+  } finally {
+    uploadingVisual.value = false
+  }
+}
+async function onAudioFilePicked (event) {
+  const file = event.target?.files?.[0]
+  event.target.value = ''
+  if (!file || uploadingAudio.value) return
+  uploadingAudio.value = true
+  uploadMessage.value = `正在导入 ${file.name}...`
+  try {
+    const uploaded = await uploadFile(file, { role: 'bgm' }, (progress) => { uploadMessage.value = `正在上传 ${file.name} · ${progress}%` })
+    const item = await waitForUploadedMaterial(uploaded)
+    await refreshEditorMaterials()
+    const audio = [...(state.value?.readableBgms || []), ...(state.value?.readableVoices || [])].find((row) => Number(row.id) === Number(item.id)) || item
+    draft.value.audio.mode = 'material-audio'
+    draft.value.audio.bgmMaterialId = audio.id
+    draft.value.audio.voiceMaterialId = null
+    if (Number(draft.value.audio.volume || 0) <= 0) draft.value.audio.volume = 0.2
+    markDirty()
+    uploadMessage.value = `${file.name} 已加入音频轨，请保存草稿后生成`
+    ElMessage.success('音乐/音频已加入音频轨')
+  } catch (error) {
+    uploadMessage.value = error.message || '音乐/音频导入失败'
+    ElMessage.error(uploadMessage.value)
+  } finally {
+    uploadingAudio.value = false
+  }
+}
 function hydrate (next) { hydrating.value = true; state.value = next; const plan = next.plan || {}; const params = next.params || {}; const mode = ['original', 'material-audio', 'silent'].includes(params.audioMode) ? params.audioMode : 'original'; audioNotice.value = params.audioMode && params.audioMode !== mode ? `旧版本音频模式“${params.audioMode}”无法在编辑器直接复用，已降级为保留原声。` : ''; draft.value = { segments: (plan.segments || []).map((row) => ({ index: row.index, materialId: row.materialId, sourceStart: Number(row.sourceStart || 0), sourceDuration: Number(row.sourceDuration || 0), duration: Number(row.duration || 0), slot: row.slot || 'body', enabled: row.enabled !== false })), audio: { mode, bgmMaterialId: params.bgmMaterialId ?? null, voiceMaterialId: params.voiceMaterialId ?? null, volume: Number(mode === 'original' ? (params.originalAudioVolume ?? 1) : (params.bgmVolume ?? 0.2)) }, subtitle: { enabled: Boolean(params.autoSubtitles), cleanSourceSubtitles: Boolean(params.cleanSourceSubtitles), safeBandMode: params.sourceSubtitleCleanMode || 'off' }, comment: next.session?.comment || '' }; dirty.value = false; nextTick(() => { hydrating.value = false }) }
 watch(draft, () => { if (state.value && !hydrating.value) dirty.value = true }, { deep: true })
 async function saveDraft () { saving.value = true; try { const saved = await api.saveOutputEditor(jobId, idx, state.value.session.id, payload()); hydrate(saved); ElMessage.success('编辑草稿已保存'); return saved } catch (error) { ElMessage.error(`保存草稿失败：${error.message}`); throw error } finally { saving.value = false } }
@@ -265,6 +426,7 @@ async function pollCandidate () { for (let count = 0; count < 120 && state.value
 async function loadRepair () { repairDetail.value = await api.outputRepair(jobId, idx) }
 async function load () { if (!hasTarget.value) return; loading.value = true; try { const [jobRow, editor, repair] = await Promise.all([api.job(jobId), api.outputEditor(jobId, idx), api.outputRepair(jobId, idx)]); job.value = jobRow; repairDetail.value = repair; hydrate(editor); if (editor.session?.status === 'rendering') pollCandidate() } catch (error) { ElMessage.error(`编辑工作台加载失败：${error.message}`) } finally { loading.value = false } }
 onMounted(load)
+onBeforeUnmount(endTimelineTrim)
 </script>
 
 <style scoped>
@@ -286,11 +448,22 @@ onMounted(load)
 .timeline-actions { margin-top:12px; }
 .visual-timeline { display:flex; gap:6px; min-height:104px; padding:8px; overflow-x:auto; background:#f7f8fa; border:1px solid #e4e7ed; border-radius:6px; margin-bottom:12px; }
 .visual-segment { position:relative; flex:0 0 var(--segment-width); min-width:92px; height:86px; overflow:hidden; border:1px solid #cfd7e6; border-radius:5px; padding:0; background:#fff; text-align:left; cursor:pointer; }
+.visual-segment { touch-action:none; }
 .visual-segment img { width:100%; height:48px; display:block; object-fit:cover; background:#101828; }
 .visual-segment-index { position:absolute; top:4px; left:5px; color:#fff; font-weight:700; text-shadow:0 1px 2px #000; }
 .visual-segment-label, .visual-segment small { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding:2px 5px 0; }
 .visual-segment small { color:#667085; font-size:11px; }
 .visual-segment.disabled { opacity:.48; filter:grayscale(1); }
+.timeline-handle { position:absolute; top:0; bottom:0; z-index:2; width:10px; background:rgba(64,158,255,.92); cursor:ew-resize; box-shadow:0 0 0 1px rgba(255,255,255,.8); }
+.timeline-handle::after { content:''; position:absolute; top:34px; left:3px; width:3px; height:18px; border-left:1px solid #fff; border-right:1px solid #fff; }
+.timeline-handle-left { left:0; border-radius:4px 0 0 4px; }
+.timeline-handle-right { right:0; border-radius:0 4px 4px 0; }
+.audio-track-row { display:flex; align-items:center; gap:10px; min-height:38px; padding:6px 8px; margin-bottom:12px; background:#f8fafc; border:1px solid #e4e7ed; border-left:3px solid #67c23a; border-radius:4px; }
+.timeline-track-label { flex:0 0 42px; color:#667085; font-size:12px; font-weight:700; }
+.audio-track-content { display:flex; gap:6px; flex-wrap:wrap; min-width:0; }
+.audio-track-chip { display:inline-flex; align-items:center; min-height:24px; padding:2px 8px; border-radius:4px; background:#ecfdf3; color:#18794e; font-size:12px; }
+.voice-chip { background:#eff6ff; color:#245ea8; }
+.upload-message { margin-top:8px; color:#667085; }
 .commit-actions { justify-content:flex-end; margin-top:10px; }
 .source-blocker { display:flex; flex-direction:column; gap:4px; overflow-wrap:anywhere; }
 .trim-meta { display:flex; justify-content:space-between; gap:12px; margin-bottom:10px; }

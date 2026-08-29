@@ -190,6 +190,7 @@ public class BootstrapService implements ApplicationRunner {
         addJobOutputColumnIfMissing("downgrade_info", "ALTER TABLE job_output ADD COLUMN downgrade_info TEXT");
         addJobOutputColumnIfMissing("used_materials", "ALTER TABLE job_output ADD COLUMN used_materials TEXT");
         addJobOutputColumnIfMissing("qc_json", "ALTER TABLE job_output ADD COLUMN qc_json TEXT");
+        addJobOutputColumnIfMissing("forced_continue", "ALTER TABLE job_output ADD COLUMN forced_continue TINYINT(1) NOT NULL DEFAULT 0");
     }
 
     private void addJobOutputColumnIfMissing(String column, String alterSql) {

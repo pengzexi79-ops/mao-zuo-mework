@@ -111,12 +111,12 @@ class BootstrapServiceCapabilitiesTest {
     void capabilitiesAreDrivenByManifestWithStableContract() {
         makeAllProbesReady();
         List<Map<String, Object>> caps = bootstrap.capabilities();
-        assertEquals(22, caps.size(), "能力中心共 22 项（16 检测 + 6 外部）");
+        assertEquals(23, caps.size(), "能力中心共 23 项（16 检测 + 7 外部）");
         List<String> keys = caps.stream().map(cap -> String.valueOf(cap.get("key"))).toList();
         assertEquals(List.of("video-render", "database", "video-download", "video-download-2", "asr",
                 "asr-local", "ocr", "tts", "chattts", "loudness", "vocals", "matting", "auto-editor",
                 "opencv", "magick", "image-gallery", "whisper-model", "nvenc", "pixabay-video",
-                "pexels-video", "freesound", "ai-media-generation"), keys, "能力顺序与清单一致");
+                "pexels-video", "freesound", "unsplash-images", "ai-media-generation"), keys, "能力顺序与清单一致");
 
         Map<String, Object> render = caps.get(0);
         assertEquals("出片与渲染", render.get("group"));

@@ -719,6 +719,7 @@
           <div class="batch-field"><span>任务</span><el-input v-model="jobName" placeholder="留空自动命名" /></div>
           <div class="batch-field"><span>超时(分)</span><el-input-number v-model="jobTimeoutMin" :min="0" :max="240" :step="5" controls-position="right" /><small>0 = 使用默认</small></div>
           <div class="batch-field"><span>僵死(分)</span><el-input-number v-model="jobStaleMin" :min="0" :max="120" :step="5" controls-position="right" /><small>0 = 10 分钟保护</small></div>
+          <div class="batch-field batch-force-field"><span>失败处理</span><div class="batch-force-control"><el-switch v-model="forceContinue" /><span>全局强制继续</span></div><small>仅影响新提交任务；失败项标记“有误”并保留证据。运行中任务可在任务记录里关闭，关闭后下一次失败会暂停等待处理</small></div>
         </div>
         <div class="batch-row batch-action-row">
           <template v-if="!activeContinuousJob">
@@ -726,8 +727,8 @@
             <el-button v-if="preparing || preparationBackground" size="large" plain type="warning" @click="cancelPrepare">取消准备并继续</el-button>
           </template>
           <template v-else>
-            <span class="batch-status">{{ activeContinuousJob.status === 'paused' ? '已暂停，已生成的成片会保留' : `正在生成 · 已产出 ${jobLive[activeContinuousJob.id]?.completedItems ?? activeContinuousJob.current ?? 0} 条` }}<span v-if="jobLive[activeContinuousJob.id]?.phaseLabel || jobLive[activeContinuousJob.id]?.phase || jobLive[activeContinuousJob.id]?.step"> · {{ jobLive[activeContinuousJob.id]?.phaseLabel || jobLive[activeContinuousJob.id]?.phase || jobLive[activeContinuousJob.id]?.step }}</span></span>
-            <el-button v-if="activeContinuousJob.status === 'paused'" type="primary" size="large" @click="resume(activeContinuousJob)">继续生成</el-button>
+            <span class="batch-status">{{ activeContinuousJob.status === 'paused' ? '已暂停，已生成的成片会保留' : (activeContinuousJob.status === 'awaiting_decision' ? '任务已暂停等待处理，已生成的成片会保留' : `正在生成 · 已产出 ${jobLive[activeContinuousJob.id]?.completedItems ?? activeContinuousJob.current ?? 0} 条`) }}<span v-if="jobLive[activeContinuousJob.id]?.phaseLabel || jobLive[activeContinuousJob.id]?.phase || jobLive[activeContinuousJob.id]?.step"> · {{ jobLive[activeContinuousJob.id]?.phaseLabel || jobLive[activeContinuousJob.id]?.phase || jobLive[activeContinuousJob.id]?.step }}</span></span>
+            <el-button v-if="activeContinuousJob.status === 'paused' || activeContinuousJob.status === 'awaiting_decision'" type="primary" size="large" :loading="resumingJobIds.has(String(activeContinuousJob.id))" @click="resume(activeContinuousJob)">{{ activeContinuousJob.status === 'awaiting_decision' ? '继续出片' : '继续生成' }}</el-button>
             <el-button v-else type="warning" size="large" @click="pause(activeContinuousJob)">暂停并保留</el-button>
             <el-popconfirm title="放弃未完成内容？已生成的成片会保留" @confirm="cancel(activeContinuousJob)"><template #reference><el-button type="danger" plain>放弃当前任务</el-button></template></el-popconfirm>
           </template>
@@ -785,6 +786,10 @@
                 size="small" @click="pause(row)">暂停</el-button>
               <el-button v-if="row.status === 'paused' || row.status === 'awaiting_decision'" link type="primary" size="small" @click="resume(row)">{{ row.status === 'awaiting_decision' ? '按现有策略继续' : '继续' }}</el-button>
               <el-button v-if="row.status === 'failed' || row.status === 'awaiting_decision' || (row.status === 'done' && taskHasFailure(row))" link type="warning" size="small" @click="retryFailed(row)">重试失败</el-button>
+               <el-popconfirm v-if="row.status === 'failed' || row.status === 'awaiting_decision' || (row.status === 'done' && taskHasFailure(row))" title="跳过当前失败项并继续后续出片？失败项会保留为“有误”，不会被标记为可发布。" @confirm="forceResume(row)">
+                 <template #reference><el-button link type="danger" size="small">强制继续</el-button></template>
+               </el-popconfirm>
+              <el-button v-if="row.forceContinue && ['running', 'pending', 'paused', 'awaiting_decision'].includes(row.status)" link type="warning" size="small" @click="toggleJobForceContinue(row, false)">关闭强制</el-button>
               <el-button v-if="row.status === 'running' || row.status === 'pending' || row.status === 'paused' || row.status === 'awaiting_decision'" link type="danger"
                 size="small" @click="cancel(row)">取消</el-button>
               <el-popconfirm title="删除任务及其成片记录" @confirm="delJob(row)">
@@ -819,11 +824,11 @@
         <div style="margin-top:12px" class="video-grid">
           <div class="video-card" v-for="o in jobDetail.outputs" :key="o.id">
             <video v-if="o.filePath" :src="fileUrl(o)" controls preload="metadata"></video>
-            <div v-else class="muted" style="min-height:110px;display:flex;align-items:center">该条已被成品质检拦截，未保留可播放文件</div>
+            <div v-else class="muted" style="min-height:110px;display:flex;align-items:center">该条质检有误，当前没有可播放文件</div>
             <div class="meta">
               <div class="t">#{{ o.idx }}</div>
               <div class="muted">{{ o.filePath && o.durationSec ? o.durationSec.toFixed(1) + 's' : (o.qcReport || '') }}</div>
-              <el-tag size="small" :type="o.qcStatus === 'fail' ? 'danger' : (o.qcStatus === 'warn' ? 'warning' : 'success')">{{ o.qcStatus === 'fail' ? '已拦截' : (o.qcStatus === 'warn' ? '建议复核' : '可发布') }}</el-tag>
+              <el-tag size="small" :type="o.qcStatus === 'fail' ? 'danger' : (o.qcStatus === 'warn' ? 'warning' : 'success')">{{ o.qcStatus === 'fail' ? '有误' : (o.qcStatus === 'warn' ? '建议复核' : '可发布') }}</el-tag>
               <el-link v-if="o.filePath" type="primary" :href="api.downloadUrl(o.id)" target="_blank">下载</el-link>
             </div>
           </div>
@@ -1110,6 +1115,7 @@ const showAllFolderSteps = ref(false)
 const variant = ref(0)
 const count = ref(5)
 const continuous = ref(localStorage.getItem('mixcut-continuous') === '1')
+const forceContinue = ref(localStorage.getItem('mework-force-continue') === '1')
 const jobName = ref('')
 // 0 表示使用服务端默认值；服务端按秒存储并限制最大值。
 const jobTimeoutMin = ref(0)
@@ -1122,6 +1128,7 @@ const preparing = ref(false)
 const prepareCancelled = ref(false)
 const preparationBackground = ref(false)
 const submitting = ref(false)
+const resumingJobIds = reactive(new Set())
 let preparationPollingStopped = false
 let dryRunRevision = 0
 
@@ -1538,8 +1545,9 @@ function segTitle(s) {
 }
 function fileUrl(output) {
   if (typeof output === 'object') return output.publicUrl || output.fileUrl || fileUrl(output.filePath)
-  const name = String(output || '').replace(/\\/g, '/').split('/').pop()
-  return api.protectedUrl(`/files/output/${name}`)
+  const normalized = String(output || '').replace(/\\/g, '/')
+  const name = normalized.split('/').pop()
+  return api.protectedUrl(normalized.includes('/qc-candidates/') ? `/files/qc-candidates/${name}` : `/files/output/${name}`)
 }
 function formatDuration(seconds) {
   const s = Math.max(0, Number(seconds) || 0)
@@ -1934,6 +1942,7 @@ function payload() {
   o.autonomyMode = autonomyMode.value
   // Dry-run and submit must fingerprint the same scheduling mode.
   o.continuous = continuous.value
+  o.forceContinue = forceContinue.value
   // 自主模式默认开启严格交付；用户显式关闭时尊重选择。
   // 非自主旧流程不携带该字段，保持后端既有默认（不拦截），兼容性不变。
   if (autonomyMode.value === 'autonomous') o.strictDelivery = p.strictDelivery == null ? true : p.strictDelivery
@@ -2189,7 +2198,7 @@ async function doAutoFill() {
   autoFillResult.value = null
   try {
     const sourceKeys = (materialGap.value?.usablePublicSources || [])
-      .filter((source) => source?.needKey === 'false')
+      .filter((source) => source?.searchable !== 'false' && (source?.needKey === 'false' || source?.configured === 'true'))
       .map((source) => source.key)
     autoFillResult.value = await api.materialAutoFill({
       projectId: projectId.value,
@@ -2433,7 +2442,7 @@ async function submit() {
     }
     const created = await api.submitJob({
       workflowId: workflowId.value, projectId: projectId.value,
-      count: continuous.value ? 1 : count.value, continuous: continuous.value, name: jobName.value || null,
+      count: continuous.value ? 1 : count.value, continuous: continuous.value, forceContinue: forceContinue.value, name: jobName.value || null,
       timeoutSec: jobTimeoutMin.value > 0 ? jobTimeoutMin.value * 60 : 0,
       staleAfterSec: jobStaleMin.value > 0 ? jobStaleMin.value * 60 : 0,
       params: payload(), variant: variant.value,
@@ -2541,9 +2550,18 @@ async function pause(row) {
   loadJobs()
 }
 async function resume(row) {
-  await api.resumeJob(row.id)
-  ElMessage.success(row.status === 'awaiting_decision' ? '已按当前安全策略重新排队' : '已继续出片')
-  loadJobs()
+  const key = String(row?.id ?? '')
+  if (!key || resumingJobIds.has(key)) return
+  resumingJobIds.add(key)
+  try {
+    await api.resumeJob(row.id)
+    ElMessage.success(row.status === 'awaiting_decision' ? '已按当前安全策略重新排队，将从下一条继续' : '已继续出片，将从下一条继续')
+    await loadJobs({ silent: true, refresh: true })
+  } catch (error) {
+    ElMessage.error(`继续出片失败：${error?.message || '请检查任务状态后重试'}`)
+  } finally {
+    resumingJobIds.delete(key)
+  }
 }
 async function retryFailed(row) {
   try {
@@ -2551,6 +2569,20 @@ async function retryFailed(row) {
     ElMessage.success('失败项已重新进入修复渲染队列，已通过成片不会重复生成')
     await loadJobs()
   } catch (error) { ElMessage.error(`重试失败项失败：${error.message}`) }
+}
+async function forceResume(row) {
+  try {
+    await api.forceResumeJob(row.id)
+    ElMessage.success('已跳过当前失败项并继续；失败记录仍保留为“有误”')
+    await loadJobs({ silent: true, refresh: true })
+  } catch (error) { ElMessage.error(`强制继续失败：${error.message}`) }
+}
+async function toggleJobForceContinue (row, enabled) {
+  try {
+    await api.setForceContinue(row.id, enabled)
+    ElMessage.success(enabled ? '已开启该任务的全局强制继续' : '已关闭该任务的全局强制继续；下一次失败会暂停')
+    await loadJobs({ silent: true, refresh: true })
+  } catch (error) { ElMessage.error(`更新失败处理策略失败：${error.message}`) }
 }
 
 function canSelectJobForDelete(row) {
@@ -2590,6 +2622,7 @@ async function cleanupJobs () {
 
 watch(autoRefresh, (v) => (v ? startTimer() : stopTimer()))
 watch(continuous, (value) => localStorage.setItem('mixcut-continuous', value ? '1' : '0'))
+watch(forceContinue, (value) => { localStorage.setItem('mework-force-continue', value ? '1' : '0'); invalidateDryRun() })
 watch(autonomyMode, (mode) => {
   localStorage.setItem('mework-autonomy-mode', mode)
   // 进入自主模式时默认开启严格交付；用户显式关闭后保留其选择（不做覆盖）。

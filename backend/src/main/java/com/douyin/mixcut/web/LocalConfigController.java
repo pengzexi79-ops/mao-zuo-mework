@@ -215,6 +215,8 @@ public class LocalConfigController {
                     "message", "当前进程尚未加载该来源密钥。请先保存并重启后端，再测试连接。"));
             List<CrawlerGateway.RemoteItem> results = "audio".equals(credential.mediaType())
                     ? crawler.searchAudio(credential.provider(), credential.testQuery(), 1)
+                    : "image".equals(credential.mediaType())
+                    ? crawler.searchImage(credential.provider(), credential.testQuery(), 1)
                     : crawler.searchVideo(credential.provider(), credential.testQuery(), 1);
             CrawlerGateway.RemoteItem notice = results.stream().filter(CrawlerGateway.RemoteItem::isNotice).findFirst().orElse(null);
             if (notice != null) {

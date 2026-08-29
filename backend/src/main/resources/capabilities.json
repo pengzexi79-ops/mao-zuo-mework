@@ -319,6 +319,27 @@
     },
     {
       "type": "external",
+      "key": "unsplash-images",
+      "group": "能力商店",
+      "name": "Unsplash 图片来源",
+      "tool": "Unsplash API",
+      "installMode": "authorization",
+      "officialUrl": "https://unsplash.com/developers",
+      "guide": "登录 Unsplash Developer Portal 创建 Access Key，在素材抓取页或能力中心配置。应用只调用官方图片 API，不读取浏览器 Cookie、账号或密码。",
+      "credential": {
+        "configId": "unsplash",
+        "provider": "unsplash",
+        "propertyName": "unsplashApiKey",
+        "environmentVariable": "APP_UNSPLASH_API_KEY",
+        "mediaType": "image",
+        "testQuery": "nature",
+        "minLength": 12,
+        "maxLength": 512,
+        "restartRequired": true
+      }
+    },
+    {
+      "type": "external",
       "key": "ai-media-generation",
       "group": "AI 媒体生成",
       "name": "付费 AI 媒体生成（图片/视频/配音）",

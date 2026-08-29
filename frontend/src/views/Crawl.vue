@@ -20,7 +20,7 @@
       <div class="card">
         <div class="card-title">已接入公开素材源 <span class="hint">按真实调用条件分组；免 Key 不代表免版权</span></div>
         <el-alert v-if="sourcesError" type="error" :closable="false" show-icon title="素材源加载失败，请刷新页面重试" />
-        <div v-else class="source-status-strip"><span><b>{{ noKeySources.length }}</b> 个免 Key 可直接检索</span><span><b>{{ keySources.length }}</b> 个配置 Key 后可检索</span><span><b>{{ manualSources.length }}</b> 个需官方处理或登录后自行导入</span></div>
+        <div v-else class="source-status-strip"><span><b>{{ noKeySources.length }}</b> 个免 Key 可自动补齐</span><span><b>{{ keySources.length }}</b> 个配置 Key 后可检索</span><span><b>{{ manualSearchSources.length }}</b> 个可手动检索导入</span><span><b>{{ manualSources.length }}</b> 个官方页面 / 登录后导入</span></div>
         <el-table :data="noKeySources" v-loading="sourcesLoading" size="small">
           <el-table-column prop="name" label="站点" width="150" />
           <el-table-column label="密钥" width="70"><template #default="{ row }"><el-tag size="small" :type="row.needKey ? 'warning' : 'success'" effect="plain">{{ row.needKey ? '需要' : '免' }}</el-tag></template></el-table-column>
@@ -32,7 +32,7 @@
             <el-button v-if="row.authUrl" link type="info" size="small" @click="openAuth(row)">打开官网</el-button>
           </template></el-table-column>
         </el-table>
-        <el-collapse class="source-groups"><el-collapse-item title="配置官方 Key 后可检索" name="key"><el-table :data="keySources" size="small"><el-table-column prop="name" label="站点" width="150" /><el-table-column prop="note" label="说明" show-overflow-tooltip /><el-table-column label="操作" width="180"><template #default="{ row }"><el-button v-if="row.authUrl" link type="primary" size="small" @click="openAuth(row)">打开官方配置</el-button><el-button link type="info" size="small" @click="selectSource(row.key)">选择检索</el-button></template></el-table-column></el-table></el-collapse-item><el-collapse-item title="官方处理 / 登录后自行导入" name="manual"><el-table :data="manualSources" size="small"><el-table-column prop="name" label="站点" width="150" /><el-table-column prop="note" label="边界说明" show-overflow-tooltip /><el-table-column label="操作" width="180"><template #default="{ row }"><el-button v-if="row.authUrl" link type="primary" size="small" @click="openAuth(row)">打开官方入口</el-button><el-button v-if="row.mode === 'login-disabled'" link type="warning" size="small" @click="confirmLoginSource(row)">查看授权边界</el-button></template></el-table-column></el-table></el-collapse-item></el-collapse>
+        <el-collapse class="source-groups"><el-collapse-item title="配置官方 Key 后可检索" name="key"><el-table :data="keySources" size="small"><el-table-column prop="name" label="站点" width="150" /><el-table-column prop="note" label="说明" show-overflow-tooltip /><el-table-column label="操作" width="220"><template #default="{ row }"><el-button v-if="row.configId" link type="primary" size="small" @click="goToSourceConfig(row)">配置 Key</el-button><el-button v-if="row.authUrl" link type="info" size="small" @click="openAuth(row)">官方文档</el-button><el-button v-if="row.searchReady" link type="success" size="small" @click="selectSource(row.key)">选择检索</el-button></template></el-table-column></el-table></el-collapse-item><el-collapse-item title="已接入手动检索 / 选择后导入" name="manual-search"><el-table :data="manualSearchSources" size="small"><el-table-column prop="name" label="站点" width="150" /><el-table-column prop="note" label="边界说明" show-overflow-tooltip /><el-table-column label="操作" width="180"><template #default="{ row }"><el-button link type="primary" size="small" @click="selectSource(row.key)">选择检索</el-button><el-button v-if="row.authUrl" link type="info" size="small" @click="openAuth(row)">官方页面</el-button></template></el-table-column></el-table></el-collapse-item><el-collapse-item title="官方处理 / 登录后自行导入" name="manual"><el-table :data="manualSources" size="small"><el-table-column prop="name" label="站点" width="150" /><el-table-column prop="note" label="边界说明" show-overflow-tooltip /><el-table-column label="操作" width="210"><template #default="{ row }"><el-button v-if="row.authUrl" link type="primary" size="small" @click="openAuth(row)">打开官方入口</el-button><el-button v-if="row.configId" link type="primary" size="small" @click="goToSourceConfig(row)">配置 Key</el-button><el-button v-if="row.mode === 'login-disabled'" link type="warning" size="small" @click="confirmLoginSource(row)">查看授权边界</el-button></template></el-table-column></el-table></el-collapse-item></el-collapse>
       </div>
     </div>
 
@@ -77,7 +77,7 @@
     <div class="card">
       <div class="card-title">关键词公开视频检索 <span class="hint">仅检索可公开下载、许可证可见的素材</span></div>
       <div style="margin-bottom:8px"><span class="muted">预设方案：</span><el-button v-for="p in PRESETS" :key="'v-'+p.label" link type="primary" size="small" @click="applyVideoPreset(p)">{{ p.label }}</el-button><span class="hint">点击即按预设关键词搜索公开视频</span></div>
-      <el-form inline><el-form-item label="关联项目"><el-select v-model="vq.projectId" clearable placeholder="不限定项目" style="width:170px"><el-option v-for="project in projects" :key="project.id" :label="project.name" :value="project.id" /></el-select></el-form-item><el-form-item label="来源"><el-select v-model="vq.source" style="width:170px"><el-option label="全部公开视频源" value="all" /><el-option label="Pixabay（需 Key）" value="pixabay" /><el-option label="Pexels（需 Key）" value="pexels" /><el-option label="Wikimedia Commons" value="wikimedia" /><el-option label="Internet Archive" value="archive" /></el-select></el-form-item><el-form-item label="关键词"><el-input v-model="vq.keyword" style="width:220px" placeholder="例如：护肤 / 食品 / 数码" @keyup.enter="doVideoSearch" /></el-form-item><el-form-item label="条数"><el-input-number v-model="vq.limit" :min="1" :max="40" size="small" /></el-form-item><el-form-item><el-button type="primary" :loading="videoSearching" @click="doVideoSearch">搜索</el-button></el-form-item><el-form-item v-if="pickedVideo.length"><el-select v-model="publicVideoRole" size="small" style="width:120px"><el-option v-for="(label, value) in ROLE_LABEL" :key="value" :label="label" :value="value" /></el-select><el-select v-model="crawlFolderId" clearable size="small" style="width:140px;margin-left:8px" placeholder="目标文件夹"><el-option v-for="folder in folders" :key="folder.id" :label="folder.name" :value="folder.id" /></el-select><el-button type="success" style="margin-left:8px" :loading="videoImporting" :disabled="hasActiveJob" @click="doVideoImport">导入选中 {{ pickedVideo.length }} 条</el-button></el-form-item></el-form>
+      <el-form inline><el-form-item label="关联项目"><el-select v-model="vq.projectId" clearable placeholder="不限定项目" style="width:170px"><el-option v-for="project in projects" :key="project.id" :label="project.name" :value="project.id" /></el-select></el-form-item><el-form-item label="来源"><el-select v-model="vq.source" style="width:170px"><el-option label="智能检索（已连接来源）" value="all" /><el-option label="Pixabay（需 Key）" value="pixabay" /><el-option label="Pexels（需 Key）" value="pexels" /><el-option label="Wikimedia Commons" value="wikimedia" /><el-option label="Internet Archive" value="archive" /></el-select></el-form-item><el-form-item label="关键词"><el-input v-model="vq.keyword" style="width:220px" placeholder="例如：护肤 / 食品 / 数码" @keyup.enter="doVideoSearch" /></el-form-item><el-form-item label="条数"><el-input-number v-model="vq.limit" :min="1" :max="40" size="small" /></el-form-item><el-form-item><el-button type="primary" :loading="videoSearching" @click="doVideoSearch">搜索</el-button></el-form-item><el-form-item v-if="pickedVideo.length"><el-select v-model="publicVideoRole" size="small" style="width:120px"><el-option v-for="(label, value) in ROLE_LABEL" :key="value" :label="label" :value="value" /></el-select><el-select v-model="crawlFolderId" clearable size="small" style="width:140px;margin-left:8px" placeholder="目标文件夹"><el-option v-for="folder in folders" :key="folder.id" :label="folder.name" :value="folder.id" /></el-select><el-button type="success" style="margin-left:8px" :loading="videoImporting" :disabled="hasActiveJob" @click="doVideoImport">导入选中 {{ pickedVideo.length }} 条</el-button></el-form-item></el-form>
       <el-alert v-for="(item, index) in videoNoticeRows" :key="`video-notice-${index}`" :title="item.title" type="warning" :closable="false" show-icon style="margin-bottom:8px"><el-button v-if="item.authUrl" link type="primary" size="small" @click="openAuth(item)">打开官方文档</el-button><el-button v-if="item.configKey" link type="primary" size="small" @click="goToEnv">查看配置方法</el-button></el-alert>
       <el-table :data="videoRealRows" v-loading="videoSearching" size="small" max-height="300" @selection-change="(value) => (pickedVideo = value)"><el-table-column type="selection" width="42" /><el-table-column prop="source" label="来源" width="90" /><el-table-column prop="title" label="标题" min-width="180" show-overflow-tooltip /><el-table-column prop="hitKeywords" label="命中词" min-width="110" show-overflow-tooltip /><el-table-column prop="relevanceScore" label="相关性" width="76" /><el-table-column prop="tags" label="匹配标签" min-width="120" show-overflow-tooltip /><el-table-column prop="license" label="授权" width="170" show-overflow-tooltip /><el-table-column label="预览" width="90"><template #default="{ row }"><el-link v-if="row.pageUrl" :href="row.pageUrl" target="_blank" rel="noopener noreferrer" type="primary">来源页</el-link></template></el-table-column></el-table>
     </div>
@@ -85,16 +85,30 @@
     <div class="card">
       <div class="card-title">音效 / 背景音乐检索 <span class="hint">检索到的公开素材会进入相同的后台导入队列</span></div>
       <div style="margin-bottom:8px"><span class="muted">预设方案：</span><el-button v-for="p in PRESETS" :key="'a-'+p.label" link type="primary" size="small" @click="applyAudioPreset(p)">{{ p.label }}</el-button></div>
-      <div style="margin-bottom:8px"><span class="muted">关联项目</span><el-select v-model="aq.projectId" clearable placeholder="不限定项目" size="small" style="width:170px;margin-left:8px"><el-option v-for="project in projects" :key="project.id" :label="project.name" :value="project.id" /></el-select></div><div class="form-hint" style="margin-bottom:8px">快捷关键词：<el-button v-for="word in ['卡点','轻快','科技','舒缓','温馨','测评','开箱','护肤','美妆','食品','保健品','香水','数码']" :key="word" link type="primary" size="small" @click="aq.keyword = word">{{ word }}</el-button></div><el-form inline><el-form-item label="来源"><el-select v-model="aq.source" style="width:170px"><el-option label="全部音频源" value="all" /><el-option label="Mixkit" value="mixkit" /><el-option label="Freesound" value="freesound" /><el-option label="Wikimedia Commons" value="wikimedia" /><el-option label="Internet Archive" value="archive" /><el-option label="淘声网 toSound" value="tosound" /></el-select></el-form-item><el-form-item label="关键词"><el-input ref="audioInput" v-model="aq.keyword" style="width:220px" placeholder="例如：人文 / 科技 / 开箱" @keyup.enter="doSearch" /></el-form-item><el-form-item label="条数"><el-input-number v-model="aq.limit" :min="1" :max="40" size="small" /></el-form-item><el-form-item><el-button type="primary" :loading="searching" @click="doSearch">搜索</el-button></el-form-item><el-form-item v-if="pickedAudio.length"><el-select v-model="audioRole" size="small" style="width:120px"><el-option label="背景音乐" value="bgm" /><el-option label="人声口播" value="voice" /></el-select><el-select v-model="crawlFolderId" clearable size="small" style="width:140px;margin-left:8px" placeholder="目标文件夹"><el-option v-for="folder in folders" :key="folder.id" :label="folder.name" :value="folder.id" /></el-select><el-button type="success" style="margin-left:8px" :loading="importing" :disabled="hasActiveJob" @click="doImport">导入选中 {{ pickedAudio.length }} 条</el-button></el-form-item></el-form>
+      <div style="margin-bottom:8px"><span class="muted">关联项目</span><el-select v-model="aq.projectId" clearable placeholder="不限定项目" size="small" style="width:170px;margin-left:8px"><el-option v-for="project in projects" :key="project.id" :label="project.name" :value="project.id" /></el-select></div><div class="form-hint" style="margin-bottom:8px">快捷关键词：<el-button v-for="word in ['卡点','轻快','科技','舒缓','温馨','测评','开箱','护肤','美妆','食品','保健品','香水','数码']" :key="word" link type="primary" size="small" @click="aq.keyword = word">{{ word }}</el-button></div><el-form inline><el-form-item label="来源"><el-select v-model="aq.source" style="width:170px"><el-option label="智能检索（已连接来源）" value="all" /><el-option label="Mixkit" value="mixkit" /><el-option label="Freesound" value="freesound" /><el-option label="Wikimedia Commons" value="wikimedia" /><el-option label="Internet Archive" value="archive" /><el-option label="Openverse" value="openverse" /><el-option label="淘声网 toSound" value="tosound" /></el-select></el-form-item><el-form-item label="关键词"><el-input ref="audioInput" v-model="aq.keyword" style="width:220px" placeholder="例如：人文 / 科技 / 开箱" @keyup.enter="doSearch" /></el-form-item><el-form-item label="条数"><el-input-number v-model="aq.limit" :min="1" :max="40" size="small" /></el-form-item><el-form-item><el-button type="primary" :loading="searching" @click="doSearch">搜索</el-button></el-form-item><el-form-item v-if="pickedAudio.length"><el-select v-model="audioRole" size="small" style="width:120px"><el-option label="背景音乐" value="bgm" /><el-option label="人声口播" value="voice" /></el-select><el-select v-model="crawlFolderId" clearable size="small" style="width:140px;margin-left:8px" placeholder="目标文件夹"><el-option v-for="folder in folders" :key="folder.id" :label="folder.name" :value="folder.id" /></el-select><el-button type="success" style="margin-left:8px" :loading="importing" :disabled="hasActiveJob" @click="doImport">导入选中 {{ pickedAudio.length }} 条</el-button></el-form-item></el-form>
       <el-alert v-for="(item, index) in noticeRows" :key="`notice-${index}`" :title="item.title" type="warning" :closable="false" show-icon style="margin-bottom:8px">
         <el-button v-if="item.authUrl" link type="primary" size="small" @click="openAuth(item)">打开官方申请页</el-button>
         <el-button v-if="item.configKey" link type="primary" size="small" @click="goToEnv">查看配置方法</el-button>
       </el-alert>
       <el-table :data="realRows" v-loading="searching" size="small" max-height="360" @selection-change="(value) => (pickedAudio = value)"><el-table-column type="selection" width="42" /><el-table-column prop="source" label="来源" width="90" /><el-table-column prop="title" label="标题" min-width="180" show-overflow-tooltip /><el-table-column prop="hitKeywords" label="命中词" min-width="110" show-overflow-tooltip /><el-table-column prop="relevanceScore" label="相关性" width="76" /><el-table-column label="时长" width="80"><template #default="{ row }">{{ row.duration ? row.duration.toFixed(1) + 's' : '-' }}</template></el-table-column><el-table-column prop="license" label="授权" width="130" show-overflow-tooltip /><el-table-column label="试听" width="240"><template #default="{ row }"><audio v-if="row.previewUrl || row.downloadUrl" controls preload="none" :src="row.previewUrl || row.downloadUrl" style="height:28px;width:200px" @error="markAudioPreviewError(row)" /><div v-if="audioPreviewErrors[audioPreviewKey(row)]" class="muted" style="color:#e6a23c;font-size:12px">直链试听失败；导入后可在素材库本地试听</div><span v-else-if="!row.previewUrl && !row.downloadUrl" class="muted">暂无可试听地址</span></template></el-table-column></el-table>
-    </div>
+     </div>
   </div>
     <div class="card">
-      <div class="card-title">精选素材库 <span class="hint">每类 50 个受控入口；视频/音频进入许可筛选检索，图片与 3D/电商仅打开官方页</span></div>
+      <div class="card-title">图片素材检索 <span class="hint">免 Key 的 Openverse / Wikimedia，或使用已配置的 Pixabay / Pexels Key</span></div>
+      <el-form inline>
+        <el-form-item label="来源"><el-select v-model="iq.source" style="width:180px"><el-option label="智能检索（已连接来源）" value="all" /><el-option label="Openverse（免 Key）" value="openverse" /><el-option label="Wikimedia Commons" value="wikimedia" /><el-option label="Pixabay（需 Key）" value="pixabay" /><el-option label="Pexels（需 Key）" value="pexels" /><el-option label="Unsplash（需 Access Key）" value="unsplash" /></el-select></el-form-item>
+        <el-form-item label="关键词"><el-input ref="imageInput" v-model="iq.keyword" style="width:230px" placeholder="例如：产品背景 / 城市 / 美食" @keyup.enter="doImageSearch" /></el-form-item>
+        <el-form-item label="条数"><el-input-number v-model="iq.limit" :min="1" :max="40" size="small" /></el-form-item>
+        <el-form-item><el-button type="primary" :loading="imageSearching" @click="doImageSearch">搜索</el-button></el-form-item>
+        <el-form-item v-if="pickedImage.length"><el-select v-model="imageRole" size="small" style="width:120px"><el-option v-for="(label, value) in ROLE_LABEL" :key="value" :label="label" :value="value" /></el-select><el-select v-model="crawlFolderId" clearable size="small" style="width:140px;margin-left:8px" placeholder="目标文件夹"><el-option v-for="folder in folders" :key="folder.id" :label="folder.name" :value="folder.id" /></el-select><el-button type="success" style="margin-left:8px" :loading="imageImporting" :disabled="hasActiveJob" @click="doImageImport">导入选中 {{ pickedImage.length }} 张</el-button></el-form-item>
+      </el-form>
+      <el-alert v-for="(item, index) in imageNoticeRows" :key="`image-notice-${index}`" :title="item.title" type="warning" :closable="false" show-icon style="margin-bottom:8px"><el-button v-if="item.authUrl" link type="primary" size="small" @click="openAuth(item)">打开官方文档</el-button><el-button v-if="item.configKey" link type="primary" size="small" @click="goToSourceConfig({ key: item.source, configId: item.configKey.replace(/^APP_|_API_KEY$/g, '') })">配置 Key</el-button></el-alert>
+      <el-table :data="imageRealRows" v-loading="imageSearching" size="small" max-height="360" @selection-change="(value) => (pickedImage = value)">
+        <el-table-column type="selection" width="42" /><el-table-column label="预览" width="90"><template #default="{ row }"><el-image v-if="row.previewUrl || row.downloadUrl" :src="row.previewUrl || row.downloadUrl" fit="cover" style="width:64px;height:42px" :preview-src-list="[row.previewUrl || row.downloadUrl]" preview-teleported /><span v-else class="muted">暂无</span></template></el-table-column><el-table-column prop="source" label="来源" width="100" /><el-table-column prop="title" label="标题" min-width="200" show-overflow-tooltip /><el-table-column prop="tags" label="标签" min-width="140" show-overflow-tooltip /><el-table-column prop="license" label="授权" width="180" show-overflow-tooltip /><el-table-column label="来源页" width="90"><template #default="{ row }"><el-link v-if="row.pageUrl" :href="row.pageUrl" target="_blank" rel="noopener noreferrer" type="primary">打开</el-link></template></el-table-column>
+      </el-table>
+    </div>
+    <div class="card">
+      <div class="card-title">精选素材库 <span class="hint">视频、音频和图片均可进入应用检索；3D/电商仍按官方页面授权导入</span></div>
       <el-tabs>
         <el-tab-pane label="视频">
           <div v-loading="curatedLoading" class="curated-grid">
@@ -119,7 +133,7 @@
             <div v-for="m in curated.image" :key="m.id" class="curated-item">
               <div class="curated-title">{{ m.name }}</div>
               <div class="muted" style="font-size:12px">{{ m.note }}</div>
-              <div style="margin-top:6px"><el-button size="small" type="warning" plain @click="openCurated(m.url)">打开官方素材页</el-button></div>
+              <div style="margin-top:6px"><el-button size="small" type="warning" plain @click="runCuratedSearch(m, 'image')">检索可导入图片</el-button></div>
             </div>
           </div>
         </el-tab-pane>
@@ -159,6 +173,11 @@ function runCuratedSearch (item, type) {
     vq.keyword = item.keyword || ''
     vq.limit = 12
     doVideoSearch()
+  } else if (type === 'image') {
+    iq.source = item.source || 'openverse'
+    iq.keyword = item.keyword || ''
+    iq.limit = 12
+    doImageSearch()
   } else {
     aq.source = item.source || 'wikimedia'
     aq.keyword = item.keyword || ''
@@ -185,6 +204,8 @@ const sources = ref([]), sourcesLoading = ref(false), sourcesError = ref(false)
 const aq = reactive({ source: 'all', keyword: '', limit: 12, projectId: null })
 const audioList = ref([]), pickedAudio = ref([]), audioRole = ref('bgm'), searching = ref(false), importing = ref(false)
 const audioPreviewErrors = reactive({})
+const iq = reactive({ source: 'all', keyword: '', limit: 12, projectId: null })
+const imageList = ref([]), pickedImage = ref([]), imageRole = ref('body'), imageSearching = ref(false), imageImporting = ref(false)
 const vq = reactive({ source: 'all', keyword: '', limit: 12, projectId: null })
 const PRESETS = [
   { label: '美食探店', keyword: '美食 探店', limit: 12 },
@@ -202,11 +223,14 @@ let pollingInFlight = false
 const hasActiveJob = computed(() => ['pending', 'running'].includes(crawlDetail.value?.job?.status))
 const hasFailedTasks = computed(() => (crawlDetail.value?.tasks || []).some((task) => task.status === 'failed' && !task.guardRejected))
 const readySources = computed(() => sources.value.filter((source) => source.status === 'ready'))
-const noKeySources = computed(() => readySources.value.filter((source) => !source.needKey && source.mode !== 'login-disabled'))
-const keySources = computed(() => readySources.value.filter((source) => source.needKey))
-const manualSources = computed(() => sources.value.filter((source) => source.status !== 'ready' || source.mode === 'login-disabled'))
+const noKeySources = computed(() => readySources.value.filter((source) => !source.needKey && source.autoFill !== false && source.mode !== 'login-disabled'))
+const keySources = computed(() => sources.value.filter((source) => source.needKey))
+const manualSearchSources = computed(() => readySources.value.filter((source) => !source.needKey && source.autoFill === false))
+const manualSources = computed(() => sources.value.filter((source) => !source.needKey && (source.status !== 'ready' || source.mode === 'login-disabled')))
 const noticeRows = computed(() => audioList.value.filter((item) => item.notice || item.license === 'notice' || item.license === 'blocked'))
 const realRows = computed(() => audioList.value.filter((item) => !(item.notice || item.license === 'notice' || item.license === 'blocked')))
+const imageNoticeRows = computed(() => imageList.value.filter((item) => item.notice || item.license === 'notice' || item.license === 'blocked'))
+const imageRealRows = computed(() => imageList.value.filter((item) => !(item.notice || item.license === 'notice' || item.license === 'blocked')))
 const videoNoticeRows = computed(() => publicVideoList.value.filter((item) => item.notice || item.license === 'notice' || item.license === 'blocked'))
 const videoRealRows = computed(() => publicVideoList.value.filter((item) => !(item.notice || item.license === 'notice' || item.license === 'blocked')))
 
@@ -240,6 +264,11 @@ function openAuth (source) {
   window.open(source.authUrl, '_blank', 'noopener,noreferrer')
   const config = source.configKey ? `，返回后在本机配置 ${source.configKey} 并重启后端` : '；授权完成后请按官方说明配置本机凭据'
   ElMessage.info(`已打开 ${source.name || source.source} 官方页面${config}`)
+}
+function goToSourceConfig (source) {
+  const configId = source?.configId || source?.key
+  if (!configId) return
+  router.push({ path: '/capabilities', query: { source: configId } })
 }
 function goToEnv () {
   router.push('/tutorial')
@@ -308,12 +337,12 @@ async function confirmLoginSource (source) {
   } catch {}
 }
 function selectSource (source) {
-  const knownAudioSources = ['mixkit', 'freesound', 'wikimedia', 'archive', 'tosound']
+  const knownAudioSources = ['mixkit', 'freesound', 'wikimedia', 'archive', 'openverse', 'tosound']
   if (!knownAudioSources.includes(source)) {
     const detail = source === 'pixabay'
       ? 'Pixabay 当前仅作为视频素材授权源，不能用于背景音乐检索。请使用 Mixkit、Freesound、Wikimedia Commons 或 Internet Archive。'
       : source === 'openverse'
-        ? 'Openverse 需要先申请 OAuth 凭据并在本机配置，当前仅提供官方授权入口。'
+        ? 'Openverse 支持免 Key 的公开音频检索，注册 OAuth 只用于提高配额；请直接选择 Openverse 检索。'
         : '该素材源需要登录或未开放音频检索，请使用公开免登录素材源或导入已授权本地文件。'
     ElMessage.warning(detail)
     return
@@ -342,6 +371,8 @@ function selectCapability (command) {
 }
 function doFetch () { const items = urls.value.split('\n').map((item) => item.trim()).filter(Boolean); if (!items.length) return ElMessage.warning('请填写至少一个公开链接'); if (items.length > 200) return ElMessage.warning('单次最多抓取 200 条链接'); startJob(() => api.crawlVideoBatch({ urls: items, role: videoRole.value, folderId: crawlFolderId.value || undefined }), '采集任务已提交，完成后会归档到目标文件夹并可直接用于出片') }
 async function doSearch () { searching.value = true; pickedAudio.value = []; try { audioList.value = await api.searchAudio({ source: aq.source, keyword: aq.keyword, limit: aq.limit, projectId: aq.projectId || undefined }); if (!realRows.value.length) ElMessage.info(noticeRows.value.length ? '没有可用素材，请查看上方提示' : '没搜到，换个关键词试试') } catch (error) { ElMessage.error(`搜索素材失败：${error.message}`) } finally { searching.value = false } }
+async function doImageSearch () { imageSearching.value = true; pickedImage.value = []; try { imageList.value = await api.searchImage({ source: iq.source, keyword: iq.keyword, limit: iq.limit, projectId: iq.projectId || undefined }); if (!imageRealRows.value.length) ElMessage.info(imageNoticeRows.value.length ? '没有可用图片，请查看上方提示' : '没搜到，换个关键词试试') } catch (error) { ElMessage.error(`搜索图片素材失败：${error.message}`) } finally { imageSearching.value = false } }
+function doImageImport () { if (!pickedImage.value.length) return ElMessage.warning('请先选择要导入的图片'); imageImporting.value = true; api.importImage({ items: pickedImage.value, role: imageRole.value, folderId: crawlFolderId.value || undefined }).then((job) => { crawlDetail.value = { job, tasks: [] }; ElMessage.success('图片导入任务已提交，完成后可直接用于出片'); beginPolling() }).catch((error) => ElMessage.error(`提交图片导入失败：${error.message}`)).finally(() => { imageImporting.value = false }) }
 function doImport () { if (!pickedAudio.value.length) return ElMessage.warning('请先选择要导入的素材'); importing.value = true; api.importAudio({ items: pickedAudio.value, role: audioRole.value, folderId: crawlFolderId.value || undefined }).then((job) => { crawlDetail.value = { job, tasks: [] }; ElMessage.success('音频导入任务已提交，完成后可直接用于出片'); beginPolling() }).catch((error) => ElMessage.error(`提交导入任务失败：${error.message}`)).finally(() => { importing.value = false }) }
 async function doVideoSearch () { videoSearching.value = true; pickedVideo.value = []; try { publicVideoList.value = await api.searchPublicVideo({ source: vq.source, keyword: vq.keyword, limit: vq.limit, projectId: vq.projectId || undefined }); if (!videoRealRows.value.length) ElMessage.info(videoNoticeRows.value.length ? '没有可用视频，请查看上方提示' : '未找到与关键词匹配的视频素材') } catch (error) { ElMessage.error(`搜索公开视频失败：${error.message}`) } finally { videoSearching.value = false } }
 function doVideoImport () { if (!pickedVideo.value.length) return ElMessage.warning('请先选择要导入的素材'); videoImporting.value = true; api.importPublicVideo({ items: pickedVideo.value, role: publicVideoRole.value, folderId: crawlFolderId.value || undefined }).then((job) => { crawlDetail.value = { job, tasks: [] }; ElMessage.success('公开视频导入任务已提交，完成后可直接用于出片'); beginPolling() }).catch((error) => ElMessage.error(`提交公开视频失败：${error.message}`)).finally(() => { videoImporting.value = false }) }
@@ -364,8 +395,9 @@ async function loadCurated () {
   }
 }
 watch(() => aq.projectId, () => { audioList.value = []; pickedAudio.value = [] })
+watch(() => iq.projectId, () => { imageList.value = []; pickedImage.value = [] })
 watch(() => vq.projectId, () => { publicVideoList.value = []; pickedVideo.value = [] })
-onMounted(async () => { await Promise.all([loadSources(), loadCurated()]); try { const [projectRows, folderRows] = await Promise.all([api.projects(), api.materialFolders()]); projects.value = projectRows; folders.value = folderRows.filter(folder => folder.enabled !== false); const defaultProjectId = projects.value[0]?.id || null; aq.projectId = defaultProjectId; vq.projectId = defaultProjectId } catch {} try { runtime.value = await api.env() } catch {} try { const jobs = await api.crawlJobs({ silent: true }); if (jobs.length) { crawlDetail.value = { job: jobs[0], tasks: [] }; await refreshJob(true); if (hasActiveJob.value) beginPolling() } } catch {} })
+onMounted(async () => { await Promise.all([loadSources(), loadCurated()]); try { const [projectRows, folderRows] = await Promise.all([api.projects(), api.materialFolders()]); projects.value = projectRows; folders.value = folderRows.filter(folder => folder.enabled !== false); const defaultProjectId = projects.value[0]?.id || null; aq.projectId = defaultProjectId; iq.projectId = defaultProjectId; vq.projectId = defaultProjectId } catch {} try { runtime.value = await api.env() } catch {} try { const jobs = await api.crawlJobs({ silent: true }); if (jobs.length) { crawlDetail.value = { job: jobs[0], tasks: [] }; await refreshJob(true); if (hasActiveJob.value) beginPolling() } } catch {} })
 onBeforeUnmount(stopPolling)
 </script>
 

@@ -18,7 +18,7 @@ import java.util.List;
 public class AppProps {
 
     /** Release identity is compiled into the application and must never be environment-overridable. */
-    private static final String RELEASE_VERSION = "2.2.152";
+    private static final String RELEASE_VERSION = "2.2.157";
 
     private String dataDir = "./data";
     private String ffmpeg = "ffmpeg";
@@ -57,6 +57,8 @@ public class AppProps {
     private String pixabayApiKey = "";
     /** Pexels 视频检索 API Key，仅从服务端环境变量 APP_PEXELS_API_KEY 读取，绝不写入前端或日志。 */
     private String pexelsApiKey = "";
+    /** Unsplash 图片检索 Access Key，仅从服务端环境变量 APP_UNSPLASH_API_KEY 读取。 */
+    private String unsplashApiKey = "";
 
     /** AES-GCM 主密钥仅允许由 APP_MASTER_KEY 或外部密钥服务提供，绝不写入项目文件。 */
     private String masterKey = "";

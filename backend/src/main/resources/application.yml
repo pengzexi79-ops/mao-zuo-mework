@@ -77,6 +77,8 @@ app:
   freesound-api-key: ${APP_FREESOUND_API_KEY:}
   pixabay-api-key: ${APP_PIXABAY_API_KEY:}
   pexels-api-key: ${APP_PEXELS_API_KEY:}
+  # Unsplash 官方图片 API Access Key（用户自行申请；不读取网页登录 Cookie）
+  unsplash-api-key: ${APP_UNSPLASH_API_KEY:}
   # 后续媒体工具与 AI 生成文件的位置；留空时保持在应用 data/materials/media-tools 中。
   media-tools-output-dir: ${APP_MEDIA_TOOLS_OUTPUT_DIR:}
   # 仅从环境变量读取，禁止在源码、示例或前端构建产物中保存真实密钥。

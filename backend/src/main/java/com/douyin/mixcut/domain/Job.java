@@ -1,6 +1,8 @@
 package com.douyin.mixcut.domain;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.persistence.*;
 import lombok.Data;
 import java.time.LocalDateTime;
@@ -12,6 +14,8 @@ import java.time.LocalDateTime;
 @Entity
 @Table(name = "job")
 public class Job {
+
+    private static final ObjectMapper PARAMS_MAPPER = new ObjectMapper();
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -74,7 +78,29 @@ public class Job {
     /** 连续出片标记保存在 params 快照中，避免为已有本机库强制迁移字段。 */
     @Transient
     public boolean isContinuous() {
-        return params != null && params.replaceAll("\\s", "").contains("\"continuous\":true");
+        if (params == null || params.isBlank()) return false;
+        try {
+            JsonNode root = PARAMS_MAPPER.readTree(params);
+            // New snapshots keep the scheduler flag at the root. Older snapshots placed it
+            // inside effectiveParams, so retain that format for resumable historical jobs.
+            if (root.has("continuous")) return root.path("continuous").asBoolean(false);
+            return root.path("effectiveParams").path("continuous").asBoolean(false);
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    /** Exposes the persisted per-task failure policy to the task list without exposing a key. */
+    @Transient
+    public boolean isForceContinue() {
+        if (params == null || params.isBlank()) return false;
+        try {
+            JsonNode root = PARAMS_MAPPER.readTree(params);
+            if (root.has("forceContinue")) return root.path("forceContinue").asBoolean(false);
+            return root.path("effectiveParams").path("forceContinue").asBoolean(false);
+        } catch (Exception ignored) {
+            return false;
+        }
     }
 
     @PrePersist

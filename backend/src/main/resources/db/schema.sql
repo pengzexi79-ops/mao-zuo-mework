@@ -249,6 +249,7 @@ CREATE TABLE IF NOT EXISTS job_output (
     downgrade_info TEXT,
     used_materials TEXT,
     segment_keys TEXT,
+    forced_continue TINYINT(1) NOT NULL DEFAULT 0,
     created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_job (job_id),
     UNIQUE KEY uniq_job_output_idx (job_id, idx)

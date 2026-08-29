@@ -27,6 +27,9 @@ import org.springframework.scheduling.annotation.EnableAsync;
 public class DouyinMixcutApplication {
 
     public static void main(String[] args) {
+        // On Windows, the desktop proxy is not exposed through HTTP_PROXY. Let the
+        // standard JDK ProxySelector see the user's system proxy as a fallback.
+        System.setProperty("java.net.useSystemProxies", "true");
         SpringApplication.run(DouyinMixcutApplication.class, args);
     }
 }

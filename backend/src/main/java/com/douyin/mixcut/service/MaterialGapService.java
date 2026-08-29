@@ -295,13 +295,16 @@ public class MaterialGapService {
                 "type", "video", "needKey", "false", "note", "公开许可视频（CC0/公有领域/CC BY），免 API Key"));
         sources.add(Map.of("key", "archive", "name", "Internet Archive",
                 "type", "video", "needKey", "false", "note", "CC0 / 公有领域 / CC BY 视频片段"));
-        if (props.getPexelsApiKey() != null && !props.getPexelsApiKey().isBlank()) {
-            sources.add(Map.of("key", "pexels", "name", "Pexels 官方 API",
-                    "type", "video", "needKey", "configured", "note", "已读取本机官方 API Key，可作为授权视频来源"));
-        } else {
-            sources.add(Map.of("key", "pexels", "name", "Pexels 官方 API",
-                    "type", "video", "needKey", "true", "note", "需在能力中心配置自己的 Pexels API Key"));
-        }
+        boolean pexelsConfigured = props.getPexelsApiKey() != null && !props.getPexelsApiKey().isBlank();
+        sources.add(Map.of("key", "pexels", "name", "Pexels 官方 API",
+                "type", "video", "needKey", pexelsConfigured ? "false" : "true",
+                "configured", String.valueOf(pexelsConfigured), "searchable", "true",
+                "note", pexelsConfigured ? "已读取本机官方 API Key，可作为授权视频来源" : "需在能力中心配置自己的 Pexels API Key"));
+        boolean pixabayConfigured = props.getPixabayApiKey() != null && !props.getPixabayApiKey().isBlank();
+        sources.add(Map.of("key", "pixabay", "name", "Pixabay 官方 API",
+                "type", "video", "needKey", pixabayConfigured ? "false" : "true",
+                "configured", String.valueOf(pixabayConfigured), "searchable", "true",
+                "note", pixabayConfigured ? "已读取本机官方 API Key，可作为授权视频来源" : "需在能力中心配置自己的 Pixabay API Key"));
         result.setUsablePublicSources(sources);
 
         // 9. Notes
@@ -423,18 +426,32 @@ public class MaterialGapService {
             return;
         }
         try {
-            if ("wikimedia".equals(s) || "archive".equals(s) || "pexels".equals(s)) {
+            if ("wikimedia".equals(s) || "archive".equals(s) || "pexels".equals(s) || "pixabay".equals(s)) {
+                if ("pexels".equals(s) && (props.getPexelsApiKey() == null || props.getPexelsApiKey().isBlank())) {
+                    result.getSourceResults().add(Map.of("source", s, "status", "missing_key",
+                            "outcome", "configuration_required", "configId", "pexels",
+                            "authUrl", "https://www.pexels.com/api/",
+                            "message", "Pexels 尚未配置官方 API Key，请在能力中心保存后重启后再进行自动补齐。"));
+                    return;
+                }
+                if ("pixabay".equals(s) && (props.getPixabayApiKey() == null || props.getPixabayApiKey().isBlank())) {
+                    result.getSourceResults().add(Map.of("source", s, "status", "missing_key",
+                            "outcome", "configuration_required", "configId", "pixabay",
+                            "authUrl", "https://pixabay.com/api/docs/",
+                            "message", "Pixabay 尚未配置官方 API Key，请在能力中心保存后重启后再进行自动补齐。"));
+                    return;
+                }
                 List<CrawlerGateway.RemoteItem> items = crawler.searchPublicVideoQuick(s, keyword, perSource, project);
                 // 提示/占位条目（notice）绝不能作为素材入库：只排队真实可下载条目
                 List<CrawlerGateway.RemoteItem> usable = items.stream()
-                        .filter(i -> i != null && !i.isNotice()).toList();
+                        .filter(i -> i != null && !i.isNotice() && crawler.isAutoFillEligible(i)).toList();
                 String fallbackKeyword = crawler.publicVideoSearchKeyword(keyword);
                 boolean fallbackUsed = false;
                 // Public indexes mostly expose English metadata. Keep the project-scoped query first,
                 // then use the same approved source once with a bounded class/scene fallback.
                 if (usable.isEmpty() && project != null && !fallbackKeyword.isBlank()) {
                     usable = crawler.searchPublicVideoQuick(s, fallbackKeyword, perSource, null).stream()
-                            .filter(i -> i != null && !i.isNotice()).toList();
+                            .filter(i -> i != null && !i.isNotice() && crawler.isAutoFillEligible(i)).toList();
                     fallbackUsed = !usable.isEmpty();
                 }
                 if (!usable.isEmpty()) {
@@ -489,7 +506,7 @@ public class MaterialGapService {
             } else {
                 result.getSourceResults().add(Map.of("source", s,
                         "status", "unsupported", "outcome", "blocked",
-                        "message", "该来源不在自动填充范围内。自动填充支持：wikimedia, archive，以及已配置官方 Key 的 pexels；Mixkit 仅支持手动导入。"));
+                        "message", "该来源不在自动填充范围内。自动填充支持：wikimedia、archive，以及已配置官方 Key 的 pexels、pixabay；Mixkit 仅支持手动导入。"));
                 return; // 不是一次自动尝试，不触碰熔断器
             }
             breaker.onSuccess(); // queued or empty: source responded, reset any failure count
@@ -513,10 +530,10 @@ public class MaterialGapService {
     }
 
     private List<String> defaultSources() {
-        if (props.getPexelsApiKey() == null || props.getPexelsApiKey().isBlank()) {
-            return List.of("wikimedia", "archive");
-        }
-        return List.of("wikimedia", "archive", "pexels");
+        List<String> sources = new ArrayList<>(List.of("wikimedia", "archive"));
+        if (props.getPexelsApiKey() != null && !props.getPexelsApiKey().isBlank()) sources.add("pexels");
+        if (props.getPixabayApiKey() != null && !props.getPixabayApiKey().isBlank()) sources.add("pixabay");
+        return List.copyOf(sources);
     }
 
     // ---------------------------------------------------------------

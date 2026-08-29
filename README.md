@@ -108,7 +108,7 @@ java -jar target/mixcut-delivery.jar --server.port=8760 --server.address=127.0.0
 | `APP_BIND_ADDRESS` | 默认 `127.0.0.1`；仅配合 `APP_ACCESS_TOKEN` 才可显式设为 `0.0.0.0` 供同 Wi‑Fi 手机访问 |
 | `APP_ACCESS_TOKEN` | 非空时保护 `/api/**` 和 `/files/**`；局域网监听时为必填 |
 | `APP_CORS_ALLOWED_ORIGINS` | 精确、逗号分隔的浏览器 Origin 白名单 |
-| `APP_FREESOUND_API_KEY` / `APP_PIXABAY_API_KEY` | 可选官方素材目录 API Key |
+| `APP_FREESOUND_API_KEY` / `APP_PIXABAY_API_KEY` / `APP_PEXELS_API_KEY` / `APP_UNSPLASH_API_KEY` | 可选官方素材目录 API Key；分别在能力中心配置后由后端长期读取 |
 | `APP_ALLOW_LOGIN_CRAWL` | 登录态站点抓取开关；默认 `false` |
 
 CORS 开启凭据模式，因此 `APP_CORS_ALLOWED_ORIGINS` 必须是明确 Origin，例如 `http://localhost:5273,http://127.0.0.1:5273`；不得使用 `*`。内置页面与 API 同源运行时无需额外配置 CORS。
@@ -130,6 +130,9 @@ CORS 开启凭据模式，因此 `APP_CORS_ALLOWED_ORIGINS` 必须是明确 Orig
 网页抓取仅面向用户有权访问和使用的**公开** `http/https` 链接。服务端会拒绝 `localhost`、私网、保留地址、非 HTTP 协议和重定向到这些地址的目标，以防 SSRF。
 
 - 不会自动读取、导入或保存浏览器 Cookie。
+- Pixabay、Pexels、Freesound 和 Unsplash 使用各自官方 API：用户在官方开发者页面申请 Key，在「能力中心」保存到 D 盘项目的本机 `.env`，重启后应用即可随时调用。Key 只在服务端请求头中发送，不进入前端、任务记录、日志或 Git。
+- 没有公开 API 的来源（例如 Mixkit、Coverr、Videvo、爱给网、站酷、新片场、VJ 师等）不能仅靠网页登录变成应用 API。应用只保留官方入口，用户完成登录并下载自己获授权的文件后，再通过素材库导入；不会提取 Cookie、密码、会话令牌，也不会绕过平台权限。
+- Openverse、Wikimedia Commons 和 Internet Archive 的公开检索链路无需账号；是否能商用仍以每条素材的许可证为准。
 - 默认不抓取必须登录的平台；`APP_ALLOW_LOGIN_CRAWL=false` 是默认安全状态。
 - 运行 Windows 批处理请使用 `start.bat` 或 `cmd.exe /c`，不要在 Git Bash 中用重定向创建文件，避免生成设备名文件（如 `nul`）。
 - 即使明确开启该开关，也应自行确认平台条款、下载权限、版权、肖像授权与商用范围。

@@ -54,7 +54,7 @@ import java.util.concurrent.Executor;
 @RequiredArgsConstructor
 public class RenderPreparationService {
     /**
-     * 无人值守自动填充的固定免登录来源。Pexels 仅在用户提供自己的官方 API Key 后加入；
+     * 无人值守自动填充的固定免登录来源。Pixabay/Pexels 仅在用户提供自己的官方 API Key 后加入；
      * Mixkit 无公开 API 且服务条款不支持无人值守抓取，只允许手动导入，绝不在此列出。
      */
     private static final List<String> PUBLIC_SOURCES = List.of("wikimedia", "archive");
@@ -562,19 +562,24 @@ public class RenderPreparationService {
         return Math.max(0, Math.min(MAX_WAIT_SECONDS, waitSeconds));
     }
 
-    /** Only enable Pexels after a user-supplied official API key has been configured. */
+    /** Enable credential-gated official APIs only after the user has configured their own keys. */
     private List<String> autoFillSources() {
-        if (props.getPexelsApiKey() == null || props.getPexelsApiKey().isBlank()) return PUBLIC_SOURCES;
         List<String> sources = new ArrayList<>(PUBLIC_SOURCES);
-        sources.add("pexels");
+        if (props.getPixabayApiKey() != null && !props.getPixabayApiKey().isBlank()) sources.add("pixabay");
+        if (props.getPexelsApiKey() != null && !props.getPexelsApiKey().isBlank()) sources.add("pexels");
         return List.copyOf(sources);
     }
 
     private String sourceDescription(List<String> sources) {
-        if (sources.contains("pexels")) {
-            return "Wikimedia Commons、Internet Archive 与已授权的 Pexels 官方 API（仅使用合规公开素材）";
+        boolean pixabay = sources.contains("pixabay");
+        boolean pexels = sources.contains("pexels");
+        if (pixabay || pexels) {
+            List<String> enabled = new ArrayList<>(List.of("Wikimedia Commons", "Internet Archive"));
+            if (pixabay) enabled.add("Pixabay 官方 API");
+            if (pexels) enabled.add("Pexels 官方 API");
+            return String.join("、", enabled) + "（仅使用合规公开素材）";
         }
-        return "Wikimedia Commons、Internet Archive 的固定公开来源（CC0/公有领域/CC BY 白名单；Pexels 需先配置 APP_PEXELS_API_KEY）";
+        return "Wikimedia Commons、Internet Archive 的固定公开来源（CC0/公有领域/CC BY 白名单；Pixabay/Pexels 需先配置官方 API Key）";
     }
 
     private boolean isTerminal(String status) {

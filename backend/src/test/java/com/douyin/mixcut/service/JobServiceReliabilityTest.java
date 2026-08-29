@@ -5,6 +5,7 @@ import com.douyin.mixcut.domain.Job;
 import com.douyin.mixcut.domain.JobOutput;
 import com.douyin.mixcut.domain.JobStatus;
 import com.douyin.mixcut.dto.MixParams;
+import com.douyin.mixcut.dto.EffectiveRenderConfig;
 import com.douyin.mixcut.repository.Repositories.JobOutputRepo;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.douyin.mixcut.external.ProcessRegistry;
@@ -67,6 +68,42 @@ class JobServiceReliabilityTest {
         assertEquals("effective_params_changed_by_repair", updatedRoot.path("admissionInvalidatedReason").asText());
         org.junit.jupiter.api.Assertions.assertTrue(updatedRoot.path("effectiveParams").isObject());
         org.junit.jupiter.api.Assertions.assertTrue(updatedRoot.path("admissionSnapshot").path("statusSignature").isNull());
+    }
+
+    @Test
+    void freezeSubmissionKeepsContinuousSchedulerFlagOutsideEffectiveParams() throws Exception {
+        EffectiveRenderConfig admission = new EffectiveRenderConfig();
+        admission.setParams(new MixParams());
+
+        String frozen = ReflectionTestUtils.invokeMethod(service, "freezeSubmission", null, null,
+                "{\"continuous\":true,\"format\":\"9:16\"}", admission);
+        var root = new ObjectMapper().readTree(frozen);
+
+        org.junit.jupiter.api.Assertions.assertTrue(root.path("continuous").asBoolean(),
+                "continuous must survive the frozen job snapshot");
+        org.junit.jupiter.api.Assertions.assertTrue(root.path("effectiveParams").isObject());
+    }
+
+    @Test
+    void freezeSubmissionDefaultsFixedJobsToNonContinuous() throws Exception {
+        EffectiveRenderConfig admission = new EffectiveRenderConfig();
+        admission.setParams(new MixParams());
+
+        String frozen = ReflectionTestUtils.invokeMethod(service, "freezeSubmission", null, null,
+                "{\"format\":\"9:16\"}", admission);
+        var root = new ObjectMapper().readTree(frozen);
+
+        org.junit.jupiter.api.Assertions.assertFalse(root.path("continuous").asBoolean(),
+                "fixed-count jobs must not inherit continuous mode");
+    }
+
+    @Test
+    void legacyNestedContinuousFlagRemainsResumable() {
+        Job job = new Job();
+        job.setParams("{\"effectiveParams\":{\"continuous\":true}}");
+
+        org.junit.jupiter.api.Assertions.assertTrue(job.isContinuous(),
+                "legacy snapshots must still identify continuous jobs");
     }
 
     @Test

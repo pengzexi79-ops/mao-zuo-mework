@@ -65,6 +65,8 @@ public class JobController {
         private Integer staleAfterSec;
         /** 默认持续出片；固定数量必须由客户端显式选择。 */
         private Boolean continuous = true;
+        /** 用户显式允许失败项被记录并跳过，继续处理后续成片。 */
+        private Boolean forceContinue = false;
         /** 出片参数，原样透传，未出现的键沿用项目默认值 */
         private JsonNode params;
         private Integer variant = 0;
@@ -89,6 +91,7 @@ public class JobController {
             try {
                 var root = om.readTree(json);
                 ((com.fasterxml.jackson.databind.node.ObjectNode) root).put("continuous", true);
+                ((com.fasterxml.jackson.databind.node.ObjectNode) root).put("forceContinue", Boolean.TRUE.equals(req.getForceContinue()));
                 json = om.writeValueAsString(root);
                 count = 1;
             } catch (Exception e) {
@@ -220,6 +223,30 @@ public class JobController {
     public R<Void> retryFailed(@PathVariable Long id) {
         jobService.retryFailedItems(id);
         return R.ok();
+    }
+
+    @PostMapping("/{id}/force-resume")
+    public R<Void> forceResume(@PathVariable Long id) {
+        try {
+            jobService.forceResume(id);
+            return R.ok();
+        } catch (IllegalArgumentException e) {
+            return R.fail(e.getMessage() == null ? "强制继续失败" : e.getMessage());
+        }
+    }
+
+    @Data
+    public static class ForceContinueReq { private Boolean enabled; }
+
+    /** Changes the policy for the current task; the worker reads it before each output. */
+    @PostMapping("/{id}/force-continue")
+    public R<Void> setForceContinue(@PathVariable Long id, @RequestBody ForceContinueReq req) {
+        try {
+            jobService.setForceContinue(id, req != null && Boolean.TRUE.equals(req.getEnabled()));
+            return R.ok();
+        } catch (IllegalArgumentException e) {
+            return R.fail(e.getMessage() == null ? "更新失败处理策略失败" : e.getMessage());
+        }
     }
 
     @GetMapping("/{id}/outputs/{idx}/repair")

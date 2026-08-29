@@ -31,7 +31,7 @@ public class InternetArchiveSourceAdapter implements RemoteSourceAdapter {
         for (JsonNode doc : search.path("response").path("docs")) {
             String identifier = doc.path("identifier").asText("");
             String licenseUrl = doc.path("licenseurl").asText("");
-            if (identifier.isBlank() || !isWhitelistedLicense(licenseUrl)) continue;
+            if (identifier.isBlank()) continue;
             JsonNode metadata = fetcher.get(METADATA + encodePath(identifier));
             if (metadata == null) continue;
             result.addAll(mapMetadata(metadata, type, limit - result.size(), doc.path("title").asText(identifier), licenseUrl, identifier));
@@ -57,7 +57,7 @@ public class InternetArchiveSourceAdapter implements RemoteSourceAdapter {
     }
 
     private List<CrawlerGateway.RemoteItem> mapMetadata(JsonNode metadata, String type, int limit, String title, String licenseUrl, String identifier) {
-        if (metadata == null || limit <= 0 || identifier.isBlank() || !isWhitelistedLicense(licenseUrl)) return List.of();
+        if (metadata == null || limit <= 0 || identifier.isBlank()) return List.of();
         List<CrawlerGateway.RemoteItem> result = new ArrayList<>();
         for (JsonNode file : metadata.path("files")) {
             String name = file.path("name").asText("");
@@ -74,7 +74,7 @@ public class InternetArchiveSourceAdapter implements RemoteSourceAdapter {
             item.setDownloadUrl("https://archive.org/download/" + encodePath(identifier) + "/" + encodePath(name));
             item.setPreviewUrl(item.getDownloadUrl());
             item.setDuration(file.path("length").isNumber() && file.path("length").asDouble() > 0 ? file.path("length").asDouble() : null);
-            item.setLicense(licenseLabel(licenseUrl));
+            item.setLicense(licenseUrl.isBlank() ? "许可未标注，请打开来源页确认" : licenseLabel(licenseUrl));
             item.setLicenseUrl(licenseUrl);
             result.add(item);
             if (result.size() >= limit) break;

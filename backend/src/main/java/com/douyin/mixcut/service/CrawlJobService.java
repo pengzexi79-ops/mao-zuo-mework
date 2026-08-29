@@ -69,6 +69,16 @@ public class CrawlJobService {
         return submitRemoteItems(items, role, "video", folderId);
     }
 
+    @Transactional
+    public CrawlJob submitImageItems(List<CrawlerGateway.RemoteItem> items, String role) {
+        return submitImageItems(items, role, null);
+    }
+
+    @Transactional
+    public CrawlJob submitImageItems(List<CrawlerGateway.RemoteItem> items, String role, Long folderId) {
+        return submitRemoteItems(items, role, "image", folderId);
+    }
+
     private CrawlJob submitRemoteItems(List<CrawlerGateway.RemoteItem> items, String role, String type, Long folderId) {
         List<CrawlerGateway.RemoteItem> clean = new ArrayList<>();
         if (items != null) {
@@ -78,11 +88,11 @@ public class CrawlJobService {
                 if (clean.size() >= MAX_ITEMS) break;
             }
         }
-        if (clean.isEmpty()) throw new IllegalArgumentException("未选择可导入的公开" + ("audio".equals(type) ? "音频" : "视频") + "素材");
+        if (clean.isEmpty()) throw new IllegalArgumentException("未选择可导入的公开" + mediaLabel(type) + "素材");
         if ("audio".equals(type) && !"bgm".equals(role) && !"voice".equals(role)) {
             throw new IllegalArgumentException("公开音频只能导入为背景音乐或人声口播");
         }
-        CrawlJob job = base("公开" + ("audio".equals(type) ? "音频" : "视频") + "素材导入", "remote-" + type, role, clean.size());
+        CrawlJob job = base("公开" + mediaLabel(type) + "素材导入", "remote-" + type, role, clean.size());
         job.setParams(writeJson(Map.of("items", clean.stream().map(this::persistableRemoteItem).toList(), "folderId", folderId == null ? 0L : folderId)));
         CrawlJob saved = jobRepo.save(job);
         transientRemoteItems.put(saved.getId(), List.copyOf(clean));
@@ -142,6 +152,10 @@ public class CrawlJobService {
     }
 
     private String writeJson(Object value) { try { return om.writeValueAsString(value); } catch(Exception e) { throw new IllegalArgumentException("任务参数无法保存"); } }
+
+    private String mediaLabel(String type) {
+        return "audio".equals(type) ? "音频" : "video".equals(type) ? "视频" : "图片";
+    }
 
     private void dispatch(Long id) { if (id == null || !dispatched.add(id)) return; try { crawlExecutor.execute(() -> { try { run(id); } finally { dispatched.remove(id); cancelled.remove(id); } }); } catch (RuntimeException e) { dispatched.remove(id); log.warn("crawl dispatch failed", e); } }
 

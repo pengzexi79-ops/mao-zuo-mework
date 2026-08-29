@@ -19,3 +19,7 @@ PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 SET @has_qcjson := (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'job_output' AND COLUMN_NAME = 'qc_json');
 SET @sql := IF(@has_qcjson = 0, 'ALTER TABLE job_output ADD COLUMN qc_json TEXT', 'SELECT 1');
 PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @has_forced_continue := (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'job_output' AND COLUMN_NAME = 'forced_continue');
+SET @sql := IF(@has_forced_continue = 0, 'ALTER TABLE job_output ADD COLUMN forced_continue TINYINT(1) NOT NULL DEFAULT 0', 'SELECT 1');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;

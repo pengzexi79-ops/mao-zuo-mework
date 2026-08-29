@@ -96,6 +96,26 @@ class CrawlerGatewayLicensePolicyTest {
         assertFalse(CrawlerGateway.isWhitelistedLicense("Standard YouTube License"));
     }
 
+    @Test
+    void unattendedAutoFillRequiresApprovedSourceLicenseAndDownloadUrl() {
+        CrawlerGateway.RemoteItem valid = new CrawlerGateway.RemoteItem();
+        valid.setSource("wikimedia");
+        valid.setType("video");
+        valid.setTitle("food b-roll.mp4");
+        valid.setDownloadUrl("https://upload.wikimedia.org/food.mp4");
+        valid.setLicense("CC BY 4.0");
+        assertTrue(gateway.isAutoFillEligible(valid));
+
+        valid.setLicense("CC BY-SA 4.0");
+        assertFalse(gateway.isAutoFillEligible(valid));
+        valid.setLicense("CC BY 4.0");
+        valid.setSource("openverse");
+        assertFalse(gateway.isAutoFillEligible(valid));
+        valid.setSource("wikimedia");
+        valid.setDownloadUrl("");
+        assertFalse(gateway.isAutoFillEligible(valid));
+    }
+
     // ---------------------------------------------------------------
     //  Actionable license metadata
     // ---------------------------------------------------------------

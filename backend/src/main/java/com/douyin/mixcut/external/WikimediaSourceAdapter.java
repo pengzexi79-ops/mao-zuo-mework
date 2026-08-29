@@ -30,7 +30,10 @@ public class WikimediaSourceAdapter implements RemoteSourceAdapter {
     public String sourceKey() { return "wikimedia"; }
 
     @Override
-    public boolean supports(String type) { return "audio".equalsIgnoreCase(type) || "video".equalsIgnoreCase(type); }
+    public boolean supports(String type) {
+        return "audio".equalsIgnoreCase(type) || "video".equalsIgnoreCase(type)
+                || "image".equalsIgnoreCase(type);
+    }
 
     @Override
     public List<CrawlerGateway.RemoteItem> search(String keyword, String type, int limit, JsonFetcher fetcher) {
@@ -50,7 +53,7 @@ public class WikimediaSourceAdapter implements RemoteSourceAdapter {
                 + "&prop=imageinfo&iiprop=url%7Cextmetadata";
     }
 
-    /** Map a MediaWiki API response through the same license and placeholder rules. */
+    /** Map search results; license is shown to the user and auto-fill filters it later. */
     List<CrawlerGateway.RemoteItem> mapResponse(JsonNode root, String type, int limit) {
         if (!supports(type) || root == null || !root.path("query").path("pages").isArray()) return List.of();
         List<CrawlerGateway.RemoteItem> result = new ArrayList<>();
@@ -60,7 +63,7 @@ public class WikimediaSourceAdapter implements RemoteSourceAdapter {
             String license = info.path("extmetadata").path("LicenseShortName").path("value").asText("");
             if (license.isBlank()) license = info.path("extmetadata").path("License").path("value").asText("");
             String title = page.path("title").asText("");
-            if (download.isBlank() || !isWhitelistedLicense(license) || isPlaceholder(title)) continue;
+            if (download.isBlank() || isPlaceholder(title)) continue;
             CrawlerGateway.RemoteItem item = new CrawlerGateway.RemoteItem();
             item.setSource(sourceKey());
             item.setType(type.toLowerCase(Locale.ROOT));

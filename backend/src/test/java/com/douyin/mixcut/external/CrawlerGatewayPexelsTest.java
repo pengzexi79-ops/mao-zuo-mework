@@ -37,6 +37,31 @@ class CrawlerGatewayPexelsTest {
     }
 
     @Test
+    void imageSearchReusesPexelsCredentialAndReturnsConfigurationNotice() {
+        List<CrawlerGateway.RemoteItem> out = gateway.searchImage("pexels", "产品背景", 5);
+
+        assertEquals(1, out.size());
+        assertTrue(out.get(0).isNotice());
+        assertEquals("image", gateway.supportsImageSource("pexels") ? "image" : "");
+        assertEquals("APP_PEXELS_API_KEY", out.get(0).getConfigKey());
+    }
+
+    @Test
+    void mapsPexelsImageWithPreviewAndLicenseMetadata() throws Exception {
+        JsonNode photo = om.readTree("""
+                {"id":123,"url":"https://www.pexels.com/photo/123/","photographer":"A Photographer",
+                 "src":{"large2x":"https://images.pexels.com/photo/large.jpg","medium":"https://images.pexels.com/photo/medium.jpg"}}
+                """);
+
+        CrawlerGateway.RemoteItem item = CrawlerGateway.mapPexelsImage(photo);
+
+        assertEquals("image", item.getType());
+        assertEquals("https://images.pexels.com/photo/large.jpg", item.getDownloadUrl());
+        assertEquals("https://images.pexels.com/photo/medium.jpg", item.getPreviewUrl());
+        assertEquals("Pexels License (免费商用)", item.getLicense());
+    }
+
+    @Test
     void searchUrlClampsPerPageToApiBounds() {
         assertTrue(gateway.pexelsSearchUrl("风景", 1).contains("per_page=3"), "per_page 下限 3");
         assertTrue(gateway.pexelsSearchUrl("风景", 200).contains("per_page=80"), "per_page 上限 80");

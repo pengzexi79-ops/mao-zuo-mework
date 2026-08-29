@@ -18,6 +18,7 @@ import java.net.Inet6Address;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.Proxy;
+import java.net.ProxySelector;
 import java.net.Socket;
 
 import java.net.URI;
@@ -33,6 +34,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -61,19 +64,27 @@ public class CrawlerGateway {
     private final ProcRunner runner;
     private final WikimediaSourceAdapter wikimediaAdapter;
     private final InternetArchiveSourceAdapter archiveAdapter;
+    private final OpenverseSourceAdapter openverseAdapter;
     private final ObjectMapper om = new ObjectMapper();
 
     public CrawlerGateway(AppProps props, ProcRunner runner) {
-        this(props, runner, new WikimediaSourceAdapter(), new InternetArchiveSourceAdapter());
+        this(props, runner, new WikimediaSourceAdapter(), new InternetArchiveSourceAdapter(), new OpenverseSourceAdapter());
     }
 
     @Autowired
     public CrawlerGateway(AppProps props, ProcRunner runner, WikimediaSourceAdapter wikimediaAdapter,
-                          InternetArchiveSourceAdapter archiveAdapter) {
+                          InternetArchiveSourceAdapter archiveAdapter, OpenverseSourceAdapter openverseAdapter) {
         this.props = props;
         this.runner = runner;
         this.wikimediaAdapter = wikimediaAdapter;
         this.archiveAdapter = archiveAdapter;
+        this.openverseAdapter = openverseAdapter;
+    }
+
+    /** Backward-compatible constructor for integrations that provide the two legacy adapters. */
+    public CrawlerGateway(AppProps props, ProcRunner runner, WikimediaSourceAdapter wikimediaAdapter,
+                          InternetArchiveSourceAdapter archiveAdapter) {
+        this(props, runner, wikimediaAdapter, archiveAdapter, new OpenverseSourceAdapter());
     }
 
     private static final String UA =
@@ -82,6 +93,7 @@ public class CrawlerGateway {
     private static final char[] HEX = "0123456789ABCDEF".toCharArray();
     /** Auto-fill lookups must fail promptly when a public index is blocked by the local network. */
     private static final ThreadLocal<Boolean> QUICK_PUBLIC_SEARCH = ThreadLocal.withInitial(() -> false);
+    private static final long DEFAULT_SOURCE_WAIT_SECONDS = 8;
 
     @Data
     public static class RemoteItem {
@@ -124,6 +136,12 @@ public class CrawlerGateway {
         RemoteItem it = notice(source, msg);
         it.setAuthUrl(authUrl);
         it.setConfigKey(configKey);
+        return it;
+    }
+
+    private static RemoteItem imageNotice(String source, String msg, String authUrl, String configKey) {
+        RemoteItem it = notice(source, msg, authUrl, configKey);
+        it.setType("image");
         return it;
     }
 
@@ -340,37 +358,83 @@ public class CrawlerGateway {
     public List<RemoteItem> searchAudio(String source, String keyword, int limit, Project project) {
         List<RemoteItem> out = new ArrayList<>();
         String s = source == null ? "all" : source.toLowerCase();
-        String mappedKeyword = String.join(" ", audioTerms(keyword));
-        try {
-            if (s.equals("all") || s.equals("freesound")) out.addAll(freesound(mappedKeyword, limit));
-            if (s.equals("all") || s.equals("mixkit")) out.addAll(mixkit(keyword, limit));
-            if (s.equals("all") || s.equals("wikimedia")) out.addAll(wikimedia(mappedKeyword, limit));
-            if (s.equals("all") || s.equals("archive")) out.addAll(internetArchive(mappedKeyword, limit));
-            if (s.equals("tosound")) {
-                // toSound 当前公开搜索页不要求应用代登录；只解析公开页面里的媒体地址。
-                out.addAll(publicSiteSearch(s, keyword, limit));
-            } else if (s.equals("ear0")) {
-                if (!props.isAllowLoginCrawl()) {
-                    RemoteItem tip = notice(s,
-                            "[已按合规策略关闭] " + s + " 需要登录态。请先确认官方授权，再按页面说明配置 APP_ALLOW_LOGIN_CRAWL=true；应用不会读取 Cookie 或密码。",
-                            "https://www.ear0.com/", "APP_ALLOW_LOGIN_CRAWL");
-                    tip.setLicense("blocked");
-                    out.add(tip);
-                } else {
-                    out.addAll(loginSiteSearch(s, keyword, limit));
-                }
+        String publicSourceKeyword = publicVideoSearchKeyword(keyword);
+        if (s.equals("all")) {
+            List<SourceSearch> searches = new ArrayList<>();
+            if (!isBlank(props.getFreesoundApiKey())) searches.add(search("freesound", () -> freesound(publicSourceKeyword, limit)));
+            searches.add(search("mixkit", () -> mixkit(keyword, limit)));
+            searches.add(search("wikimedia", () -> wikimedia(publicSourceKeyword, limit)));
+            searches.add(search("archive", () -> internetArchive(publicSourceKeyword, limit)));
+            searches.add(search("openverse", () -> openverse(publicSourceKeyword, limit)));
+            searches.add(search("tosound", () -> publicSiteSearch("tosound", keyword, limit)));
+            out.addAll(searchAll(searches));
+        } else if (s.equals("freesound")) {
+            if (isBlank(props.getFreesoundApiKey())) out.add(notice("freesound",
+                    "[未配置] Freesound 需要 API Key：打开官方申请页，配置 APP_FREESOUND_API_KEY 后重启后端。",
+                    "https://freesound.org/apiv2/apply/", "APP_FREESOUND_API_KEY"));
+            else appendSearchResults(out, "freesound", () -> freesound(publicSourceKeyword, limit));
+        } else if (s.equals("mixkit")) {
+            appendSearchResults(out, "mixkit", () -> mixkit(keyword, limit));
+        } else if (s.equals("wikimedia")) {
+            appendSearchResults(out, "wikimedia", () -> wikimedia(publicSourceKeyword, limit));
+        } else if (s.equals("archive")) {
+            appendSearchResults(out, "archive", () -> internetArchive(publicSourceKeyword, limit));
+        } else if (s.equals("openverse")) {
+            appendSearchResults(out, "openverse", () -> openverse(publicSourceKeyword, limit));
+        } else if (s.equals("tosound")) {
+            // toSound 当前公开搜索页不要求应用代登录；只解析公开页面里的媒体地址。
+            appendSearchResults(out, "tosound", () -> publicSiteSearch("tosound", keyword, limit));
+        } else if (s.equals("ear0")) {
+            if (!props.isAllowLoginCrawl()) {
+                RemoteItem tip = notice(s,
+                        "[已按合规策略关闭] " + s + " 需要登录态。请先确认官方授权，再按页面说明配置 APP_ALLOW_LOGIN_CRAWL=true；应用不会读取 Cookie 或密码。",
+                        "https://www.ear0.com/", "APP_ALLOW_LOGIN_CRAWL");
+                tip.setLicense("blocked");
+                out.add(tip);
+            } else {
+                appendSearchResults(out, "ear0", () -> loginSiteSearch(s, keyword, limit));
             }
+        }
 
-            // 缺 Key 时给出可见提示，而不是静默返回空列表让用户以为"搜不到"
-            boolean wantFreesound = s.equals("all") || s.equals("freesound");
-            if (wantFreesound && isBlank(props.getFreesoundApiKey())) {
-                out.add(notice("freesound",
-                        "[未配置] Freesound 需要 API Key：打开官方申请页，配置 APP_FREESOUND_API_KEY 后重启后端。",
-                        "https://freesound.org/apiv2/apply/", "APP_FREESOUND_API_KEY"));
-            }
-        } catch (Exception e) {
-            log.warn("searchAudio failed: {}", safeUrlError(e));
-            out.add(notice(s, "[检索失败] " + e.getClass().getSimpleName() + ": " + safeUrlError(e)));
+        return rankForProject(out, keyword, project, limit * 3);
+    }
+
+    /** Search image sources through their official APIs and return importable image URLs. */
+    public List<RemoteItem> searchImage(String source, String keyword, int limit) {
+        return searchImage(source, keyword, limit, null);
+    }
+
+    public List<RemoteItem> searchImage(String source, String keyword, int limit, Project project) {
+        List<RemoteItem> out = new ArrayList<>();
+        String s = source == null ? "all" : source.toLowerCase(Locale.ROOT);
+        String publicSourceKeyword = publicVideoSearchKeyword(keyword);
+        if (s.equals("all")) {
+            List<SourceSearch> searches = new ArrayList<>();
+            searches.add(search("openverse", () -> openverse(publicSourceKeyword, limit, "image")));
+            searches.add(search("wikimedia", () -> wikimedia(publicSourceKeyword, limit, "image")));
+            if (!isBlank(props.getPixabayApiKey())) searches.add(search("pixabay", () -> pixabayImages(publicSourceKeyword, limit)));
+            if (!isBlank(props.getPexelsApiKey())) searches.add(search("pexels", () -> pexelsImages(publicSourceKeyword, limit)));
+            if (!isBlank(props.getUnsplashApiKey())) searches.add(search("unsplash", () -> unsplashImages(publicSourceKeyword, limit)));
+            out.addAll(searchAll(searches));
+        } else if (s.equals("openverse")) {
+            appendSearchResults(out, "openverse", () -> openverse(publicSourceKeyword, limit, "image"));
+        } else if (s.equals("wikimedia")) {
+            appendSearchResults(out, "wikimedia", () -> wikimedia(publicSourceKeyword, limit, "image"));
+        } else if (s.equals("pixabay")) {
+            if (isBlank(props.getPixabayApiKey())) {
+                out.add(imageNotice("pixabay", "[未配置] Pixabay 图片检索需要 API Key：打开官方文档并在能力中心配置后重启后端。",
+                        "https://pixabay.com/api/docs/", "APP_PIXABAY_API_KEY"));
+            } else appendSearchResults(out, "pixabay", () -> pixabayImages(publicSourceKeyword, limit));
+        } else if (s.equals("pexels")) {
+            if (isBlank(props.getPexelsApiKey())) {
+                out.add(imageNotice("pexels", "[未配置] Pexels 图片检索需要 API Key：打开官方申请页并在能力中心配置后重启后端。",
+                        "https://www.pexels.com/api/", "APP_PEXELS_API_KEY"));
+            } else appendSearchResults(out, "pexels", () -> pexelsImages(publicSourceKeyword, limit));
+        } else if (s.equals("unsplash")) {
+            if (isBlank(props.getUnsplashApiKey())) {
+                out.add(imageNotice("unsplash", "[未配置] Unsplash 图片检索需要 Access Key：请在能力中心配置后重启后端。",
+                        "https://unsplash.com/developers", "APP_UNSPLASH_API_KEY"));
+            } else appendSearchResults(out, "unsplash", () -> unsplashImages(publicSourceKeyword, limit));
         }
         return rankForProject(out, keyword, project, limit * 3);
     }
@@ -396,38 +460,73 @@ public class CrawlerGateway {
     public List<RemoteItem> searchVideo(String source, String keyword, int limit, Project project) {
         List<RemoteItem> out = new ArrayList<>();
         String s = source == null ? "all" : source.toLowerCase(Locale.ROOT);
-        String mappedKeyword = String.join(" ", videoTerms(keyword));
         // Commons and Archive have predominantly English metadata. Keep the original keyword for
         // relevance ranking, but query their public indexes with a compact mapped intent phrase.
         String publicSourceKeyword = publicVideoSearchKeyword(keyword);
-        try {
-            if (s.equals("all") || s.equals("pixabay")) {
-                if (isBlank(props.getPixabayApiKey())) {
-                    if (s.equals("pixabay")) {
-                        out.add(notice("pixabay", "[未配置] Pixabay 视频检索需要 API Key：打开官方文档，配置 APP_PIXABAY_API_KEY 后重启后端。",
-                                "https://pixabay.com/api/docs/", "APP_PIXABAY_API_KEY"));
-                    }
-                } else {
-                    out.addAll(pixabay(mappedKeyword, limit));
-                }
-            }
-            if (s.equals("all") || s.equals("pexels")) {
-                if (isBlank(props.getPexelsApiKey())) {
-                    if (s.equals("pexels")) {
-                        out.add(notice("pexels", "[未配置] Pexels 视频检索需要 API Key：打开官方申请页，配置 APP_PEXELS_API_KEY 后重启后端。",
-                                "https://www.pexels.com/api/", "APP_PEXELS_API_KEY"));
-                    }
-                } else {
-                    out.addAll(pexels(mappedKeyword, limit));
-                }
-            }
-            if (s.equals("all") || s.equals("wikimedia")) out.addAll(wikimedia(publicSourceKeyword, limit, "video"));
-            if (s.equals("all") || s.equals("archive")) out.addAll(internetArchive(publicSourceKeyword, limit, "video"));
-        } catch (Exception e) {
-            log.warn("searchVideo failed: {}", safeUrlError(e));
-            out.add(notice(s, "[检索失败] " + e.getClass().getSimpleName() + ": " + safeUrlError(e)));
+        if (s.equals("all")) {
+            List<SourceSearch> searches = new ArrayList<>();
+            if (!isBlank(props.getPixabayApiKey())) searches.add(search("pixabay", () -> pixabay(publicSourceKeyword, limit)));
+            if (!isBlank(props.getPexelsApiKey())) searches.add(search("pexels", () -> pexels(publicSourceKeyword, limit)));
+            searches.add(search("wikimedia", () -> wikimedia(publicSourceKeyword, limit, "video")));
+            searches.add(search("archive", () -> internetArchive(publicSourceKeyword, limit, "video")));
+            out.addAll(searchAll(searches));
+        } else if (s.equals("pixabay")) {
+            if (isBlank(props.getPixabayApiKey())) {
+                out.add(notice("pixabay", "[未配置] Pixabay 视频检索需要 API Key：打开官方文档，配置 APP_PIXABAY_API_KEY 后重启后端。",
+                        "https://pixabay.com/api/docs/", "APP_PIXABAY_API_KEY"));
+            } else appendSearchResults(out, "pixabay", () -> pixabay(publicSourceKeyword, limit));
+        } else if (s.equals("pexels")) {
+            if (isBlank(props.getPexelsApiKey())) {
+                out.add(notice("pexels", "[未配置] Pexels 视频检索需要 API Key：打开官方申请页，配置 APP_PEXELS_API_KEY 后重启后端。",
+                        "https://www.pexels.com/api/", "APP_PEXELS_API_KEY"));
+            } else appendSearchResults(out, "pexels", () -> pexels(publicSourceKeyword, limit));
+        } else if (s.equals("wikimedia")) {
+            appendSearchResults(out, "wikimedia", () -> wikimedia(publicSourceKeyword, limit, "video"));
+        } else if (s.equals("archive")) {
+            appendSearchResults(out, "archive", () -> internetArchive(publicSourceKeyword, limit, "video"));
         }
         return rankForProject(out, keyword, project, limit * 3);
+    }
+
+    private record SourceSearch(String source, java.util.function.Supplier<List<RemoteItem>> call) { }
+
+    private SourceSearch search(String source, java.util.function.Supplier<List<RemoteItem>> call) {
+        return new SourceSearch(source, call);
+    }
+
+    /** The default pool queries only connected sources concurrently and retains source ordering in the response. */
+    private List<RemoteItem> searchAll(List<SourceSearch> searches) {
+        List<CompletableFuture<List<RemoteItem>>> futures = searches.stream()
+                .map(source -> CompletableFuture.supplyAsync(() -> searchSource(source, false))
+                        .completeOnTimeout(List.of(notice(source.source(),
+                                "[检索超时] 当前来源响应超过 " + DEFAULT_SOURCE_WAIT_SECONDS + " 秒；其他来源结果已保留。")),
+                                DEFAULT_SOURCE_WAIT_SECONDS, TimeUnit.SECONDS))
+                .toList();
+        List<RemoteItem> rows = new ArrayList<>();
+        for (CompletableFuture<List<RemoteItem>> future : futures) rows.addAll(future.join());
+        return rows;
+    }
+
+    /** A failed provider must become one visible provider notice, not abort the remaining sources. */
+    private void appendSearchResults(List<RemoteItem> target, String source,
+                                      java.util.function.Supplier<List<RemoteItem>> search) {
+        target.addAll(searchSource(search(source, search), true));
+    }
+
+    private List<RemoteItem> searchSource(SourceSearch source, boolean includeEmptyNotice) {
+        try {
+            List<RemoteItem> rows = source.call().get();
+            if (rows != null && !rows.isEmpty()) {
+                return rows;
+            }
+            if (includeEmptyNotice) {
+                return List.of(notice(source.source(), "[无结果] 当前来源没有返回可用条目；可换关键词、切换来源或打开官方页面确认。"));
+            }
+            return List.of();
+        } catch (Exception e) {
+            log.warn("search source {} failed: {}", source.source(), safeUrlError(e));
+            return List.of(notice(source.source(), "[检索失败] " + safeUrlError(e) + "；其他来源仍可继续使用"));
+        }
     }
 
     /**
@@ -440,15 +539,16 @@ public class CrawlerGateway {
             throw new IllegalArgumentException("请选择真实的公开素材条目，而不是来源提示");
         }
         String type = expectedType == null ? "" : expectedType.trim().toLowerCase(Locale.ROOT);
-        if (!"audio".equals(type) && !"video".equals(type)) {
-            throw new IllegalArgumentException("不支持的公开素材类型");
-        }
+        if (!Set.of("audio", "video", "image").contains(type)) throw new IllegalArgumentException("不支持的公开素材类型");
         if (!type.equalsIgnoreCase(item.getType())) {
             throw new IllegalArgumentException("公开素材类型与导入任务不一致");
         }
         String source = item.getSource() == null ? "" : item.getSource().trim().toLowerCase(Locale.ROOT);
-        if (!("audio".equals(type) ? supportsAudioSource(source) : supportsVideoSource(source))) {
-            throw new IllegalArgumentException("该来源当前未接入受控" + ("audio".equals(type) ? "音频" : "视频") + "导入");
+        boolean supported = "audio".equals(type) ? supportsAudioSource(source)
+                : "video".equals(type) ? supportsVideoSource(source) : supportsImageSource(source);
+        if (!supported) {
+            String label = "audio".equals(type) ? "音频" : "video".equals(type) ? "视频" : "图片";
+            throw new IllegalArgumentException("该来源当前未接入受控" + label + "导入");
         }
         if ("notice".equalsIgnoreCase(item.getLicense()) || "blocked".equalsIgnoreCase(item.getLicense())) {
             throw new IllegalArgumentException("该条目不是可导入的公开媒体");
@@ -459,12 +559,85 @@ public class CrawlerGateway {
         return item;
     }
 
+    /**
+     * Determines whether an item may be queued by unattended material auto-fill.
+     * Manual search results are intentionally broader, but unattended imports must
+     * have a known public source, a real download URL, and an explicit reusable
+     * license. Keeping this policy here prevents each caller from drifting.
+     */
+    public boolean isAutoFillEligible(RemoteItem item) {
+        if (item == null || item.isNotice()) return false;
+        String source = item.getSource() == null ? "" : item.getSource().trim().toLowerCase(Locale.ROOT);
+        if (!Set.of("wikimedia", "archive", "pixabay", "pexels").contains(source)) return false;
+        if (isBlank(item.getDownloadUrl()) || !isWhitelistedLicense(item.getLicense())) return false;
+        try {
+            UrlGuard.validate(item.getDownloadUrl());
+        } catch (RuntimeException ex) {
+            return false;
+        }
+        return !isDemoPlaceholderTitle(item.getTitle());
+    }
+
     public boolean supportsAudioSource(String source) {
-        return Set.of("freesound", "mixkit", "wikimedia", "archive", "tosound", "ear0").contains(source);
+        return Set.of("freesound", "mixkit", "wikimedia", "archive", "openverse", "tosound", "ear0").contains(source);
     }
 
     public boolean supportsVideoSource(String source) {
         return Set.of("pixabay", "pexels", "wikimedia", "archive").contains(source);
+    }
+
+    public boolean supportsImageSource(String source) {
+        return Set.of("pixabay", "pexels", "wikimedia", "openverse", "unsplash").contains(source);
+    }
+
+    /** Unsplash search through the official API. The Access Key is sent only as a header. */
+    private List<RemoteItem> unsplashImages(String kw, int limit) {
+        List<RemoteItem> list = new ArrayList<>();
+        String key = props.getUnsplashApiKey();
+        if (isBlank(key)) return list;
+        HttpResult response = httpGet(unsplashSearchUrl(kw, limit), "Client-ID " + key);
+        if (response.body() == null || response.body().isBlank()) {
+            if (response.code() > 0) list.add(imageNotice("unsplash",
+                    "[检索失败] Unsplash API 请求失败（HTTP " + response.code() + "）：请检查 Access Key、配额或官方服务状态。",
+                    "https://unsplash.com/developers", "APP_UNSPLASH_API_KEY"));
+            return list;
+        }
+        try {
+            JsonNode root = om.readTree(response.body());
+            for (JsonNode photo : root.path("results")) {
+                RemoteItem item = mapUnsplashImage(photo);
+                if (item != null && !isBlank(item.getDownloadUrl())) list.add(item);
+                if (list.size() >= limit) break;
+            }
+        } catch (Exception e) {
+            log.warn("Unsplash API response could not be parsed");
+        }
+        return list;
+    }
+
+    String unsplashSearchUrl(String keyword, int limit) {
+        return "https://api.unsplash.com/search/photos?query=" + enc(keyword)
+                + "&per_page=" + Math.min(30, Math.max(1, limit)) + "&content_filter=high";
+    }
+
+    static RemoteItem mapUnsplashImage(JsonNode photo) {
+        if (photo == null || !photo.isObject()) return null;
+        JsonNode urls = photo.path("urls");
+        String download = urls.path("full").asText(urls.path("regular").asText(""));
+        if (isBlank(download)) return null;
+        RemoteItem item = new RemoteItem();
+        item.setSource("unsplash");
+        item.setType("image");
+        String description = photo.path("alt_description").asText(photo.path("description").asText(""));
+        String name = photo.path("user").path("name").asText("");
+        item.setTitle((description.isBlank() ? "Unsplash 图片" : description) + (name.isBlank() ? "" : " · " + name));
+        item.setPageUrl(photo.path("links").path("html").asText("https://unsplash.com/"));
+        item.setDownloadUrl(download);
+        item.setPreviewUrl(urls.path("small").asText(urls.path("thumb").asText(download)));
+        item.setTags(name);
+        item.setLicense("Unsplash License（请遵守 API 使用与署名要求）");
+        item.setLicenseUrl("https://unsplash.com/license");
+        return item;
     }
 
     private List<RemoteItem> pixabay(String kw, int limit) {
@@ -487,6 +660,32 @@ public class CrawlerGateway {
             it.setDuration(h.path("duration").asDouble(0));
             it.setLicense("Pixabay Content License (免费商用)");
             if (!it.getDownloadUrl().isBlank()) list.add(it);
+        }
+        return list;
+    }
+
+    /** Pixabay image API: the user's own key is reused from the video source configuration. */
+    private List<RemoteItem> pixabayImages(String kw, int limit) {
+        List<RemoteItem> list = new ArrayList<>();
+        String key = props.getPixabayApiKey();
+        if (isBlank(key)) return list;
+        String url = "https://pixabay.com/api/?key=" + key + "&q=" + enc(kw)
+                + "&image_type=photo&safe_search=true&per_page=" + Math.min(50, Math.max(3, limit));
+        JsonNode root = getJson(url);
+        if (root == null) return list;
+        for (JsonNode hit : root.path("hits")) {
+            RemoteItem it = new RemoteItem();
+            it.setSource("pixabay");
+            it.setType("image");
+            it.setTitle(hit.path("tags").asText("Pixabay 图片 #" + hit.path("id").asInt()));
+            it.setPageUrl(hit.path("pageURL").asText("https://pixabay.com/images/"));
+            it.setDownloadUrl(hit.path("largeImageURL").asText(hit.path("webformatURL").asText("")));
+            it.setPreviewUrl(hit.path("webformatURL").asText(it.getDownloadUrl()));
+            it.setTags(hit.path("tags").asText(""));
+            it.setLicense("Pixabay Content License (免费商用)");
+            it.setLicenseUrl("https://pixabay.com/service/license-summary/");
+            if (!isBlank(it.getDownloadUrl())) list.add(it);
+            if (list.size() >= limit) break;
         }
         return list;
     }
@@ -529,6 +728,51 @@ public class CrawlerGateway {
             if (list.size() >= limit) break;
         }
         return list;
+    }
+
+    /** Pexels image API reuses the same official key as its video API. */
+    private List<RemoteItem> pexelsImages(String kw, int limit) {
+        List<RemoteItem> list = new ArrayList<>();
+        String key = props.getPexelsApiKey();
+        if (isBlank(key)) return list;
+        HttpResult r = httpGet(pexelsImageSearchUrl(kw, limit), key);
+        if (r.body() == null || r.body().isBlank()) {
+            RemoteItem err = pexelsErrorNotice(r.code());
+            if (err != null) list.add(err);
+            return list;
+        }
+        final JsonNode root;
+        try { root = om.readTree(r.body()); }
+        catch (Exception e) { log.warn("Pexels image API response could not be parsed"); return list; }
+        for (JsonNode photo : root.path("photos")) {
+            RemoteItem it = mapPexelsImage(photo);
+            if (it != null && !isBlank(it.getDownloadUrl())) list.add(it);
+            if (list.size() >= limit) break;
+        }
+        return list;
+    }
+
+    String pexelsImageSearchUrl(String kw, int limit) {
+        return "https://api.pexels.com/v1/search?query=" + enc(kw)
+                + "&per_page=" + Math.min(80, Math.max(3, limit)) + "&orientation=portrait";
+    }
+
+    static RemoteItem mapPexelsImage(JsonNode photo) {
+        if (photo == null || !photo.isObject()) return null;
+        RemoteItem it = new RemoteItem();
+        it.setSource("pexels");
+        it.setType("image");
+        long id = photo.path("id").asLong(0);
+        String photographer = photo.path("photographer").asText("");
+        it.setTitle((photographer.isBlank() ? "Pexels 图片" : "Pexels 图片 · " + photographer) + " #" + id);
+        it.setPageUrl(photo.path("url").asText("https://www.pexels.com/"));
+        JsonNode src = photo.path("src");
+        it.setDownloadUrl(src.path("large2x").asText(src.path("large").asText(src.path("original").asText(""))));
+        it.setPreviewUrl(src.path("medium").asText(src.path("small").asText(it.getDownloadUrl())));
+        it.setTags(photographer);
+        it.setLicense("Pexels License (免费商用)");
+        it.setLicenseUrl("https://www.pexels.com/license/");
+        return it;
     }
 
     /** 构建 Pexels 官方检索 URL（包内可见以便聚焦单测锁定参数与编码）。 */
@@ -646,6 +890,15 @@ public class CrawlerGateway {
             if (!prev.isBlank()) list.add(it);
         }
         return list;
+    }
+
+    /** Openverse provides an official anonymous API for openly licensed audio. */
+    private List<RemoteItem> openverse(String kw, int limit) {
+        return openverse(kw, limit, "audio");
+    }
+
+    private List<RemoteItem> openverse(String kw, int limit, String type) {
+        return openverseAdapter.search(kw, type, limit, this::getJson);
     }
 
     /** Wikimedia Commons：仅检索白名单许可媒体，下载仍统一走 UrlGuard + downloadTo。 */
@@ -797,11 +1050,6 @@ public class CrawlerGateway {
         terms.add(clean);
         AUDIO_INTENTS.forEach((zh, mapped) -> { if (clean.contains(zh)) terms.addAll(mapped); });
         return terms.stream().distinct().toList();
-    }
-
-    /** Pixabay accepts free-text video queries; reuse the same Chinese intent expansion. */
-    private List<String> videoTerms(String keyword) {
-        return audioTerms(keyword);
     }
 
     /**
@@ -991,7 +1239,8 @@ public class CrawlerGateway {
                     "URL_GUARD_REJECTED", it.getSource(), null);
         }
         String ext = extOf(downloadUrl);
-        if (ext.isBlank()) ext = "audio".equals(it.getType()) ? ".mp3" : ".mp4";
+        if (ext.isBlank()) ext = "audio".equalsIgnoreCase(it.getType()) ? ".mp3"
+                : "image".equalsIgnoreCase(it.getType()) ? ".jpg" : ".mp4";
         String base = safeName(it.getTitle() == null ? "material" : it.getTitle());
         if (base.length() > 48) base = base.substring(0, 48);
         Path dst = props.downloads().resolve(System.currentTimeMillis() + "_" + base + ext);
@@ -1090,11 +1339,17 @@ public class CrawlerGateway {
 
     /** Bounded public-index lookup used by Studio auto-fill; a blocked source must not stall preparation. */
     private JsonNode getJsonQuick(String url) {
-        return getJson(url, 8000);
+        return getJson(url, 2500);
     }
 
     private JsonNode getJson(String url, int readTimeoutMs) {
         HttpResult result = httpGet(url, null, readTimeoutMs);
+        if (result.code() >= 300) {
+            throw new IllegalStateException("来源返回 HTTP " + result.code() + "，请稍后重试或切换来源");
+        }
+        if (result.code() < 0 && result.body() == null) {
+            throw new IllegalStateException("来源网络不可达，请检查网络代理或切换来源");
+        }
         String s = result.body();
         if (s == null) return null;
         try {
@@ -1292,7 +1547,17 @@ public class CrawlerGateway {
             boolean https = "https".equalsIgnoreCase(scheme);
             String value = https ? firstEnv("HTTPS_PROXY", "https_proxy") : firstEnv("HTTP_PROXY", "http_proxy");
             if (value == null || value.isBlank()) value = firstEnv("HTTP_PROXY", "http_proxy");
-            if (value == null || value.isBlank()) return null;
+            if (value == null || value.isBlank()) {
+                URI target = URI.create(scheme + "://" + host);
+                for (Proxy candidate : ProxySelector.getDefault().select(target)) {
+                    if (candidate != null && candidate.type() != Proxy.Type.DIRECT
+                            && candidate.address() instanceof InetSocketAddress address
+                            && address.getPort() > 0) {
+                        return candidate;
+                    }
+                }
+                return null;
+            }
             String noProxy = firstEnv("NO_PROXY", "no_proxy");
             if (noProxy != null && !noProxy.isBlank() && host != null) {
                 for (String entry : noProxy.split(",")) {
@@ -1341,7 +1606,8 @@ public class CrawlerGateway {
         if (authHeader != null && !authHeader.isBlank()) {
             conn.setRequestProperty("Authorization", authHeader);
         }
-        conn.setConnectTimeout(20000);
+        // Keep quick auto-fill connection setup within its short request budget too.
+        conn.setConnectTimeout(Math.min(20000, Math.max(1000, readTimeoutMs)));
         conn.setReadTimeout(readTimeoutMs);
         conn.setInstanceFollowRedirects(false);
         conn.connect();
@@ -1379,7 +1645,9 @@ public class CrawlerGateway {
         // instead of pinning to candidates[0] only. All candidates pass the same UrlGuard SSRF
         // checks; TLS/SNI/hostname verification still targets the original hostname for each one.
         Exception lastFailure = null;
-        int perCandidateConnectMs = candidates.length > 1 ? 10000 : 20000;
+        int perCandidateConnectMs = candidates.length > 1
+                ? Math.min(10000, Math.max(1000, readTimeoutMs))
+                : Math.min(20000, Math.max(1000, readTimeoutMs));
         for (InetAddress pinned : candidates) {
             String ipLiteral = pinned.getHostAddress();
             if (pinned instanceof Inet6Address) {

@@ -10,7 +10,7 @@
           <el-option label="全部状态" value="all" />
           <el-option label="可发布" value="pass" />
           <el-option label="需复核" value="warn" />
-          <el-option label="已拦截" value="fail" />
+          <el-option label="有误" value="fail" />
           <el-option label="无文件" value="missing" />
         </el-select>
         <el-select v-model="jobFilter" clearable size="small" style="width:200px" placeholder="全部任务">
@@ -49,7 +49,7 @@
               <b>无法播放该成片</b>
               <span>文件可能缺失、被移动或无访问权限，请复制路径核对或刷新后重试。</span>
             </div>
-            <div v-else class="output-blocked muted">该条已被成品质检拦截，未保留可播放文件。</div>
+            <div v-else class="output-blocked muted">该条质检有误，当前没有可播放文件。</div>
           </div>
           <div class="output-info">
             <div class="output-title">{{ o.filePath ? baseName(o.filePath) : `任务 #${o.jobId} 第 ${o.idx} 条质检诊断` }}</div>
@@ -319,7 +319,9 @@ function baseName(fp) {
 }
 function fileUrl(output) {
   if (typeof output === 'object') return output.publicUrl ? api.protectedUrl(output.publicUrl) : (output.fileUrl ? api.protectedUrl(output.fileUrl) : fileUrl(output.filePath))
-  return api.protectedUrl(`/files/output/${baseName(output)}`)
+  const normalized = String(output || '').replace(/\\/g, '/')
+  if (normalized.includes('/qc-candidates/')) return api.protectedUrl(`/files/qc-candidates/${baseName(normalized)}`)
+  return api.protectedUrl(`/files/output/${baseName(normalized)}`)
 }
 function thumbUrl(t) {
   return t ? api.protectedUrl(`/files/thumbs/${baseName(t)}`) : undefined
@@ -338,7 +340,7 @@ function num(v) {
 function qcLabel(status) {
   if (status === 'pass') return '可发布'
   if (status === 'warn') return '建议复核'
-  if (status === 'fail') return '已拦截'
+  if (status === 'fail') return '有误'
   return '未知'
 }
 function qcCategoryLabel(category) {

@@ -42,6 +42,8 @@ class MaterialGapServiceTest {
     void setUp() {
         props = new AppProps();
         gapService = new MaterialGapService(materialRepo, projectRepo, folderRepo, new MixPlanner(), crawler, crawlJobService, props);
+        // The real gateway owns the policy; this mock represents a valid public item by default.
+        lenient().when(crawler.isAutoFillEligible(any(CrawlerGateway.RemoteItem.class))).thenReturn(true);
     }
 
     @AfterEach

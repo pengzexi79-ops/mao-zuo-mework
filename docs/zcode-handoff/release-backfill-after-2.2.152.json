@@ -1,0 +1,166 @@
+[
+  {
+    "version": "2.2.153",
+    "releasedAt": "2026-08-29",
+    "kind": "当前本机构建",
+    "title": "素材库层级交互与安全批量管理",
+    "summary": "修复素材导入弹层的父子层级遮挡，并补齐素材文件夹的可控勾选和安全批量删除。",
+    "changes": [
+      "素材导入与自动识别下拉列表使用独立弹层类并提升显示层级，子级选项可完整显示在遮罩和父容器之上。",
+      "素材文件夹列表增加一键全选、逐项勾选、取消选择和批量删除入口，操作对象始终来自当前明确选择。",
+      "批量删除由后端逐项校验，空文件夹可删除，包含素材或子分类的文件夹会跳过并返回原因。"
+    ],
+    "fixes": [
+      "修复点击自动识别后子级下拉列表被父级弹层裁切或遮挡的问题。",
+      "修复素材文件夹缺少批量管理入口，以及批量操作无法区分可删除与不可删除对象的问题。",
+      "避免通过前端状态误差删除非空文件夹，降低素材和分类结构被误操作的风险。"
+    ],
+    "verification": [
+      "前端 Vite 生产构建和静态资源引用校验通过。",
+      "后端 Maven 测试通过，素材批量删除接口与既有素材管理链路可共同启动。",
+      "浏览器验证素材导入下拉层不再被父级遮挡，未选中项目时不执行批量删除。"
+    ],
+    "compatibility": "不改变素材文件、素材记录和既有文件夹层级；非空文件夹继续受到服务端保护，批量操作仅作用于用户明确勾选的文件夹。",
+    "evidence": [
+      "frontend/src/App.vue",
+      "frontend/src/styles.css",
+      "frontend/src/views/Materials.vue",
+      "frontend/src/api.js",
+      "backend/src/main/java/com/douyin/mixcut/web/MaterialController.java",
+      "git:c0a48e6",
+      "git:d317c4d"
+    ]
+  },
+  {
+    "version": "2.2.154",
+    "releasedAt": "2026-08-29",
+    "kind": "当前本机构建",
+    "title": "持续出片与失败决策闭环",
+    "summary": "从任务冻结参数、连续状态识别到暂停恢复和强制继续，修复持续生成只执行一次或遇错后无法继续的问题。",
+    "changes": [
+      "continuous 和 forceContinue 写入冻结任务快照根级调度字段，固定数量与持续生成保持明确分离。",
+      "任务总控统一覆盖已暂停和等待决策状态，支持从下一条未完成项继续，并阻止重复点击恢复。",
+      "增加全局强制继续开关和单任务开关；forceResume 可跳过当前失败项继续后续出片，失败项仍保留为有误。"
+    ],
+    "fixes": [
+      "修复持续生成参数在 effectiveParams 重建后丢失，导致只生成一次就停止的问题。",
+      "修复连续状态依赖字符串匹配、格式化 JSON 或旧任务快照无法稳定识别的问题。",
+      "修复失败、暂停和等待用户决策时缺少总继续入口，或重复提交恢复请求的问题。"
+    ],
+    "verification": [
+      "JobServiceReliabilityTest 覆盖连续任务根级快照、固定数量隔离和旧 effectiveParams 兼容。",
+      "后端 Maven 测试通过，resume、force-resume 和 force-continue 接口可用。",
+      "浏览器验证持续生成、继续出片、全局强制继续和关闭强制的状态与按钮一致。"
+    ],
+    "compatibility": "兼容旧任务中 effectiveParams.continuous 和 effectiveParams.forceContinue；强制继续不会把失败项标记为成功或可发布，用户可随时关闭该策略。",
+    "evidence": [
+      "backend/src/main/java/com/douyin/mixcut/domain/Job.java",
+      "backend/src/main/java/com/douyin/mixcut/service/JobService.java",
+      "backend/src/main/java/com/douyin/mixcut/web/JobController.java",
+      "backend/src/test/java/com/douyin/mixcut/service/JobServiceReliabilityTest.java",
+      "frontend/src/views/Studio.vue",
+      "frontend/src/api.js"
+    ]
+  },
+  {
+    "version": "2.2.155",
+    "releasedAt": "2026-08-29",
+    "kind": "当前本机构建",
+    "title": "二次剪辑时间线与媒体导入",
+    "summary": "将二次剪辑台补齐为可操作的媒体修订流程，支持视频裁剪、素材和音频导入、候选质检与版本应用。",
+    "changes": [
+      "二次剪辑台增加可视时间线和片段左右拖动手柄，可调整视频入点、出点和实际使用时长。",
+      "支持从素材库选择或本地导入视频、图片、音乐和音频，并在时间线中显示当前音频轨。",
+      "支持生成修订候选、执行完整质检、预览候选、应用通过候选并保留旧版本。",
+      "Web 静态资源映射允许安全预览 cache/qc-candidates 下的候选文件。"
+    ],
+    "fixes": [
+      "修复二次剪辑只能修改参数、无法直接拖动设置片段裁剪范围的问题。",
+      "修复素材视频和音乐缺少统一导入入口、音频状态在编辑过程中不可见的问题。",
+      "修复候选文件已生成但页面无法通过受控文件路径预览和应用的问题。"
+    ],
+    "verification": [
+      "OutputEditorServiceTest 覆盖候选版本应用和旧版本保留。",
+      "OfflineRenderQcAcceptanceTest 覆盖候选输出写入 qc-candidates 目录。",
+      "前端 Vite 生产构建、后端 Maven 测试和候选静态资源映射校验通过。"
+    ],
+    "compatibility": "保留现有输出、版本、QC 和修复数据结构；本次接通的是当前编辑器已有的裁剪与候选流程，不宣称复制完整专业剪辑软件能力。",
+    "evidence": [
+      "frontend/src/views/Editor.vue",
+      "backend/src/main/java/com/douyin/mixcut/service/OutputEditorService.java",
+      "backend/src/main/java/com/douyin/mixcut/web/JobController.java",
+      "backend/src/main/java/com/douyin/mixcut/config/WebConfig.java",
+      "backend/src/test/java/com/douyin/mixcut/service/OutputEditorServiceTest.java",
+      "backend/src/test/java/com/douyin/mixcut/acceptance/OfflineRenderQcAcceptanceTest.java"
+    ]
+  },
+  {
+    "version": "2.2.156",
+    "releasedAt": "2026-08-29",
+    "kind": "当前本机构建",
+    "title": "公开素材智能检索与来源分流",
+    "summary": "从默认来源选择、关键词转换、并行超时、许可证和下载地址解析入手，修复添加大量来源后仍经常检索无结果的问题。",
+    "changes": [
+      "默认 all 检索只调用当前已连接来源；未配置 Key 的 Pixabay、Pexels 和 Unsplash 不再拖慢或污染默认结果。",
+      "多来源并行检索增加逐来源等待上限，单一外部站点超时不会阻塞整个素材搜索。",
+      "中文业务词会转换为适合公共素材站点的检索词，同时保留相关性、来源和许可证信息。",
+      "Openverse、Wikimedia Commons 和 Internet Archive 返回真实可下载地址；指定需 Key 的来源时仍提供明确配置提示。",
+      "修复 Windows 与 JDK 代理环境继承，使应用网络请求与本机可用网络配置保持一致。"
+    ],
+    "fixes": [
+      "修复默认搜索无条件请求未授权来源，导致看似加入很多链接但结果为空或长期卡住的问题。",
+      "修复中文电商和剪辑关键词直接发送到海外公开源后命中率过低的问题。",
+      "修复部分来源只返回官网页面、缺少可下载媒体地址或许可证元数据的问题。",
+      "修复应用进程未继承本机代理配置时外网素材源全部失败的问题。"
+    ],
+    "verification": [
+      "CrawlerGatewayRelevanceTest、CrawlerGatewayLicensePolicyTest、OpenverseSourceAdapterTest 和 WikimediaSourceAdapterTest 通过。",
+      "实测音频 rain 返回真实结果，图片和视频中文业务词检索返回可勾选的 Openverse、Wikimedia 或 Archive 条目。",
+      "浏览器验证图片结果缩略图可加载、可勾选并进入现有批量导入流程。"
+    ],
+    "compatibility": "不读取浏览器 Cookie、账号密码或登录会话；需要授权的官方来源继续使用用户自行配置的 API Key，免 Key 来源按许可证白名单提供结果。",
+    "evidence": [
+      "backend/src/main/java/com/douyin/mixcut/external/CrawlerGateway.java",
+      "backend/src/main/java/com/douyin/mixcut/external/OpenverseSourceAdapter.java",
+      "backend/src/main/java/com/douyin/mixcut/external/WikimediaSourceAdapter.java",
+      "backend/src/main/java/com/douyin/mixcut/external/InternetArchiveSourceAdapter.java",
+      "backend/src/main/java/com/douyin/mixcut/web/CrawlController.java",
+      "frontend/src/views/Crawl.vue",
+      "backend/src/test/java/com/douyin/mixcut/external/CrawlerGatewayRelevanceTest.java",
+      "backend/src/test/java/com/douyin/mixcut/external/CrawlerGatewayLicensePolicyTest.java",
+      "backend/src/test/java/com/douyin/mixcut/external/OpenverseSourceAdapterTest.java"
+    ]
+  },
+  {
+    "version": "2.2.157",
+    "releasedAt": "2026-08-29",
+    "kind": "当前本机构建",
+    "title": "D 盘运行实例持久化与历史刷新",
+    "summary": "将 D 盘 8762 实例从临时进程改为登录后自动启动和异常重启，并把本轮独立更新写入软件内完整历史。",
+    "changes": [
+      "注册 Mework-D-8762 本机计划任务，通过 D 盘 start-d.bat 登录后启动应用，异常退出最多自动重启三次。",
+      "应用、数据、缓存、日志和运行入口继续保留在 D 盘，减少对 C 盘旧实例和系统盘空间的影响。",
+      "发行历史通过 release-notes.json、AppProps 版本和本机完整历史副本保持一致，能力中心可刷新并同步完整记录。"
+    ],
+    "fixes": [
+      "修复由任务临时启动的 8762 进程被外部生命周期回收后页面出现连接被拒绝的问题。",
+      "修复后续功能已落地但软件内历史仍停留在 2.2.152、无法逐次查看的问题。",
+      "避免为更新 D 盘实例而停止或覆盖 C 盘 8760 旧实例。"
+    ],
+    "verification": [
+      "计划任务 Mework-D-8762 状态、D 盘工作目录、登录启动动作和三次异常重启策略已核对。",
+      "新 JAR 启动后 actuator 健康状态为 UP，8762 首页和发行历史接口可访问。",
+      "发行历史接口当前版本为 2.2.157、完整记录总数为 167，本机同步副本版本一致。"
+    ],
+    "compatibility": "计划任务和 8762 托管属于当前电脑的本机运行配置，不代表通用安装器自动具备同一策略；C 盘 8760 实例不修改。",
+    "evidence": [
+      "start-d.bat",
+      "backend/src/main/resources/release-notes.json",
+      "backend/src/main/java/com/douyin/mixcut/config/AppProps.java",
+      "backend/src/main/java/com/douyin/mixcut/service/ReleaseNotesService.java",
+      "backend/src/main/java/com/douyin/mixcut/service/LocalReleaseHistoryService.java",
+      "frontend/src/views/Capabilities.vue",
+      "docs/RELEASE_HISTORY_RULES.md"
+    ]
+  }
+]

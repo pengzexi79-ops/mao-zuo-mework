@@ -53,6 +53,9 @@ public class WebConfig implements WebMvcConfigurer {
     public void addResourceHandlers(ResourceHandlerRegistry registry) {
         registry.addResourceHandler("/files/output/**")
                 .addResourceLocations("file:" + props.output().toString().replace('\\', '/') + "/");
+        // QC candidates are intentionally read-only previews outside the delivery directory.
+        registry.addResourceHandler("/files/qc-candidates/**")
+                .addResourceLocations("file:" + props.cache().resolve("qc-candidates").toString().replace('\\', '/') + "/");
         registry.addResourceHandler("/files/materials/**")
                 .addResourceLocations("file:" + props.materials().toString().replace('\\', '/') + "/");
         registry.addResourceHandler("/files/thumbs/**")

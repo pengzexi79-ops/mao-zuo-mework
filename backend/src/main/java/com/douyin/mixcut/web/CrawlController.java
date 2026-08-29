@@ -196,6 +196,30 @@ public class CrawlController {
         return R.ok(crawlJobService.submitAudio(req.getItems(), req.getRole(), req.getFolderId()));
     }
 
+    @GetMapping("/image/search")
+    public R<List<CrawlerGateway.RemoteItem>> searchImage(
+            @RequestParam(defaultValue = "all") String source,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(defaultValue = "12") int limit,
+            @RequestParam(required = false) Long projectId) {
+        return R.ok(crawler.searchImage(source, keyword == null ? "" : keyword, Math.min(40, Math.max(1, limit)),
+                projectId == null ? null : projectRepo.findById(projectId).orElse(null)));
+    }
+
+    @Data
+    public static class ImportImageReq {
+        private List<CrawlerGateway.RemoteItem> items;
+        private String role = "body";
+        private Long folderId;
+    }
+
+    @PostMapping("/image/import")
+    public R<CrawlJob> importImage(@RequestBody ImportImageReq req) {
+        if (req.getItems() == null || req.getItems().isEmpty()) return R.fail("未选择可导入的公开图片素材");
+        if (req.getItems().size() > 200) return R.fail("单次最多导入 200 条素材");
+        return R.ok(crawlJobService.submitImageItems(req.getItems(), req.getRole(), req.getFolderId()));
+    }
+
     @GetMapping("/video/search")
     public R<List<CrawlerGateway.RemoteItem>> searchVideo(
             @RequestParam(defaultValue = "all") String source,
@@ -244,12 +268,9 @@ public class CrawlController {
                     Map.entry("action", "search"), Map.entry("note", "仅通过已接入的许可筛选检索；结果仍需链接、媒体类型和质量准入")));
             out.add(Map.ofEntries(
                     Map.entry("id", "image-" + (i + 1)), Map.entry("category", "image"),
-                    Map.entry("name", term + " · 官方图片检索"),
-                    Map.entry("url", "https://commons.wikimedia.org/w/index.php?search=" +
-                            java.net.URLEncoder.encode(term, java.nio.charset.StandardCharsets.UTF_8) +
-                            "&title=Special:MediaSearch&type=image"),
-                    Map.entry("source", "wikimedia"), Map.entry("status", "official_page_only"),
-                    Map.entry("action", "official"), Map.entry("note", "只打开官方检索页；逐条确认许可后再下载到本地")));
+                    Map.entry("name", term + " · 公开图片检索"),
+                    Map.entry("source", "openverse"), Map.entry("status", "search_ready"),
+                    Map.entry("action", "search"), Map.entry("note", "应用内检索 Openverse 公开许可图片，可预览、勾选并批量导入素材库")));
             out.add(Map.ofEntries(
                     Map.entry("id", "extra-" + (i + 1)), Map.entry("category", "extra"),
                     Map.entry("name", term + " · 官方参考入口"),
@@ -264,46 +285,99 @@ public class CrawlController {
 
     @GetMapping("/sources")
     public R<List<Object>> sources() {
-        return R.ok(List.of(
-                java.util.Map.of("key", "mixkit", "name", "Mixkit 免费音乐", "needKey", false,
-                        "mode", "direct", "status", "ready", "usage", "BGM / 音乐", "note", "已接入公开音频检索；导入前仍需确认具体条目许可"),
-                java.util.Map.of("key", "freesound", "name", "Freesound 音效库", "needKey", true,
-                        "mode", "key", "status", props.getFreesoundApiKey().isBlank() ? "missing_key" : "ready", "usage", "音效 / 环境声", "configKey", "APP_FREESOUND_API_KEY", "authUrl", "https://freesound.org/apiv2/apply/", "note", "官方申请 API Key 后，在本机环境变量配置 APP_FREESOUND_API_KEY"),
-                java.util.Map.of("key", "pixabay", "name", "Pixabay 视频素材", "needKey", true,
-                        "mode", "key", "status", props.getPixabayApiKey().isBlank() ? "missing_key" : "ready", "usage", "关键词公开视频", "configKey", "APP_PIXABAY_API_KEY", "authUrl", "https://pixabay.com/api/docs/", "note", "已接入官方视频检索；配置自己的 API Key 后可按关键词搜索并进入受控导入队列"),
-                java.util.Map.of("key", "pexels", "name", "Pexels 视频素材", "needKey", true,
-                        "mode", "key", "status", props.getPexelsApiKey().isBlank() ? "missing_key" : "ready", "usage", "竖版关键词公开视频", "configKey", "APP_PEXELS_API_KEY", "authUrl", "https://www.pexels.com/api/", "note", "已接入官方视频检索（仅走 api.pexels.com，不抓网页）；配置自己的 API Key 后可按关键词搜索竖版视频并进入受控导入队列"),
-                java.util.Map.of("key", "wikimedia", "name", "Wikimedia Commons", "needKey", false,
-                        "mode", "direct", "status", "ready", "usage", "公开许可音频 / 视频", "note", "已接入许可筛选；音频和公开视频均可按关键词检索，导入前仍需确认具体条目许可证"),
-                java.util.Map.ofEntries(
-                        java.util.Map.entry("key", "archive"),
-                        java.util.Map.entry("name", "Internet Archive"),
-                        java.util.Map.entry("needKey", false),
-                        java.util.Map.entry("mode", "direct"),
-                        java.util.Map.entry("status", "ready"),
-                        java.util.Map.entry("usage", "CC / 公有领域音频 / 视频"),
-                        java.util.Map.entry("note", "已接入许可筛选，仅展示带 CC 或公有领域声明的条目")),
-                java.util.Map.of("key", "openverse", "name", "Openverse", "needKey", true,
-                        "mode", "oauth", "status", "unsupported", "usage", "公开许可图像 / 音频", "authUrl", "https://api.openverse.org/register/", "note", "仅提供官方注册入口；当前版本未接入 OAuth 回调和检索，不显示为可用来源"),
-                java.util.Map.of("key", "ear0", "name", "耳聆网 ear0", "needKey", false,
-                        "mode", props.isAllowLoginCrawl() ? "login-enabled" : "login-disabled", "authUrl", "https://www.ear0.com/", "note", "需登录，默认关闭；开启前必须确认你拥有下载和使用授权"),
-                java.util.Map.of("key", "mixkit-video", "name", "Mixkit 免费视频", "needKey", false,
-                        "mode", "official-page", "status", "official_page_only", "usage", "公开免费商用视频素材", "authUrl", "https://mixkit.co/free-stock-video/", "note", "当前未接入受控视频检索，仅提供官方页"),
-                java.util.Map.of("key", "coverr", "name", "Coverr 免费视频", "needKey", false,
-                        "mode", "official-page", "status", "official_page_only", "usage", "公开免费商用视频素材", "authUrl", "https://coverr.co/", "note", "当前未接入受控视频检索，仅提供官方页"),
-                java.util.Map.of("key", "bensound", "name", "Bensound 免费音乐", "needKey", false,
-                        "mode", "official-page", "status", "official_page_only", "usage", "BGM / 背景音乐", "authUrl", "https://www.bensound.com/free-music-for-videos", "note", "当前未接入受控音频检索，仅提供官方页"),
-                java.util.Map.of("key", "ccmixter", "name", "ccMixter 音乐库", "needKey", false,
-                        "mode", "official-page", "status", "official_page_only", "usage", "CC 授权音乐 / 人声", "authUrl", "https://ccmixter.org/", "note", "当前未接入受控音频检索，仅提供官方页"),                java.util.Map.of("key", "polyhaven", "name", "Poly Haven 3D/HDR", "needKey", false,
-                        "mode", "official-page", "status", "official_page_only", "usage", "3D 模型 / HDR / 贴图（CC0）", "authUrl", "https://polyhaven.com/", "note", "CC0 免授权；适合 AI 生图/3D 场景参考，可直接浏览下载"),
-                java.util.Map.of("key", "ambientcg", "name", "AmbientCG 材质", "needKey", false,
-                        "mode", "official-page", "status", "official_page_only", "usage", "PBR 材质贴图（CC0）", "authUrl", "https://ambientcg.com/", "note", "CC0 免授权材质库；适合商品/场景贴图"),
-                java.util.Map.of("key", "kenney", "name", "Kenney 游戏素材", "needKey", false,
-                        "mode", "official-page", "status", "official_page_only", "usage", "CC0 游戏/UI 素材包", "authUrl", "https://kenney.nl/assets", "note", "CC0 素材包，适合界面/图标/道具素材"),
-                java.util.Map.of("key", "dummyjson", "name", "DummyJSON 电商数据", "needKey", false,
-                        "mode", "official-page", "status", "official_page_only", "usage", "电商产品 JSON 数据（商品/图片/描述）", "authUrl", "https://dummyjson.com/products", "note", "免费电商产品数据 API，AI 可据此生成商品文案/选品参考"),                java.util.Map.of("key", "tosound", "name", "淘声网 toSound", "needKey", false,
-                        "mode", "direct", "status", "ready", "authUrl", "https://www.tosound.com/", "usage", "公开音效 / BGM", "note", "已预置公开检索；打开官网试听并确认许可后可导入，不需要应用代登录")
-        ));
+        boolean freesound = !props.getFreesoundApiKey().isBlank();
+        boolean pixabay = !props.getPixabayApiKey().isBlank();
+        boolean pexels = !props.getPexelsApiKey().isBlank();
+        List<Object> out = new ArrayList<>();
+        out.add(source("wikimedia", "Wikimedia Commons 音视频图片", false, "direct", "ready", "公开许可音频 / 视频 / 图片", true, true,
+                "https://commons.wikimedia.org/", null, "应用内可检索并显示每条许可证；无人值守自动补齐仅使用 CC0、公有领域或 CC BY 条目"));
+        out.add(source("archive", "Internet Archive", false, "direct", "ready", "CC / 公有领域音频 / 视频", true, true,
+                "https://archive.org/", null, "应用内可检索并显示许可证；无人值守自动补齐仅使用带可核验白名单许可的条目"));
+        out.add(source("openverse", "Openverse 音频 / 图片", false, "direct", "ready", "公开许可音频 / 图片", true, false,
+                "https://api.openverse.org/v1/", null, "已接入官方匿名 API 音频和图片检索；注册 OAuth 仅用于提高配额，应用不代登录"));
+        out.add(source("mixkit", "Mixkit 免费音乐", false, "manual-search", "ready", "BGM / 音乐", true, false,
+                "https://mixkit.co/free-stock-music/", null, "已接入公开页面检索，需人工确认条目许可后导入；不会用于无人值守自动补齐"));
+        out.add(source("tosound", "淘声网 toSound", false, "manual-search", "ready", "公开音效 / BGM", true, false,
+                "https://www.tosound.com/", null, "已接入公开页面检索，需人工确认条目许可后导入；不会代登录"));
+        out.add(source("freesound", "Freesound 音效库", true, "key", freesound ? "ready" : "missing_key", "音效 / 环境声", true, false,
+                "https://freesound.org/docs/api/", "freesound", "需在能力中心配置官方 API Key；未配置时不会请求来源"));
+        out.add(source("pixabay", "Pixabay 视频 / 图片", true, "key", pixabay ? "ready" : "missing_key", "关键词视频 / 图片", true, true,
+                "https://pixabay.com/api/docs/", "pixabay", "同一个官方 Key 可检索视频和图片；配置后可参与检索，视频才进入自动补齐"));
+        out.add(source("pexels", "Pexels 视频 / 图片", true, "key", pexels ? "ready" : "missing_key", "竖版视频 / 图片", true, true,
+                "https://www.pexels.com/api/", "pexels", "同一个官方 Key 可检索视频和图片；配置后可参与检索，视频才进入自动补齐"));
+        boolean unsplash = !props.getUnsplashApiKey().isBlank();
+        out.add(source("unsplash", "Unsplash 图片", true, "key", unsplash ? "ready" : "missing_key", "图片 / 商品背景", true, false,
+                "https://unsplash.com/developers", "unsplash", "登录官方开发者中心创建 Access Key 后配置；应用只调用官方 API，不读取网页登录 Cookie"));
+
+        out.add(source("ear0", "耳聆网 ear0", false, props.isAllowLoginCrawl() ? "login-enabled" : "login-disabled", "manual_only", "中文音效 / 环境声", false, false,
+                "https://www.ear0.com/", null, "需要用户自行登录并确认授权；应用不会读取 Cookie、账号或密码"));
+        out.add(source("mixkit-video", "Mixkit 免费视频", false, "official-page", "official_page_only", "免费视频素材", false, false,
+                "https://mixkit.co/free-stock-video/", null, "当前无受控视频 API，仅提供官方页面供人工选择和导入"));
+        out.add(source("coverr", "Coverr 免费视频", false, "official-page", "official_page_only", "免费视频素材", false, false,
+                "https://coverr.co/", null, "当前未接入受控视频检索，仅提供官方页面"));
+        out.add(source("videvo", "Videvo 视频素材", false, "official-page", "official_page_only", "视频 / 动效", false, false,
+                "https://www.videvo.net/", null, "部分素材需要署名或登录；请在官方页面逐条确认授权后导入"));
+        out.add(source("motionplaces", "Motion Places", false, "official-page", "official_page_only", "旅行 / 城市视频", false, false,
+                "https://www.motionplaces.com/", null, "官方页面人工选择；不同素材授权条件不同"));
+        out.add(source("pixabay-music", "Pixabay 音乐", false, "official-page", "official_page_only", "BGM / 音效", false, false,
+                "https://pixabay.com/music/", null, "官方音乐页面；当前应用不抓取网页，需人工选择后导入"));
+        out.add(source("bensound", "Bensound 免费音乐", false, "official-page", "official_page_only", "BGM / 背景音乐", false, false,
+                "https://www.bensound.com/free-music-for-videos", null, "部分授权需要署名或购买许可，请逐条核验"));
+        out.add(source("zapsplat", "ZapSplat 音效", false, "official-page", "official_page_only", "音效 / 环境声", false, false,
+                "https://www.zapsplat.com/", null, "官方页面人工下载；免费账户与署名条件以官方条款为准"));
+        out.add(source("ccmixter", "ccMixter 音乐库", false, "official-page", "official_page_only", "CC 授权音乐", false, false,
+                "https://ccmixter.org/", null, "官方页面人工选择；混音条目的授权条件需要逐条确认"));
+        out.add(source("aigei", "爱给网", false, "official-page", "official_page_only", "中文音频 / 视频 / 图片", false, false,
+                "https://www.aigei.com/", null, "部分内容需要登录或会员；仅提供官方入口，不读取账号信息"));
+        out.add(source("zcool", "站酷素材", false, "official-page", "official_page_only", "中文图片 / 视频 / 设计素材", false, false,
+                "https://www.zcool.com.cn/", null, "需按作品页面确认授权，当前不接入网页自动抓取"));
+        out.add(source("xinpianchang", "新片场素材", false, "official-page", "official_page_only", "中文视频素材", false, false,
+                "https://www.xinpianchang.com/", null, "账号和授权条件由官方控制，人工下载后导入"));
+        out.add(source("vjshi", "VJ师", false, "official-page", "official_page_only", "视频 / 动效素材", false, false,
+                "https://www.vjshi.com/", null, "多数素材按授权或购买使用，当前只提供官方入口"));
+        out.add(source("polyhaven", "Poly Haven 3D/HDR", false, "official-page", "official_page_only", "3D 模型 / HDR / 贴图（CC0）", false, false,
+                "https://polyhaven.com/", null, "CC0 素材库；当前作为官方下载入口，不直接导入 3D 文件"));
+        out.add(source("ambientcg", "AmbientCG 材质", false, "official-page", "official_page_only", "PBR 材质贴图（CC0）", false, false,
+                "https://ambientcg.com/", null, "CC0 材质库；下载后可作为本地图片/贴图导入"));
+        out.add(source("sketchfab", "Sketchfab", false, "official-page", "official_page_only", "3D 模型", false, false,
+                "https://sketchfab.com/", null, "模型授权差异较大，需逐条确认后下载"));
+        out.add(source("kenney", "Kenney 游戏素材", false, "official-page", "official_page_only", "CC0 游戏 / UI 素材", false, false,
+                "https://kenney.nl/assets", null, "CC0 素材包，适合 UI、图标和道具参考"));
+        out.add(source("dummyjson", "DummyJSON 电商数据", false, "official-page", "official_page_only", "电商产品 JSON 数据", false, false,
+                "https://dummyjson.com/products", null, "公开数据 API，适合商品文案和选品参考，不是可直接出片的媒体源"));
+        return R.ok(out);
+    }
+
+    private Map<String, Object> source(String key, String name, boolean needKey, String mode, String status,
+                                       String usage, boolean searchReady, boolean autoFill, String officialUrl,
+                                       String configId, String note) {
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("key", key);
+        row.put("name", name);
+        row.put("needKey", needKey);
+        row.put("mode", mode);
+        row.put("status", status);
+        row.put("usage", usage);
+        row.put("searchReady", searchReady);
+        row.put("autoFill", autoFill);
+        row.put("mediaTypes", switch (key) {
+            case "wikimedia" -> List.of("audio", "video", "image");
+            case "archive" -> List.of("audio", "video");
+            case "openverse" -> List.of("audio", "image");
+            case "pixabay", "pexels" -> List.of("video", "image");
+            case "unsplash" -> List.of("image");
+            case "freesound", "mixkit", "tosound", "ear0", "pixabay-music", "bensound", "zapsplat", "ccmixter" -> List.of("audio");
+            default -> List.of("video", "image", "audio");
+        });
+        row.put("autoFillTypes", autoFill ? List.of("video") : List.of());
+        row.put("officialUrl", officialUrl);
+        row.put("authUrl", officialUrl);
+        if (configId != null) {
+            row.put("configId", configId);
+            row.put("configKey", "APP_" + configId.toUpperCase(java.util.Locale.ROOT) + ("freesound".equals(configId) ? "_API_KEY" : "_API_KEY"));
+        }
+        row.put("note", note);
+        return row;
     }
 
     private boolean isGuardRejected(com.douyin.mixcut.domain.CrawlTask task) {

@@ -19,6 +19,7 @@ class CrawlerGatewayRelevanceTest {
         assertEquals("lifestyle b-roll", gateway.publicVideoSearchKeyword("未知中文主题"));
         assertEquals("snack", gateway.publicVideoSearchKeyword("零食口感测评"));
         assertEquals("home", gateway.publicVideoSearchKeyword("家居清洁"));
+        assertEquals("beauty", gateway.publicVideoSearchKeyword("美妆测评"));
     }
 
     @Test

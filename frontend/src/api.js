@@ -288,6 +288,8 @@ export const api = {
   cleanupCrawlJobs: () => http.post('/api/crawl/jobs/cleanup'),
   searchAudio: (params) => get('/api/crawl/audio/search', { params }),
   importAudio: (body) => http.post('/api/crawl/audio/import', body),
+  searchImage: (params) => get('/api/crawl/image/search', { params }),
+  importImage: (body) => http.post('/api/crawl/image/import', body),
   searchPublicVideo: (params) => get('/api/crawl/video/search', { params }),
   importPublicVideo: (body) => http.post('/api/crawl/video/import', body),
 
@@ -376,6 +378,8 @@ export const api = {
   cancelJob: (id) => http.post(`/api/jobs/${id}/cancel`),
   pauseJob: (id) => http.post(`/api/jobs/${id}/pause`),
   resumeJob: (id) => http.post(`/api/jobs/${id}/resume`),
+  forceResumeJob: (id) => http.post(`/api/jobs/${id}/force-resume`),
+  setForceContinue: (id, enabled) => http.post(`/api/jobs/${id}/force-continue`, { enabled }),
   retryFailedJob: (id) => http.post(`/api/jobs/${id}/retry-failed`),
   outputRepair: (jobId, idx) => get(`/api/jobs/${jobId}/outputs/${idx}/repair`),
   applyOutputRepairDecision: (jobId, idx, body) => http.post(`/api/jobs/${jobId}/outputs/${idx}/repair-decision`, body),

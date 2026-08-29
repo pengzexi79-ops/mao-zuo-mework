@@ -41,6 +41,7 @@ class MaterialGapControllerTest {
     @BeforeEach
     void setUp() {
         gapService = new MaterialGapService(materialRepo, projectRepo, folderRepo, new MixPlanner(), crawler, crawlJobService, new AppProps());
+        lenient().when(crawler.isAutoFillEligible(any(CrawlerGateway.RemoteItem.class))).thenReturn(true);
     }
 
     // ---------------------------------------------------------------
@@ -211,7 +212,7 @@ class MaterialGapControllerTest {
         item.setTitle("test-video.mp4");
         item.setType("video");
         item.setDownloadUrl("https://example.com/test.mp4");
-        item.setLicense("CC BY-SA 4.0");
+        item.setLicense("CC BY 4.0");
         item.setPageUrl("https://commons.wikimedia.org/wiki/File:test");
 
         CrawlJob mockJob = new CrawlJob();
@@ -243,8 +244,9 @@ class MaterialGapControllerTest {
         MaterialGapService.AutoFillResult result = gapService.autoFill(req);
 
         assertFalse(result.isAny());
-        assertTrue(result.getSourceResults().stream()
-                .allMatch(r -> "unsupported".equals(r.get("status"))));
+        assertEquals("unsupported", result.getSourceResults().get(0).get("status"));
+        assertEquals("missing_key", result.getSourceResults().get(1).get("status"));
+        assertEquals("configuration_required", result.getSourceResults().get(1).get("outcome"));
     }
 
     @Test
@@ -288,7 +290,7 @@ class MaterialGapControllerTest {
         item.setTitle("skincare b-roll.mp4");
         item.setType("video");
         item.setDownloadUrl("https://example.com/skincare.mp4");
-        item.setLicense("CC BY-SA 4.0");
+        item.setLicense("CC BY 4.0");
         item.setPageUrl("https://commons.wikimedia.org/wiki/File:skincare");
 
         CrawlJob mockJob = new CrawlJob();

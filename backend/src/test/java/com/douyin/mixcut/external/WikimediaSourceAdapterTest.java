@@ -23,11 +23,12 @@ class WikimediaSourceAdapterTest {
                 ]}}
                 """;
         List<CrawlerGateway.RemoteItem> items = adapter.map(mapper.readTree(json), "video", 10);
-        assertEquals(2, items.size());
+        assertEquals(3, items.size(), "人工检索应保留真实条目，由自动补齐策略决定是否入队");
         assertEquals("wikimedia", items.get(0).getSource());
         assertEquals("CC BY 4.0", items.get(0).getLicense());
         assertTrue(items.get(0).getTags().contains("Alice"));
-        assertEquals("Useful.mp4", items.get(1).getTitle());
+        assertEquals("CC BY-SA 4.0", items.get(1).getLicense());
+        assertEquals("Useful.mp4", items.get(2).getTitle());
     }
 
     @Test
@@ -40,7 +41,7 @@ class WikimediaSourceAdapterTest {
 
     @Test
     void rejectsUnsupportedTypeAndNonWhitelistedLicenses() throws Exception {
-        assertFalse(adapter.supports("image"));
+        assertTrue(adapter.supports("image"));
         assertTrue(WikimediaSourceAdapter.isWhitelistedLicense("Public Domain"));
         assertTrue(WikimediaSourceAdapter.isWhitelistedLicense("CC BY 4.0"));
         assertFalse(WikimediaSourceAdapter.isWhitelistedLicense("CC BY-SA 4.0"));

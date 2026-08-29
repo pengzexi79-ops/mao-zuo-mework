@@ -53,6 +53,10 @@ public class JobOutput {
     @Column(name = "segment_keys", columnDefinition = "TEXT")
     private String segmentKeys;
 
+    /** True when the scheduler counted this failed item as processed after explicit force-continue. */
+    @Column(name = "forced_continue")
+    private Boolean forcedContinue = false;
+
     private LocalDateTime createdAt;
 
     @PrePersist
