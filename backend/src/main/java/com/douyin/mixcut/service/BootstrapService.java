@@ -27,6 +27,7 @@ import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.core.io.ClassPathResource;
+import org.springframework.core.env.Environment;
 import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -75,6 +76,7 @@ public class BootstrapService implements ApplicationRunner {
     private final CredentialCipher credentialCipher;
     private final DataSource dataSource;
     private final CredentialRegistry credentialRegistry;
+    private final Environment springEnvironment;
     private final ObjectMapper om = new ObjectMapper();
     /** 能力中心数据源：capabilities.json（版本化清单，驱动 capabilities 与 installCapability 的修复安装边界）。 */
     private final CapabilityManifest manifest = CapabilityManifest.load();
@@ -134,7 +136,7 @@ public class BootstrapService implements ApplicationRunner {
         }
         log.info("================================");
         log.info("能力清单: manifest v{} (schema {})，共 {} 项能力定义", manifest.manifestVersion(), manifest.schemaVersion(), manifest.size());
-        log.info("控制台: http://{}:{}/", props.getBindAddress(), System.getProperty("local.server.port", "8760"));
+        log.info("控制台: http://{}:{}/", props.getBindAddress(), serverPort());
     }
 
     /** Upgrades a pre-segment-key installation without dynamic SQL or user-controlled identifiers. */
@@ -626,7 +628,7 @@ public class BootstrapService implements ApplicationRunner {
         m.put("pixabayKey", props.getPixabayApiKey() != null && !props.getPixabayApiKey().isBlank());
         m.put("pexelsKey", props.getPexelsApiKey() != null && !props.getPexelsApiKey().isBlank());
         m.put("allowLoginCrawl", props.isAllowLoginCrawl());
-        m.put("backend", "127.0.0.1:" + System.getProperty("local.server.port", "8760"));
+        m.put("backend", props.getBindAddress() + ":" + serverPort());
         m.put("databaseConnected", databaseConnected());
         m.put("outputDir", props.output().toString());
         m.put("materialsDir", props.materials().toString());
@@ -659,6 +661,28 @@ public class BootstrapService implements ApplicationRunner {
         environmentCache = Map.copyOf(m);
         environmentCacheAt = now;
         return m;
+    }
+
+    /**
+     * Spring Boot command-line properties live in Spring's Environment, not in
+     * System.getProperty. Prefer the actual bound port when one is available,
+     * then fall back to the configured port used during startup.
+     */
+    private int serverPort() {
+        Integer actual = parsePort(springEnvironment.getProperty("local.server.port"));
+        if (actual != null) return actual;
+        Integer configured = parsePort(springEnvironment.getProperty("server.port"));
+        return configured == null ? 8760 : configured;
+    }
+
+    private static Integer parsePort(String value) {
+        if (value == null || value.isBlank()) return null;
+        try {
+            int port = Integer.parseInt(value.trim());
+            return port > 0 && port <= 65535 ? port : null;
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
     }
 
     /** 能力中心：后端是检测状态、安装边界和官方入口的唯一来源。 */

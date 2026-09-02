@@ -12,6 +12,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Web.Script.Serialization;
 using System.Windows.Forms;
+using System.Text.RegularExpressions;
+using System.Security.Cryptography;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
 
@@ -19,25 +21,136 @@ internal static class Program
 {
     internal const string Title = "\u732b\u4f5c\u00b7Mework";
     private static Mutex instanceMutex;
+    private const uint ProcessQueryLimitedInformation = 0x1000;
+    private const int RestoreWindow = 9;
+    private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr FindWindow(string c, string n);
-    [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr h);
-    [DllImport("user32.dll")] private static extern bool ShowWindow(IntPtr h, int c);
+    [DllImport("user32.dll")] private static extern bool EnumWindows(EnumWindowsProc callback, IntPtr lParam);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetWindowText(IntPtr hWnd, StringBuilder text, int maxCount);
+    [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+    [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr hWnd);
+    [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hWnd);
+    [DllImport("user32.dll")] private static extern bool ShowWindow(IntPtr hWnd, int command);
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] private static extern IntPtr OpenProcess(uint access, bool inheritHandle, uint processId);
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] private static extern bool QueryFullProcessImageName(IntPtr process, int flags, StringBuilder filename, ref int size);
+    [DllImport("kernel32.dll")] private static extern bool CloseHandle(IntPtr handle);
 
     [STAThread]
     private static void Main()
     {
+        string appDir = Path.GetFullPath(AppDomain.CurrentDomain.BaseDirectory).TrimEnd('\\');
+        RuntimeHost.Log(appDir, "Desktop launcher invoked.");
         bool created;
-        instanceMutex = new Mutex(true, "Local\\MeworkDesktop-4F2BA8E5-6552-4A84-8D87-69BDE6B21B79", out created);
+        string mutexName = BuildInstanceMutexName(appDir);
+        RuntimeHost.Log(appDir, "Using installation-scoped desktop instance mutex.");
+        instanceMutex = new Mutex(true, mutexName, out created);
         if (!created)
         {
-            IntPtr existing = FindWindow(null, Title);
-            if (existing != IntPtr.Zero) { ShowWindow(existing, 9); SetForegroundWindow(existing); }
+            RuntimeHost.Log(appDir, "Another desktop launcher owns the instance mutex; looking for its window.");
+            IntPtr existing = FindExistingWindow(appDir, 50, 100);
+            if (existing != IntPtr.Zero)
+            {
+                ShowWindow(existing, RestoreWindow);
+                SetForegroundWindow(existing);
+                RuntimeHost.Log(appDir, "Existing desktop window activated.");
+            }
+            else
+            {
+                RuntimeHost.Log(appDir, "Instance mutex was held but no visible desktop window was found.");
+                MessageBox.Show(
+                    "猫作已经在运行，但没有找到可显示的桌面窗口。\r\n\r\n" +
+                    "请稍等片刻后再次点击桌面图标；如果仍然没有窗口，请查看 data\\logs\\desktop-launcher.log。",
+                    Title, MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            instanceMutex.Close();
             return;
         }
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
-        Application.Run(new MainWindow());
+        try
+        {
+            Application.Run(new MainWindow());
+        }
+        catch (Exception ex)
+        {
+            RuntimeHost.Log(appDir, "Desktop launcher crashed before the main window could remain visible: " + RuntimeHost.SafeError(ex));
+            MessageBox.Show(
+                "猫作无法创建桌面窗口。\r\n\r\n" + RuntimeHost.SafeError(ex) +
+                "\r\n\r\n请查看 data\\logs\\desktop-launcher.log。",
+                Title, MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
         GC.KeepAlive(instanceMutex);
+    }
+
+    private static string BuildInstanceMutexName(string appDir)
+    {
+        string normalized = Path.GetFullPath(appDir)
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            .ToUpperInvariant();
+        using (SHA256 sha256 = SHA256.Create())
+        {
+            byte[] digest = sha256.ComputeHash(Encoding.UTF8.GetBytes(normalized));
+            StringBuilder suffix = new StringBuilder(digest.Length * 2);
+            for (int i = 0; i < digest.Length; i++) suffix.Append(digest[i].ToString("x2"));
+            return "Local\\MeworkDesktop-" + suffix.ToString();
+        }
+    }
+
+    private static IntPtr FindExistingWindow(string appDir, int attempts, int delayMilliseconds)
+    {
+        string executablePath = Path.GetFullPath(Application.ExecutablePath);
+        for (int attempt = 0; attempt < attempts; attempt++)
+        {
+            IntPtr exact = FindWindow(null, Title);
+            IntPtr match = WindowBelongsToApplication(exact, executablePath) ? exact : FindWindowByProcessPath(executablePath);
+            if (match != IntPtr.Zero) return match;
+            if (attempt + 1 < attempts) Thread.Sleep(delayMilliseconds);
+        }
+        return IntPtr.Zero;
+    }
+
+    private static IntPtr FindWindowByProcessPath(string executablePath)
+    {
+        IntPtr found = IntPtr.Zero;
+        EnumWindows(delegate (IntPtr hWnd, IntPtr lParam)
+        {
+            if (!IsWindowVisible(hWnd)) return true;
+            StringBuilder title = new StringBuilder(256);
+            GetWindowText(hWnd, title, title.Capacity);
+            if (!String.Equals(title.ToString(), Title, StringComparison.Ordinal)) return true;
+            if (WindowBelongsToApplication(hWnd, executablePath))
+            {
+                found = hWnd;
+                return false;
+            }
+            return true;
+        }, IntPtr.Zero);
+        return found;
+    }
+
+    private static bool WindowBelongsToApplication(IntPtr hWnd, string executablePath)
+    {
+        if (hWnd == IntPtr.Zero) return false;
+        uint processId;
+        GetWindowThreadProcessId(hWnd, out processId);
+        if (processId == 0) return false;
+        string ownerPath = GetProcessPath(processId);
+        return !String.IsNullOrEmpty(ownerPath) &&
+            String.Equals(Path.GetFullPath(ownerPath), Path.GetFullPath(executablePath), StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string GetProcessPath(uint processId)
+    {
+        IntPtr process = OpenProcess(ProcessQueryLimitedInformation, false, processId);
+        if (process == IntPtr.Zero) return null;
+        try
+        {
+            StringBuilder path = new StringBuilder(1024);
+            int size = path.Capacity;
+            return QueryFullProcessImageName(process, 0, path, ref size) ? path.ToString() : null;
+        }
+        catch { return null; }
+        finally { CloseHandle(process); }
     }
 }
 
@@ -45,19 +158,25 @@ internal sealed class MainWindow : Form
 {
     private readonly Panel loadingPanel;
     private readonly Label statusLabel;
-    private readonly WebView2 webView;
+    private readonly Label detailLabel;
+    private readonly ProgressBar progressBar;
+    private readonly Button retryButton;
+    private readonly Button closeButton;
+    private WebView2 webView;
+    private readonly string appDir;
+    private bool startupInProgress;
     private int port;
 
     internal MainWindow()
     {
+        appDir = Path.GetFullPath(AppDomain.CurrentDomain.BaseDirectory).TrimEnd('\\');
         Text = Program.Title;
         StartPosition = FormStartPosition.CenterScreen;
         Width = 1440; Height = 900; MinimumSize = new Size(1100, 720);
         WindowState = FormWindowState.Maximized; BackColor = Color.White;
         try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { }
 
-        webView = new WebView2();
-        webView.Dock = DockStyle.Fill; webView.Visible = false; Controls.Add(webView);
+        webView = null;
         loadingPanel = new Panel(); loadingPanel.Dock = DockStyle.Fill; loadingPanel.BackColor = Color.White;
         Controls.Add(loadingPanel); loadingPanel.BringToFront();
 
@@ -67,22 +186,50 @@ internal sealed class MainWindow : Form
         statusLabel = new Label(); statusLabel.AutoSize = false; statusLabel.TextAlign = ContentAlignment.MiddleCenter;
         statusLabel.Font = new Font("Microsoft YaHei UI", 10F); statusLabel.Text = "\u6b63\u5728\u542f\u52a8\u672c\u673a\u670d\u52a1...";
         loadingPanel.Controls.Add(statusLabel);
-        ProgressBar progress = new ProgressBar(); progress.Style = ProgressBarStyle.Marquee;
-        progress.MarqueeAnimationSpeed = 24; loadingPanel.Controls.Add(progress);
+        detailLabel = new Label(); detailLabel.AutoSize = false; detailLabel.TextAlign = ContentAlignment.TopCenter;
+        detailLabel.Font = new Font("Microsoft YaHei UI", 9F); detailLabel.ForeColor = Color.FromArgb(90, 90, 90);
+        detailLabel.Visible = false; loadingPanel.Controls.Add(detailLabel);
+        progressBar = new ProgressBar(); progressBar.Style = ProgressBarStyle.Marquee;
+        progressBar.MarqueeAnimationSpeed = 24; loadingPanel.Controls.Add(progressBar);
+        retryButton = new Button(); retryButton.Text = "重试启动"; retryButton.Width = 112; retryButton.Height = 34;
+        retryButton.Visible = false; retryButton.Click += OnRetryClicked; loadingPanel.Controls.Add(retryButton);
+        closeButton = new Button(); closeButton.Text = "关闭"; closeButton.Width = 92; closeButton.Height = 34;
+        closeButton.Visible = false; closeButton.Click += delegate { Close(); }; loadingPanel.Controls.Add(closeButton);
         loadingPanel.Resize += delegate
         {
             int x = loadingPanel.ClientSize.Width / 2, y = loadingPanel.ClientSize.Height / 2;
             title.Location = new Point(x - title.Width / 2, y - 70);
-            statusLabel.SetBounds(x - 240, y - 20, 480, 32); progress.SetBounds(x - 180, y + 24, 360, 8);
+            statusLabel.SetBounds(x - 300, y - 20, 600, 32); progressBar.SetBounds(x - 180, y + 24, 360, 8);
+            detailLabel.SetBounds(x - 360, y + 44, 720, 42);
+            retryButton.Location = new Point(x - retryButton.Width - 8, y + 106);
+            closeButton.Location = new Point(x + 8, y + 106);
         };
         Shown += OnShown;
     }
 
     private async void OnShown(object sender, EventArgs e)
     {
-        string appDir = Path.GetFullPath(AppDomain.CurrentDomain.BaseDirectory).TrimEnd('\\');
+        await StartApplicationAsync();
+    }
+
+    private async void OnRetryClicked(object sender, EventArgs e)
+    {
+        await StartApplicationAsync();
+    }
+
+    private async Task StartApplicationAsync()
+    {
+        if (startupInProgress) return;
+        startupInProgress = true;
+        retryButton.Visible = false;
+        closeButton.Visible = false;
+        detailLabel.Visible = false;
+        progressBar.Visible = true;
+        statusLabel.Text = "正在启动本机服务...";
+        RuntimeHost.Log(appDir, "Desktop startup attempt started.");
         try
         {
+            PrepareWebView();
             port = await Task.Run(delegate { return RuntimeHost.EnsureRunning(appDir); });
             statusLabel.Text = "\u6b63\u5728\u52a0\u8f7d\u732b\u4f5c\u5de5\u4f5c\u53f0...";
             string profileDir = Path.Combine(appDir, "data", "desktop-webview");
@@ -95,15 +242,46 @@ internal sealed class MainWindow : Form
             webView.CoreWebView2.NewWindowRequested += OnNewWindowRequested;
             webView.Source = new Uri("http://127.0.0.1:" + port + "/");
             loadingPanel.Visible = false; webView.Visible = true; webView.Focus();
+            RuntimeHost.Log(appDir, "Desktop startup completed on port " + port + ".");
         }
         catch (Exception ex)
         {
-            RuntimeHost.Log(appDir, "Desktop startup failed: " + ex);
-            MessageBox.Show(this,
-                "\u732b\u4f5c\u542f\u52a8\u5931\u8d25\u3002\r\n\r\n" + ex.Message + "\r\n\r\n\u8bf7\u67e5\u770b data\\logs\\desktop-launcher.log",
-                Program.Title, MessageBoxButtons.OK, MessageBoxIcon.Error);
-            Close();
+            string safeError = RuntimeHost.SafeError(ex);
+            RuntimeHost.Log(appDir, "Desktop startup failed: " + safeError);
+            ShowStartupFailure(safeError);
         }
+        finally
+        {
+            startupInProgress = false;
+        }
+    }
+
+    private void PrepareWebView()
+    {
+        if (webView != null)
+        {
+            Controls.Remove(webView);
+            try { webView.Dispose(); } catch { }
+        }
+        webView = new WebView2();
+        webView.Dock = DockStyle.Fill;
+        webView.Visible = false;
+        Controls.Add(webView);
+        Controls.SetChildIndex(webView, Controls.Count - 1);
+        loadingPanel.BringToFront();
+    }
+
+    private void ShowStartupFailure(string error)
+    {
+        loadingPanel.Visible = true;
+        if (webView != null) webView.Visible = false;
+        progressBar.Visible = false;
+        statusLabel.Text = "猫作桌面启动失败，但窗口仍保持打开";
+        detailLabel.Text = "原因：" + error + "\r\n请查看 data\\logs\\desktop-launcher.log 获取完整诊断。";
+        detailLabel.Visible = true;
+        retryButton.Visible = true;
+        closeButton.Visible = true;
+        loadingPanel.BringToFront();
     }
 
     private void OnNewWindowRequested(object sender, CoreWebView2NewWindowRequestedEventArgs e)
@@ -282,5 +460,15 @@ internal static class RuntimeHost
             File.AppendAllText(path, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + " " + message + Environment.NewLine, Encoding.UTF8);
         }
         catch { }
+    }
+
+    internal static string SafeError(Exception exception)
+    {
+        string message = exception == null ? "未知启动错误。" : exception.GetBaseException().Message;
+        if (String.IsNullOrWhiteSpace(message)) message = "未知启动错误。";
+        message = message.Replace("\r", " ").Replace("\n", " ").Trim();
+        message = Regex.Replace(message, "(?i)(authorization\\s*[:=]\\s*bearer\\s+)[^\\s]+", "$1[已隐藏]");
+        message = Regex.Replace(message, "(?i)\\b(sk|key|token|secret)[-_:=/][A-Za-z0-9._-]{8,}", "$1-[已隐藏]");
+        return message.Length > 320 ? message.Substring(0, 320) + "..." : message;
     }
 }

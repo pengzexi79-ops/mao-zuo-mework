@@ -19,6 +19,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.springframework.mock.env.MockEnvironment;
 
 import javax.sql.DataSource;
 import java.nio.file.Files;
@@ -67,6 +68,7 @@ class BootstrapServiceCapabilitiesTest {
 
     private AppProps props;
     private BootstrapService bootstrap;
+    private MockEnvironment springEnvironment;
 
     @BeforeEach
     void setUp() {
@@ -76,9 +78,10 @@ class BootstrapServiceCapabilitiesTest {
         props.setOutputDir(temp.resolve("data/output").toString());
         props.setCacheDir(temp.resolve("data/cache").toString());
         props.setLocalPython("python");
+        springEnvironment = new MockEnvironment().withProperty("server.port", "8761");
         bootstrap = new BootstrapService(props, workflowRepo, projectRepo, skillRepo, skillEngine,
                 ffmpeg, runner, crawler, jobService, crawlJobService, materialService,
-                providerRepo, pluginRepo, credentialCipher, dataSource, new CredentialRegistry());
+                providerRepo, pluginRepo, credentialCipher, dataSource, new CredentialRegistry(), springEnvironment);
         // 默认全部探测失败；具体测试再按命令内容打开对应探测。
         when(runner.run(any(), anyLong())).thenReturn(new ProcRunner.Result(1, "not available"));
         when(ffmpeg.ffmpegAvailable()).thenReturn(false);
@@ -86,6 +89,16 @@ class BootstrapServiceCapabilitiesTest {
         when(crawler.ytdlpAvailable()).thenReturn(false);
         when(crawler.yougetAvailable()).thenReturn(false);
         when(credentialCipher.available()).thenReturn(false);
+    }
+
+    @Test
+    void environmentReportsConfiguredApplicationPortInsteadOfSystemPropertyFallback() {
+        Map<String, Object> env = bootstrap.env(true);
+        assertEquals("127.0.0.1:8761", env.get("backend"));
+
+        springEnvironment.setProperty("local.server.port", "8762");
+        env = bootstrap.env(true);
+        assertEquals("127.0.0.1:8762", env.get("backend"));
     }
 
     private void makeAllProbesReady() {

@@ -5,10 +5,10 @@
 ## 安装合同
 
 - 产品：猫作·Mework
-- 版本：`2.2.164`
+- 版本：`2.2.165`
 - 平台：Windows 10/11 x64
 - 仓库：`pengzexi79-ops/mao-zuo-mework`，public
-- Release：`v2.2.164`
+- Release：`v2.2.165`
 - 默认目录：有 D 盘时 `D:\Mework`，否则 `%LOCALAPPDATA%\Programs\Mework`
 - 机器清单：`installer\ai-setup-manifest.json`
 
@@ -18,14 +18,14 @@
 2. 在 D 盘临时目录下载完整 Release，不能只下载 EXE：
 
 ```powershell
-gh release download v2.2.164 --repo pengzexi79-ops/mao-zuo-mework --pattern 'Mework-Setup-2.2.164*' --pattern 'SHA256SUMS.txt' --pattern 'release-manifest.json' --pattern 'ai-setup-manifest.json'
+gh release download v2.2.165 --repo pengzexi79-ops/mao-zuo-mework --pattern 'Mework-Setup-2.2.165*' --pattern 'SHA256SUMS.txt' --pattern 'release-manifest.json' --pattern 'ai-setup-manifest.json'
 ```
 
 3. 校验 `SHA256SUMS.txt`，确认 EXE 和全部 `.bin` 分片在同一目录。
 4. 以普通用户运行安装器。需要静默安装时：
 
 ```powershell
-Start-Process .\Mework-Setup-2.2.164.exe -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait
+Start-Process .\Mework-Setup-2.2.165.exe -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait
 ```
 
 5. 正常启动入口是安装目录下的 `Mework.exe`。确认存在标题为“猫作·Mework”的可响应窗口，并确认 WebView2 用户数据目录位于安装目录的 `data\desktop-webview`。

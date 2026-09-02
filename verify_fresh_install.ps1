@@ -40,6 +40,34 @@ function Stop-IsolatedListener([int]$Port, [string]$InstallRoot) {
     Stop-Process -Id $processId -Force -ErrorAction Stop
   }
 }
+function Wait-NativeWindow([int]$ProcessId, [string]$InstallRoot, [int]$TimeoutSeconds) {
+  $expectedRoot = [IO.Path]::GetFullPath($InstallRoot).TrimEnd('\') + '\'
+  for ($attempt = 0; $attempt -lt ($TimeoutSeconds * 2); $attempt++) {
+    $process = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
+    if (-not $process) { return $null }
+    $process.Refresh()
+    $processPath = ''
+    try { $processPath = [IO.Path]::GetFullPath([string]$process.Path) } catch { }
+    if ($process.MainWindowHandle -ne 0 -and
+        $process.Responding -and
+        $processPath.StartsWith($expectedRoot, [StringComparison]::OrdinalIgnoreCase)) {
+      return $process
+    }
+    Start-Sleep -Milliseconds 500
+  }
+  return $null
+}
+function Stop-NativeProcess([int]$ProcessId) {
+  $process = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
+  if (-not $process) { return }
+  try {
+    if ($process.MainWindowHandle -ne 0) {
+      [void]$process.CloseMainWindow()
+      if ($process.WaitForExit(10000)) { return }
+    }
+  } catch { }
+  Stop-Process -Id $ProcessId -Force -ErrorAction SilentlyContinue
+}
 function Remove-VerifiedTree([string]$Path, [string]$Base) {
   if (-not (Test-Path -LiteralPath $Path)) { return }
   $target = [IO.Path]::GetFullPath($Path).TrimEnd('\')
@@ -77,6 +105,8 @@ $installerLog = Join-Path $verifyBase ('installer-' + [guid]::NewGuid().ToString
 $appPort = Pick-Port 18760
 $mysqlPort = Pick-Port 23306
 $launcherPid = $null
+$desktopPid = $null
+$restartPid = $null
 $verificationSucceeded = $false
 
 try {
@@ -98,8 +128,17 @@ try {
   $env:APP_BIND_ADDRESS = '127.0.0.1'
   $env:APP_ACCESS_TOKEN = ''
   $env:APP_SKIP_BROWSER = 'true'
-  $launcher = Start-Process -FilePath 'cmd.exe' -ArgumentList '/d','/c',(Join-Path $installRoot 'start.bat') -WorkingDirectory $installRoot -PassThru -WindowStyle Hidden
-  $launcherPid = $launcher.Id
+  $desktopExe = Join-Path $installRoot 'Mework.exe'
+  Require-File $desktopExe 'installed Mework.exe'
+  $desktop = Start-Process -FilePath $desktopExe -WorkingDirectory $installRoot -PassThru
+  $desktopPid = $desktop.Id
+
+  $nativeWindow = Wait-NativeWindow $desktopPid $installRoot 180
+  if (-not $nativeWindow) {
+    $process = Get-Process -Id $desktopPid -ErrorAction SilentlyContinue
+    $state = if ($process) { "process $($process.Id) is alive but window title='$($process.MainWindowTitle)' handle=$($process.MainWindowHandle) responding=$($process.Responding)" } else { 'Mework.exe exited before creating its native window' }
+    Fail 5 "fresh install native desktop launch failed: $state"
+  }
 
   $health = $false
   for ($attempt = 0; $attempt -lt 180; $attempt++) {
@@ -142,9 +181,18 @@ try {
   $counts = (Get-Content -Raw -LiteralPath $queryOutput).Trim() -split "\s+"
   if ($counts.Count -ne 5 -or @($counts | Where-Object { $_ -ne '0' }).Count) { Fail 7 "fresh user tables are not empty: $($counts -join ',')" }
 
+  Stop-NativeProcess $desktopPid
+  $desktopPid = $null
+  $restart = Start-Process -FilePath $desktopExe -WorkingDirectory $installRoot -PassThru
+  $restartPid = $restart.Id
+  $restartedWindow = Wait-NativeWindow $restartPid $installRoot 60
+  if (-not $restartedWindow) { Fail 5 'Mework.exe could not be started again after a clean close' }
+
   $verificationSucceeded = $true
-  Write-Host "[fresh-install:0] Windows install, random secrets, empty user database and local launch passed on ports $appPort/$mysqlPort"
+  Write-Host "[fresh-install:0] Windows install, native desktop launch/restart, random secrets, empty user database and local launch passed on ports $appPort/$mysqlPort"
 } finally {
+  if ($desktopPid) { Stop-NativeProcess $desktopPid }
+  if ($restartPid) { Stop-NativeProcess $restartPid }
   try { Stop-IsolatedListener $appPort $installRoot } catch { if ($_.Exception.Message) { Write-Warning $_.Exception.Message } }
   try { Stop-IsolatedListener $mysqlPort $installRoot } catch { if ($_.Exception.Message) { Write-Warning $_.Exception.Message } }
   if ($launcherPid) {

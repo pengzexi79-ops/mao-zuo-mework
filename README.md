@@ -8,7 +8,7 @@
 
 ## 当前进展
 
-当前发行版本为 `2.2.164`。截至 2026-09-02，D 盘工作树已包含按真实协议分流的文本、图片、视频和配音链路，OpenAI、Qwen、MiniMax 与未知兼容网关的音色隔离，素材后台导入、持续出片、生成结果入库、成片质检与修复，以及使用初代猫作图标的 Windows 全量安装流程。安装后的正常入口现为原生 `Mework.exe` 桌面窗口，不再让用户通过批处理窗口或浏览器地址使用应用。2026-08-30、2026-08-31 和 2026-09-02 的独立更新均已写入应用内历史。
+当前发行版本为 `2.2.165`。截至 2026-09-02，D 盘工作树已包含按真实协议分流的文本、图片、视频和配音链路，OpenAI、Qwen、MiniMax 与未知兼容网关的音色隔离，素材后台导入、持续出片、生成结果入库、成片质检与修复，以及使用初代猫作图标的 Windows 全量安装流程。安装后的正常入口现为原生 `Mework.exe` 桌面窗口，不再让用户通过批处理窗口或浏览器地址使用应用。2026-08-30、2026-08-31 和 2026-09-02 的独立更新均已写入应用内历史。
 
 完整开发提交记录见 [`docs/zcode-handoff/GIT_HISTORY.md`](docs/zcode-handoff/GIT_HISTORY.md) 及 GitHub 的 [`legacy-history-sanitized` 分支](https://github.com/pengzexi79-ops/mao-zuo-mework/tree/legacy-history-sanitized)；`main` 是可直接分享的最新源码快照。
 
@@ -16,7 +16,7 @@
 
 ## Windows 安装包
 
-公开仓库的 `v2.2.164` Release 提供 Windows 10/11 x64 全量安装包。下载 EXE 和全部 `.bin` 分片后即可安装；有 D 盘时默认安装到 `D:\Mework`，没有 D 盘时回退当前用户应用目录。
+公开仓库的 `v2.2.165` Release 提供 Windows 10/11 x64 全量安装包。下载 EXE 和全部 `.bin` 分片后即可安装；有 D 盘时默认安装到 `D:\Mework`，没有 D 盘时回退当前用户应用目录。
 
 安装包内置 Java 17、MySQL 8、FFmpeg/FFprobe、Python 媒体环境、whisper.cpp、离线 ASR 模型、ImageMagick 和 WebView2 离线运行时。首次启动 `Mework.exe` 会静默创建空数据库、选择本机空闲端口并生成每台机器独立的随机密钥；端口只承载应用内部本机服务，用户看到的是无地址栏的猫作桌面窗口。安装包不包含开发者素材、任务、成片、数据库、API Key、中转站地址、账号或 Cookie。
 

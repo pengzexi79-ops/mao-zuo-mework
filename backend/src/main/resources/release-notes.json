@@ -1,41 +1,78 @@
 {
-  "id": "release-2-2-164",
-  "version": "2.2.164",
+  "id": "release-2-2-165",
+  "version": "2.2.165",
   "releasedAt": "2026-09-02",
-  "kind": "正式发行",
-  "title": "原生桌面应用与全机安装启动修复",
-  "summary": "把安装后的启动入口从易闪退的批处理快捷方式升级为真正的 Windows 桌面应用，并将本机服务、端口选择和 WebView2 显示层收进统一的原生启动链路。",
+  "kind": "当前本机构建",
+  "title": "桌面应用启动稳定性修复与安装验收",
+  "summary": "修复全量安装后点击桌面入口可能闪退或静默退出的问题，让猫作通过原生 Mework.exe 启动并在失败时保留可操作的诊断窗口。",
   "changes": [
-    "新增 x64 Windows 原生桌面壳 Mework.exe，在无地址栏的应用窗口内承载现有工作台。",
-    "桌面壳静默创建本机配置、启动后端、等待健康检查，并使用 D 盘安装目录下的独立 WebView2 用户数据目录。",
-    "安装器内置 WebView2 SDK 组件和微软签名的 x64 离线运行时，桌面与开始菜单快捷方式统一指向 Mework.exe。",
-    "公开仓库的 README、普通用户安装手册、AI 安装手册和机器清单同步为 2.2.164。"
+    "启动器在启动早期写入桌面启动日志，并在找不到可用本机服务时保留原生窗口，提供重试启动和关闭操作。",
+    "安装版桌面入口继续统一指向 Mework.exe，启动时核对服务路径归属当前安装目录，避免误复用其它目录中的猫作实例。",
+    "启动失败提示统一脱敏，避免把 Bearer、sk-、key-、token- 或 secret- 形式的敏感片段显示在窗口或日志中。",
+    "完成 D 盘优先的 Windows x64 全量安装链路整理，保留离线运行时、空数据库和机器专属配置生成。"
   ],
   "fixes": [
-    "修复桌面快捷方式指向 start.bat 时窗口一闪而过、用户误以为应用未安装的问题。",
-    "修复端口可用性检测遗漏 IPv6 或通配监听器，可能错误选中已被占用端口的问题。",
-    "修复启动器仅凭端口健康状态复用其他猫作实例的问题；现在会核对输出、素材或运行时路径是否属于当前安装目录。",
-    "修复已启动实例再次运行 start.bat 时静默退出、没有任何可见结果的问题。"
+    "修复桌面应用启动异常时窗口一闪而过、用户无法获知原因且无法重试的问题。",
+    "修复 WebView2 初始化失败后无法重新创建控件、只能退出应用的问题。",
+    "修复重复启动时只按端口判断实例归属的风险，并增加按窗口标题和进程路径确认当前安装实例。"
   ],
   "verification": [
-    "原生桌面壳使用 .NET Framework x64 编译器和 WebView2 1.0.4191.47 SDK 编译通过。",
-    "D:\\Mework\\Mework.exe 真机启动成功，窗口标题为猫作·Mework且进程保持响应。",
-    "WebView2 子进程使用 D:\\Mework\\data\\desktop-webview，安装版后端 8761 健康状态为 UP。",
-    "验证期间 8760 与 8762 既有实例 PID 保持不变，未调用任何真实图片、视频或语音付费生成接口。"
+    "原生启动器使用 .NET Framework x64 编译通过，包含失败保留窗口、重试和错误脱敏路径。",
+    "执行前端静态完整性、素材导入队列、AI 创作路由检查，并完成 Vite 构建。",
+    "执行后端 Maven 测试和发行 JAR 构建，完成 Windows 安装静态检查、隐私检查、离线运行时检查和 D 盘隔离安装验收。",
+    "验证仅使用源码、Mock、静态检查、本地健康检查和空数据库启动；未调用真实图片、视频或音频付费生成接口。"
   ],
-  "compatibility": "面向 Windows 10/11 x64。已有 start.bat 仍保留用于开发和故障排查，但安装后的正常入口改为 Mework.exe；用户的 .env、数据库、素材、任务和 Provider 密钥均不写入仓库或安装包。",
+  "compatibility": "面向 Windows 10/11 x64。正常入口为安装目录中的 Mework.exe，用户无需手动打开端口或浏览器地址；有 D 盘时默认安装到 D:\\Mework，无 D 盘时回退到当前用户应用目录。用户的 API 密钥、订阅令牌、Cookie、素材、任务和生成结果不进入仓库或安装包。",
   "evidence": [
     "installer/launcher/MeworkApp.cs",
     "installer/build_launcher.ps1",
     "installer/Mework.iss",
-    "ensure_env.ps1",
-    "start.bat",
+    "build_installer.bat",
+    "verify_windows_install.ps1",
+    "verify_fresh_install.ps1",
     "INSTALLATION_GUIDE.md",
     "AI_INSTALLATION_GUIDE.md",
     "installer/ai-setup-manifest.json"
   ],
   "source": "backend/src/main/resources/release-notes.json",
   "history": [
+    {
+      "id": "release-2-2-164",
+      "version": "2.2.164",
+      "releasedAt": "2026-09-02",
+      "kind": "历史开发阶段",
+      "title": "原生桌面应用与全机安装启动修复",
+      "summary": "把安装后的启动入口从易闪退的批处理快捷方式升级为真正的 Windows 桌面应用，并将本机服务、端口选择和 WebView2 显示层收进统一的原生启动链路。",
+      "changes": [
+        "新增 x64 Windows 原生桌面壳 Mework.exe，在无地址栏的应用窗口内承载现有工作台。",
+        "桌面壳静默创建本机配置、启动后端、等待健康检查，并使用 D 盘安装目录下的独立 WebView2 用户数据目录。",
+        "安装器内置 WebView2 SDK 组件和微软签名的 x64 离线运行时，桌面与开始菜单快捷方式统一指向 Mework.exe。",
+        "公开仓库的 README、普通用户安装手册、AI 安装手册和机器清单同步为 2.2.164。"
+      ],
+      "fixes": [
+        "修复桌面快捷方式指向 start.bat 时窗口一闪而过、用户误以为应用未安装的问题。",
+        "修复端口可用性检测遗漏 IPv6 或通配监听器，可能错误选中已被占用端口的问题。",
+        "修复启动器仅凭端口健康状态复用其他猫作实例的问题；现在会核对输出、素材或运行时路径是否属于当前安装目录。",
+        "修复已启动实例再次运行 start.bat 时静默退出、没有任何可见结果的问题。"
+      ],
+      "verification": [
+        "原生桌面壳使用 .NET Framework x64 编译器和 WebView2 1.0.4191.47 SDK 编译通过。",
+        "D:\\Mework\\Mework.exe 真机启动成功，窗口标题为猫作·Mework且进程保持响应。",
+        "WebView2 子进程使用 D:\\Mework\\data\\desktop-webview，安装版后端 8761 健康状态为 UP。",
+        "验证期间 8760 与 8762 既有实例 PID 保持不变，未调用任何真实图片、视频或语音付费生成接口。"
+      ],
+      "compatibility": "面向 Windows 10/11 x64。已有 start.bat 仍保留用于开发和故障排查，但安装后的正常入口改为 Mework.exe；用户的 .env、数据库、素材、任务和 Provider 密钥均不写入仓库或安装包。",
+      "evidence": [
+        "installer/launcher/MeworkApp.cs",
+        "installer/build_launcher.ps1",
+        "installer/Mework.iss",
+        "ensure_env.ps1",
+        "start.bat",
+        "INSTALLATION_GUIDE.md",
+        "AI_INSTALLATION_GUIDE.md",
+        "installer/ai-setup-manifest.json"
+      ]
+    },
     {
       "id": "release-2-2-163",
       "version": "2.2.163",

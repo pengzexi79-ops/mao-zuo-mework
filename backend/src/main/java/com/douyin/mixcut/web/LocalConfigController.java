@@ -241,6 +241,10 @@ public class LocalConfigController {
     public R<Map<String, Object>> restart(HttpServletRequest servletRequest) {
         if (!isLocalRequest(servletRequest)) return R.fail("本机配置接口仅允许从 127.0.0.1 访问");
         try {
+            int currentPort = servletRequest.getLocalPort();
+            if (currentPort <= 0 || currentPort > 65535) {
+                return R.fail("无法确定当前应用端口，拒绝自动重启");
+            }
             Path root = projectRoot().toRealPath();
             Path launcher = root.resolve("start.bat").normalize();
             if (!launcher.startsWith(root) || Files.isSymbolicLink(launcher) || !Files.isRegularFile(launcher)) {
@@ -258,7 +262,7 @@ public class LocalConfigController {
                     "timeout /t 2 /nobreak >nul",
                     "taskkill /PID " + currentPid + " /F >nul 2>&1",
                     "for /l %%i in (1,1,15) do (",
-                    "  netstat -ano -p TCP | findstr /R /C:\":8760 .*LISTENING\" >nul || goto restart_ready",
+                    "  netstat -ano -p TCP | findstr /R /C:\":" + currentPort + " .*LISTENING\" >nul || goto restart_ready",
                     "  timeout /t 1 /nobreak >nul",
                     ")",
                     ":restart_ready",
