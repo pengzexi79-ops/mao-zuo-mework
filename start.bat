@@ -72,7 +72,7 @@ set "HEALTH_CODE="
 for /f "usebackq delims=" %%H in (`powershell -NoProfile -Command "try { $r = Invoke-WebRequest -UseBasicParsing -Uri 'http://127.0.0.1:%PORT%/api/system/env' -TimeoutSec 8; [int]$r.StatusCode } catch { '' }"`) do set "HEALTH_CODE=%%H"
 if "%HEALTH_CODE%"=="200" (
   echo Mework is already running and healthy (PID %PORT_PID% on port %PORT%; /api/system/env 200).
-  echo Close the existing Mework process first if you intended to restart it.
+  if /I not "%APP_SKIP_BROWSER%"=="true" start "" /b powershell -NoProfile -WindowStyle Hidden -Command "Start-Process 'http://%BROWSER_ADDR%:%PORT%'"
   exit /b 0
 )
 echo WARN: port %PORT% is occupied by PID %PORT_PID% but /api/system/env did not return 200 (health="%HEALTH_CODE%").

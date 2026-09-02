@@ -16,7 +16,12 @@ $required = @(
   'portable\jdk-17\bin\java.exe','portable\mysql\bin\mysqld.exe','portable\mysql\bin\mysql.exe',
   'portable\python\python.exe','portable\ffmpeg\bin\ffmpeg.exe','portable\ffmpeg\bin\ffprobe.exe',
   'portable\whisper\Release\whisper-cli.exe','portable\whisper-models\ggml-small.bin',
-  'portable\imagemagick\magick.exe','backend\.venv\Scripts\python.exe'
+  'portable\imagemagick\magick.exe','backend\.venv\Scripts\python.exe',
+  'installer\launcher\output\Mework.exe',
+  'installer\launcher\output\Microsoft.Web.WebView2.Core.dll',
+  'installer\launcher\output\Microsoft.Web.WebView2.WinForms.dll',
+  'installer\launcher\output\WebView2Loader.dll',
+  'installer\launcher\output\MicrosoftEdgeWebView2RuntimeInstallerX64.exe'
 )
 $required | ForEach-Object { Require-File $_ }
 
@@ -64,7 +69,8 @@ foreach ($allowed in @('jdk-17','mysql','ffmpeg','python','whisper','whisper-mod
 if ($iss -notmatch 'DefaultDirName=\{code:GetDefaultInstallDir\}' -or $iss -notmatch "Result := 'D:\\Mework'") { $errors.Add('installer does not prefer D:\Mework') }
 if ($iss -notmatch 'SetupIconFile=Mework\.ico' -or $iss -notmatch 'IconFilename: "\{app\}\\Mework\.ico"') { $errors.Add('installer does not use the Mework application icon') }
 $runSection = if ($iss -match '(?s)\[Run\](.*?)(?:\r?\n\[|$)') { $Matches[1] } else { '' }
-if (([regex]::Matches($runSection, 'Filename:')).Count -ne 1 -or $runSection -notmatch 'start\.bat') { $errors.Add('installer must launch only start.bat after installation') }
+if ($runSection -notmatch 'Filename:\s*"\{app\}\\\{#AppExeName\}"') { $errors.Add('installer must launch Mework.exe after installation') }
+if ($runSection -match 'Filename:\s*"\{app\}\\start\.bat"') { $errors.Add('installer must not use start.bat as the post-install desktop entry') }
 
 try {
   $releaseVersion = [string](Get-Content -Raw -LiteralPath (Join-Path $rootPath 'backend\src\main\resources\release-notes.json') -Encoding UTF8 | ConvertFrom-Json).version

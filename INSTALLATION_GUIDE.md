@@ -1,30 +1,30 @@
-# 猫作·Mework 2.2.163 安装手册
+# 猫作·Mework 2.2.164 安装手册
 
 ## 支持范围
 
 - Windows 10 或 Windows 11，x64。
 - 建议至少预留 8 GB 磁盘空间。
 - 有 D 盘时默认安装到 `D:\Mework`；没有 D 盘时安装到当前用户的应用目录。
-- 安装与首次启动不需要另装 Java、MySQL、FFmpeg、Python、ImageMagick 或离线语音识别模型。
+- 安装与首次启动不需要另装 Java、MySQL、FFmpeg、Python、ImageMagick、WebView2 或离线语音识别模型。
 
 ## 下载
 
-从私人仓库 `pengzexi79-ops/mao-zuo-mework` 的 `v2.2.163` Release 下载以下文件，并放在同一目录：
+从公开仓库 `pengzexi79-ops/mao-zuo-mework` 的 `v2.2.164` Release 下载以下文件，并放在同一目录：
 
-- `Mework-Setup-2.2.163.exe`
+- `Mework-Setup-2.2.164.exe`
 - 所有同版本 `.bin` 分片
 - `SHA256SUMS.txt`
 - `release-manifest.json`
 - `ai-setup-manifest.json`
 
-私人仓库只有仓库所有者和被邀请的协作者可以访问。分享给好友前，请在 GitHub 仓库设置中把对方账号添加为只读协作者。
+仓库与 Release 已公开，好友可直接查看源码、文档和下载页。不要在 Issue、截图或聊天中公开 API Key、Cookie、数据库密码或个人素材。
 
 ## 校验与安装
 
 在下载目录打开 PowerShell：
 
 ```powershell
-Get-FileHash .\Mework-Setup-2.2.163.exe -Algorithm SHA256
+Get-FileHash .\Mework-Setup-2.2.164.exe -Algorithm SHA256
 ```
 
 将结果与 `SHA256SUMS.txt` 对照。确认所有 `.bin` 分片和 EXE 位于同一目录后，双击 EXE 安装。不要单独移动或重命名分片。
@@ -34,7 +34,7 @@ Get-FileHash .\Mework-Setup-2.2.163.exe -Algorithm SHA256
 1. 选择未占用的本机应用端口和 MySQL 端口。
 2. 生成每台电脑独立的数据库应用密码、root 密码和 Provider 凭据加密主密钥。
 3. 在应用数据目录创建全新的空 MySQL 数据库并载入 schema。
-4. 启动只监听本机回环地址的应用，然后打开浏览器。
+4. 启动只监听本机回环地址的服务，并在无地址栏的 `Mework.exe` 桌面窗口中打开工作台。
 
 安装包不包含开发者素材、任务、成片、日志、数据库、API Key、中转站地址或账号登录态。
 
@@ -46,6 +46,7 @@ Get-FileHash .\Mework-Setup-2.2.163.exe -Algorithm SHA256
 - Python 媒体运行时及固定版本依赖
 - whisper.cpp、faster-whisper 离线模型
 - ImageMagick
+- 微软签名的 WebView2 x64 离线运行时和猫作原生桌面壳
 - 应用后端、前端静态资源、数据库 schema、能力清单和安装诊断脚本
 
 ## 用户需要自行配置的内容
@@ -74,8 +75,9 @@ Get-FileHash .\Mework-Setup-2.2.163.exe -Algorithm SHA256
 
 ## 故障检查
 
-1. 运行安装目录下的 `setup_runtime.bat verify`。
-2. 查看「能力中心」的环境状态。
-3. 查看安装目录 `data\logs` 下的启动和数据库日志。
-4. 若端口冲突，关闭占用程序后重启；首次配置会自动选择空闲端口。
-5. 若第三方 API 失败，核对服务地址、模型能力、额度和供应商真实接口，不要把聊天、生图、视频和配音模型混用同一请求通道。
+1. 正常入口是桌面或开始菜单中的“猫作·Mework”，目标应为安装目录下的 `Mework.exe`，不是 `start.bat`。
+2. 运行安装目录下的 `setup_runtime.bat verify`。
+3. 查看「能力中心」的环境状态。
+4. 查看安装目录 `data\logs` 下的 `desktop-launcher.log`、启动和数据库日志。
+5. 若端口冲突，重新启动桌面应用；启动器会核对当前安装目录并自动选择空闲端口。
+6. 若第三方 API 失败，核对服务地址、模型能力、额度和供应商真实接口，不要把聊天、生图、视频和配音模型混用同一请求通道。

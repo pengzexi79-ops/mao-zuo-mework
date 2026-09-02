@@ -1,16 +1,16 @@
-# GitHub 私人分享说明：猫作·Mework
+# GitHub 公开分享说明：猫作·Mework
 
-本仓库是猫作·Mework 的完整私人源码与发行仓库。当前正式发行版为 `v2.2.163`，支持 Windows 10/11 x64。
+本仓库是猫作·Mework 的公开源码与发行仓库。当前正式发行版为 `v2.2.164`，支持 Windows 10/11 x64。
 
 ## 分享给好友
 
-仓库为 private。好友必须拥有 GitHub 账号，并由仓库所有者在仓库设置中添加为协作者后，才能查看源码、文档和 Release。不要公开分享个人访问令牌、API Key、Cookie 或带签名的临时下载地址。
+仓库与 Release 已公开，好友可直接查看源码、文档和下载安装文件。公开仓库不等于公开个人配置：不要提交或分享访问令牌、API Key、Cookie、数据库密码或带个人授权的素材。
 
 ## Release 下载内容
 
-在 `v2.2.163` Release 中下载并放在同一目录：
+在 `v2.2.164` Release 中下载并放在同一目录：
 
-- `Mework-Setup-2.2.163.exe`
+- `Mework-Setup-2.2.164.exe`
 - 安装器生成的全部同版本 `.bin` 分片
 - `SHA256SUMS.txt`
 - `release-manifest.json`
@@ -19,11 +19,11 @@
 - `AI_INSTALLATION_GUIDE.md`
 - `PRIVACY_RELEASE.md`
 
-安装器内置应用运行所需的 Java 17、MySQL 8 程序、FFmpeg/FFprobe、Python 媒体运行时、whisper.cpp、离线 ASR 模型和 ImageMagick。有 D 盘时默认安装到 `D:\Mework`，否则安装到当前用户应用目录。
+安装器内置应用运行所需的 Java 17、MySQL 8 程序、FFmpeg/FFprobe、Python 媒体运行时、whisper.cpp、离线 ASR 模型、ImageMagick 和 WebView2 离线运行时。有 D 盘时默认安装到 `D:\Mework`，否则安装到当前用户应用目录。
 
 ## 首次启动
 
-首次启动会在用户电脑上创建空数据库，选择空闲端口，并生成该电脑独立的随机数据库密码和 Provider 凭据加密主密钥。用户随后在应用内自行配置 AI 供应商、素材 API Key、账号授权和自己的素材。
+首次启动 `Mework.exe` 会在用户电脑上创建空数据库，选择空闲端口，并生成该电脑独立的随机数据库密码和 Provider 凭据加密主密钥。工作台显示在原生桌面窗口中，不要求用户通过浏览器地址访问。用户随后在应用内自行配置 AI 供应商、素材 API Key、账号授权和自己的素材。
 
 ## 隐私排除
 

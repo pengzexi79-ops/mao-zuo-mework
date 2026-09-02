@@ -191,12 +191,14 @@ render          → ffmpeg 输出成片
 单机部署：
 
 ```text
-[用户浏览器] → http://127.0.0.1:8760
-                      ↓
-            [Spring Boot jar]  ← 内嵌 static 前端
-                      ↓
-            [MySQL 3306]  +  [ffmpeg]  +  [data/]
+[Mework.exe 原生桌面窗口 / WebView2]
+                  ↓ 本机回环地址，端口由启动器选择
+       [Spring Boot jar]  ← 内嵌 static 前端
+                  ↓
+       [MySQL 本机端口] + [ffmpeg] + [data/]
 ```
+
+端口是桌面应用内部的本机服务实现细节，不是普通用户入口。`Mework.exe` 负责选择空闲端口、静默启动服务、核对服务路径属于当前安装目录，并在无地址栏窗口中加载工作台；`start.bat` 只保留为开发和故障排查入口。
 
 可扩展：
 

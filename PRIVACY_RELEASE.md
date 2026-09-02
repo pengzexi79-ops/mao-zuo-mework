@@ -1,6 +1,6 @@
 # 猫作·Mework 发行隐私边界
 
-`v2.2.163` 安装包采用显式白名单构建。只有应用交付文件和七类运行时目录会进入安装包。
+`v2.2.164` 安装包采用显式白名单构建。只有应用交付文件、原生桌面壳和明确列出的运行时目录会进入安装包。
 
 ## 允许进入安装包
 
@@ -12,7 +12,7 @@
 - `portable/whisper-models`
 - `portable/imagemagick`
 - `backend/.venv`
-- 编译后的 `mixcut-delivery.jar`、空库 schema、启动脚本、能力清单和安装文档
+- 编译后的 `mixcut-delivery.jar`、`Mework.exe`、WebView2 运行组件、空库 schema、启动脚本、能力清单和安装文档
 
 ## 明确排除
 

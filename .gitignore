@@ -22,6 +22,8 @@ frontend/dist/
 backend/tools/__pycache__/
 portable/
 installer/output/
+installer/.cache/
+installer/launcher/output/
 installer/version.iss
 installer/*.log
 installer/*.log.err

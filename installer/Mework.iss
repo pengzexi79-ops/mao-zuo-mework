@@ -3,7 +3,7 @@
 #define AppName "猫作·Mework"
 #include "version.iss"
 #define AppPublisher "猫作·Mework"
-#define AppExeName "start.bat"
+#define AppExeName "Mework.exe"
 
 [Setup]
 AppId={{4F2BA8E5-6552-4A84-8D87-69BDE6B21B79}
@@ -36,6 +36,11 @@ Source: "..\ensure_env.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\start_mysql.bat"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\start_mysql.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\setup_runtime.bat"; DestDir: "{app}"; Flags: ignoreversion
+Source: ".\launcher\output\Mework.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: ".\launcher\output\Microsoft.Web.WebView2.Core.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: ".\launcher\output\Microsoft.Web.WebView2.WinForms.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: ".\launcher\output\WebView2Loader.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: ".\launcher\output\MicrosoftEdgeWebView2RuntimeInstallerX64.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall; Check: WebView2RuntimeNeeded
 Source: "..\.env.example"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\INSTALLATION_GUIDE.md"; DestDir: "{app}\docs"; Flags: ignoreversion
 Source: "..\AI_INSTALLATION_GUIDE.md"; DestDir: "{app}\docs"; Flags: ignoreversion
@@ -62,15 +67,26 @@ Source: "..\portable\imagemagick\*"; DestDir: "{app}\portable\imagemagick"; Flag
 Source: "..\backend\.venv\*"; DestDir: "{app}\backend\.venv"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "**\__pycache__\**;**\*.pyc;**\*.pyo;**\*.log"
 
 [Icons]
-Name: "{autodesktop}\{#AppName}"; Filename: "{app}\start.bat"; WorkingDir: "{app}"; IconFilename: "{app}\Mework.ico"
-Name: "{group}\{#AppName}"; Filename: "{app}\start.bat"; WorkingDir: "{app}"; IconFilename: "{app}\Mework.ico"
+Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"; IconFilename: "{app}\Mework.ico"
+Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"; IconFilename: "{app}\Mework.ico"
 Name: "{group}\检查运行环境"; Filename: "{app}\setup_runtime.bat"; WorkingDir: "{app}"
 
 [Run]
 ; Only one post-install launcher is allowed to avoid concurrent .env/MySQL/venv setup.
-Filename: "{app}\start.bat"; Description: "启动猫作·Mework（首次启动会创建空数据库和本机密钥）"; Flags: postinstall nowait skipifsilent
+Filename: "{tmp}\MicrosoftEdgeWebView2RuntimeInstallerX64.exe"; Parameters: "/silent /install"; StatusMsg: "正在安装桌面显示组件..."; Flags: waituntilterminated; Check: WebView2RuntimeNeeded
+Filename: "{app}\{#AppExeName}"; Description: "启动猫作·Mework（首次启动会创建空数据库和本机密钥）"; Flags: postinstall nowait skipifsilent
 
 [Code]
+function WebView2RuntimeNeeded: Boolean;
+var
+  Version: String;
+begin
+  Result := not (
+    RegQueryStringValue(HKLM32, 'SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}', 'pv', Version) or
+    RegQueryStringValue(HKCU, 'SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}', 'pv', Version)
+  );
+end;
+
 function GetDefaultInstallDir(Param: String): String;
 begin
   if DirExists('D:\') then

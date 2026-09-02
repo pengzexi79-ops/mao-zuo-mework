@@ -133,6 +133,12 @@ if errorlevel 1 (
 )
 
 REM 7) Compile installer.
+echo [launcher] Build native desktop shell...
+powershell -NoProfile -ExecutionPolicy Bypass -File "%APP_DIR%installer\build_launcher.ps1" -Root "%APP_DIR:~0,-1%"
+if errorlevel 1 (
+  echo [ERROR] Native desktop shell build failed.
+  exit /b 1
+)
 echo [7/7] Compile installer...
 set "APP_ROOT=%APP_DIR:~0,-1%"
 subst X: /d >nul 2>nul

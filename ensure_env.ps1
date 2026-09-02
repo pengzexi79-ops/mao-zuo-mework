@@ -16,7 +16,10 @@ function New-HexSecret([int]$Length = 32) {
 }
 
 function Test-PortAvailable([int]$Port) {
+    $active = [Net.NetworkInformation.IPGlobalProperties]::GetIPGlobalProperties().GetActiveTcpListeners()
+    if ($active | Where-Object { $_.Port -eq $Port }) { return $false }
     $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, $Port)
+    $listener.Server.ExclusiveAddressUse = $true
     try { $listener.Start(); return $true } catch { return $false } finally { try { $listener.Stop() } catch { } }
 }
 

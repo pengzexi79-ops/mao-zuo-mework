@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "product": {
     "name": "猫作·Mework",
-    "version": "2.2.163",
+    "version": "2.2.164",
     "repository": "https://github.com/pengzexi79-ops/mao-zuo-mework",
-    "releaseTag": "v2.2.163",
-    "visibility": "private"
+    "releaseTag": "v2.2.164",
+    "visibility": "public"
   },
   "platform": {
     "os": ["Windows 10", "Windows 11"],
@@ -15,13 +15,15 @@
     "recommendedFreeDiskGiB": 8
   },
   "assets": {
-    "installer": "Mework-Setup-2.2.163.exe",
-    "spannedData": "Mework-Setup-2.2.163-*.bin",
+    "installer": "Mework-Setup-2.2.164.exe",
+    "spannedData": "Mework-Setup-2.2.164-*.bin",
     "checksums": "SHA256SUMS.txt",
     "releaseManifest": "release-manifest.json"
   },
   "bundled": [
     {"id": "application", "path": "backend/target/mixcut-delivery.jar"},
+    {"id": "desktop-shell", "path": "Mework.exe", "framework": ".NET Framework x64"},
+    {"id": "webview2", "path": "MicrosoftEdgeWebView2RuntimeInstallerX64.exe", "offlineInstaller": true},
     {"id": "java", "path": "portable/jdk-17"},
     {"id": "mysql", "path": "portable/mysql", "dataIncluded": false},
     {"id": "ffmpeg", "path": "portable/ffmpeg"},
@@ -32,13 +34,16 @@
     {"id": "imagemagick", "path": "portable/imagemagick"}
   ],
   "firstRun": {
-    "entry": "start.bat",
+    "entry": "Mework.exe",
+    "fallbackEntry": "start.bat",
     "healthEndpoint": "/api/system/env",
     "bindAddress": "127.0.0.1",
     "databaseDirectory": "%APP_DATA_DIR%/mysql",
     "createsEmptyDatabase": true,
     "generatesMachineSpecificSecrets": true,
-    "opensBrowser": true
+    "opensBrowser": false,
+    "nativeWindow": true,
+    "webViewProfile": "%APP_DATA_DIR%/desktop-webview"
   },
   "userConfiguration": [
     {"id": "ai-provider", "location": "AI 接入", "secret": true, "requiredFor": ["AI 对话", "AI 图片", "AI 视频", "AI 配音"]},
