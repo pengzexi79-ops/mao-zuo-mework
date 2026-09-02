@@ -1,4 +1,4 @@
-# 猫作·Mework 2.2.158 安装手册
+# 猫作·Mework 2.2.163 安装手册
 
 ## 支持范围
 
@@ -9,9 +9,9 @@
 
 ## 下载
 
-从私人仓库 `pengzexi79-ops/mao-zuo-mework` 的 `v2.2.158` Release 下载以下文件，并放在同一目录：
+从私人仓库 `pengzexi79-ops/mao-zuo-mework` 的 `v2.2.163` Release 下载以下文件，并放在同一目录：
 
-- `Mework-Setup-2.2.158.exe`
+- `Mework-Setup-2.2.163.exe`
 - 所有同版本 `.bin` 分片
 - `SHA256SUMS.txt`
 - `release-manifest.json`
@@ -24,7 +24,7 @@
 在下载目录打开 PowerShell：
 
 ```powershell
-Get-FileHash .\Mework-Setup-2.2.158.exe -Algorithm SHA256
+Get-FileHash .\Mework-Setup-2.2.163.exe -Algorithm SHA256
 ```
 
 将结果与 `SHA256SUMS.txt` 对照。确认所有 `.bin` 分片和 EXE 位于同一目录后，双击 EXE 安装。不要单独移动或重命名分片。

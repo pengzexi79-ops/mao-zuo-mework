@@ -68,7 +68,7 @@ $dbUser = if ($env:DB_USERNAME) { $env:DB_USERNAME } else { 'mixcut' }
 $dbPassword = $env:DB_PASSWORD
 $rootPassword = $env:MYSQL_ROOT_PASSWORD
 if ($dbUser -notmatch '^[A-Za-z0-9_]{1,32}$') { throw 'DB_USERNAME must contain only letters, digits, or underscore.' }
-if ([string]::IsNullOrWhiteSpace($dbPassword) -or [string]::IsNullOrWhiteSpace($rootPassword)) { throw 'DB_PASSWORD and MYSQL_ROOT_PASSWORD must be generated before MySQL starts.' }
+if ([string]::IsNullOrWhiteSpace($dbPassword)) { throw 'DB_PASSWORD must be generated before MySQL starts.' }
 if ($env:DB_URL -and $env:DB_URL -notmatch "^jdbc:mysql://(?:127\.0\.0\.1|localhost):$mysqlPort/") {
     throw "MYSQL_PORT=$mysqlPort does not match the local DB_URL."
 }
@@ -99,6 +99,7 @@ if (Test-TcpPort $mysqlPort) {
 
 $freshData = -not (Test-Path -LiteralPath (Join-Path $dataDir 'mysql') -PathType Container)
 if ($freshData) {
+    if ([string]::IsNullOrWhiteSpace($rootPassword)) { throw 'MYSQL_ROOT_PASSWORD is required only when initializing a new private MySQL data directory.' }
     Write-Host '[preparing] Initializing an empty private MySQL data directory...'
     $initialize = Invoke-Client $mysqld @('--initialize-insecure','--console',"--basedir=$mysqlHome","--datadir=$dataDir") ''
     if ($initialize.ExitCode -ne 0) {

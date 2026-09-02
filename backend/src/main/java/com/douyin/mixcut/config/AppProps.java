@@ -18,7 +18,7 @@ import java.util.List;
 public class AppProps {
 
     /** Release identity is compiled into the application and must never be environment-overridable. */
-    private static final String RELEASE_VERSION = "2.2.158";
+    private static final String RELEASE_VERSION = "2.2.163";
 
     private String dataDir = "./data";
     private String ffmpeg = "ffmpeg";
@@ -124,6 +124,11 @@ public class AppProps {
 
     public Path cache() {
         return ensure(managedPath(cacheDir, "cache"));
+    }
+
+    /** Multipart request staging follows APP_DATA_DIR instead of the operating-system temp directory. */
+    public Path tempUploads() {
+        return ensure(data().resolve("tmp").resolve("uploads"));
     }
 
     /** Dedicated root for later media-tool and AI-generated assets; old files are never moved. */

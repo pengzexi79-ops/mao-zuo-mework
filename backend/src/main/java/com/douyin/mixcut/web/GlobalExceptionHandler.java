@@ -36,7 +36,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     public ResponseEntity<R<Void>> uploadTooLarge(MaxUploadSizeExceededException e) {
         return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
-                .body(R.fail("文件超过服务器上传限制（单文件最大 2GB）"));
+                .body(R.fail("文件上传被服务器拒绝，请检查外部代理、运行环境配置或本机磁盘空间"));
     }
 
     @ExceptionHandler(HttpMessageNotReadableException.class)

@@ -1,11 +1,12 @@
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
 
-const baseURL = (import.meta.env.VITE_API_BASE || '').replace(/\/$/, '')
+const runtimeEnv = import.meta.env || {}
+const baseURL = (runtimeEnv.VITE_API_BASE || '').replace(/\/$/, '')
 // A LAN user may open the one-time share URL from start.bat. Prefer a local build token when set.
 const queryAccessToken = new URLSearchParams(window.location.search).get('access_token')
 if (queryAccessToken) window.sessionStorage?.setItem('mework-access-token', queryAccessToken)
-const accessToken = import.meta.env.VITE_ACCESS_TOKEN || queryAccessToken || window.sessionStorage?.getItem('mework-access-token')
+const accessToken = runtimeEnv.VITE_ACCESS_TOKEN || queryAccessToken || window.sessionStorage?.getItem('mework-access-token')
 if (queryAccessToken && window.history?.replaceState) {
   const safeUrl = `${window.location.pathname}${window.location.hash || ''}`
   window.history.replaceState(null, '', safeUrl)
@@ -37,12 +38,12 @@ export function uploadFile (file, data = {}, onProgress) {
       if (event.lengthComputable && onProgress) onProgress(Math.round(event.loaded * 100 / event.total))
     }
     xhr.onerror = () => reject(new Error('上传连接中断：请确认应用仍在运行；若从微信窗口拖入，请先另存为本地文件后重试'))
-    xhr.ontimeout = () => reject(new Error('上传超时：大文件请单个上传并等待媒体检测完成'))
+    xhr.ontimeout = () => reject(new Error('上传超时：请确认应用仍在运行并检查磁盘剩余空间'))
     xhr.onload = () => {
       let body
       try { body = xhr.responseText ? JSON.parse(xhr.responseText) : null } catch { body = null }
       if (!body || typeof body !== 'object') {
-        const hint = xhr.status === 413 ? '文件超过服务器上传限制' : `服务器返回 ${xhr.status || '空响应'}`
+        const hint = xhr.status === 413 ? '当前运行环境拒绝了本次上传，请检查反向代理或磁盘配置' : `服务器返回 ${xhr.status || '空响应'}`
         reject(new Error(`上传失败：${hint}`)); return
       }
       if (xhr.status < 200 || xhr.status >= 300 || body.ok === false) {
@@ -50,8 +51,8 @@ export function uploadFile (file, data = {}, onProgress) {
       }
       resolve(body.data ?? body)
     }
-    // 大型微信视频在慢盘/杀毒扫描环境下需要更长时间；仍设置上限避免连接永久挂住。
-    xhr.timeout = Math.min(1800000, Math.max(300000, 300000 + Math.ceil((file?.size || 0) / (1024 * 1024)) * 1500))
+    // File size is constrained by available disk space, not an application-side timeout.
+    xhr.timeout = 0
     const form = new FormData()
     form.append('file', file)
     Object.entries(data || {}).forEach(([key, value]) => {
@@ -74,7 +75,7 @@ export function importMaterialPackage (files, packageName, relativePaths = [], d
       if (xhr.status < 200 || xhr.status >= 300 || body.ok === false) return reject(new Error(body.message || `素材总包导入失败（HTTP ${xhr.status}）`))
       resolve(body.data ?? body)
     }
-    xhr.timeout = 1800000
+    xhr.timeout = 0
     const form = new FormData()
     files.forEach((file, index) => { form.append('files', file); form.append('relativePaths', relativePaths[index] || file.webkitRelativePath || file.name) })
     form.append('packageName', packageName)
@@ -96,7 +97,7 @@ export function importMaterialPackageArchive (file, data = {}, onProgress) {
       if (xhr.status < 200 || xhr.status >= 300 || body.ok === false) return reject(new Error(body.message || `ZIP 总包导入失败（HTTP ${xhr.status}）`))
       resolve(body.data ?? body)
     }
-    xhr.timeout = 1800000
+    xhr.timeout = 0
     const form = new FormData()
     form.append('file', file)
     Object.entries(data || {}).forEach(([key, value]) => { if (value !== undefined && value !== null && value !== '') form.append(key, value) })
@@ -119,7 +120,7 @@ export function importMaterialArchive (file, data = {}, onProgress) {
       if (xhr.status < 200 || xhr.status >= 300 || body.ok === false) return reject(new Error(body.message || `ZIP 导入失败（HTTP ${xhr.status}）`))
       resolve(body.data ?? body)
     }
-    xhr.timeout = 1800000
+    xhr.timeout = 0
     const form = new FormData()
     form.append('file', file)
     Object.entries(data || {}).forEach(([key, value]) => {
@@ -160,7 +161,7 @@ function fallbackMessage (error) {
   if (!error?.response) return '无法连接后端服务。请确认已通过 start.bat 启动猫作，然后点击“刷新状态”。'
   if (error.response.status === 400) return '请求参数不正确，请检查填写内容'
   if (error.response.status === 401 || error.response.status === 403) return '当前操作没有权限，请检查访问令牌配置'
-  if (error.response.status === 413) return '文件超过服务器上传限制（单文件最大 2GB）'
+  if (error.response.status === 413) return '当前运行环境拒绝了本次上传，请检查外部代理限制或磁盘剩余空间'
   if (error.response.status >= 500) return '服务端处理失败，请稍后重试；若持续出现，请在环境中心检查后端日志'
   return '请求失败，请稍后重试'
 }
@@ -298,6 +299,7 @@ export const api = {
   createProvider: (body) => http.post('/api/ai/providers', body),
   updateProvider: (id, body) => http.put(`/api/ai/providers/${id}`, body),
   discoverProviderModels: (id) => http.post(`/api/ai/providers/${id}/discover-models`),
+  discoverProviderDraftModels: (body) => http.post('/api/ai/providers/discover-models', body),
   adoptProviderMedia: (id, body) => http.post(`/api/ai/providers/${id}/adopt-media`, body),
   deleteProvider: (id) => http.delete(`/api/ai/providers/${id}`),
   presetModels: () => get('/api/ai/preset-models'),

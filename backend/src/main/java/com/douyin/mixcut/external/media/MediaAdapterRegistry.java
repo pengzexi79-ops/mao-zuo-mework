@@ -11,9 +11,13 @@ import java.util.List;
 @Component
 public class MediaAdapterRegistry {
     public static final String OPENAI_IMAGE_GENERATION = "openai_image_generation";
+    public static final String DASHSCOPE_IMAGE_HTTP = "dashscope_image_http";
+    public static final String DASHSCOPE_IMAGE_TASK_HTTP = "dashscope_image_task_http";
     public static final String OPENAI_VIDEO_GENERATION = "openai_video_generation";
     public static final String OPENAI_AUDIO_SPEECH = "openai_audio_speech";
     public static final String DASHSCOPE_TTS_HTTP = "dashscope_tts_http";
+    public static final String DASHSCOPE_MINIMAX_TTS_HTTP = "dashscope_minimax_tts_http";
+    public static final String DASHSCOPE_VIDEO_TASK_HTTP = "dashscope_video_task_http";
     public static final String MEDIA_PROTOCOL_UNSUPPORTED = "MEDIA_PROTOCOL_UNSUPPORTED";
 
     private final List<MediaAdapter> adapters;
@@ -38,6 +42,11 @@ public class MediaAdapterRegistry {
     }
 
     public OpenAiCompatibleMediaAdapter adapterFor(AiProvider provider, String operation, MediaProviderCatalog.Capability capability) {
+        return adapterFor(provider, operation, capability, null);
+    }
+
+    public OpenAiCompatibleMediaAdapter adapterFor(AiProvider provider, String operation,
+                                                     MediaProviderCatalog.Capability capability, String model) {
         // A null capability can only occur in legacy unit-test doubles; persisted provider
         // configurations are always read through MediaProviderCatalog before execution.
         if (capability == null) return adapters.stream()
@@ -45,8 +54,10 @@ public class MediaAdapterRegistry {
                 .map(OpenAiCompatibleMediaAdapter.class::cast)
                 .findFirst()
                 .orElseThrow(() -> unsupported(""));
-        String protocol = capability.protocol(operation);
-        if (!List.of(OPENAI_IMAGE_GENERATION, OPENAI_VIDEO_GENERATION, OPENAI_AUDIO_SPEECH, DASHSCOPE_TTS_HTTP).contains(protocol)) {
+        String protocol = capability.protocol(operation, model);
+        if (!List.of(OPENAI_IMAGE_GENERATION, DASHSCOPE_IMAGE_HTTP, DASHSCOPE_IMAGE_TASK_HTTP, OPENAI_VIDEO_GENERATION,
+                DASHSCOPE_VIDEO_TASK_HTTP, OPENAI_AUDIO_SPEECH, DASHSCOPE_TTS_HTTP,
+                DASHSCOPE_MINIMAX_TTS_HTTP).contains(protocol)) {
             throw unsupported(protocol);
         }
         return adapters.stream()

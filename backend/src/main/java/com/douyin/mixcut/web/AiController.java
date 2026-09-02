@@ -70,8 +70,11 @@ public class AiController {
         if (p.getKind() == null) p.setKind(ProviderKind.openai);
         try {
             AiClient.validateProviderBaseUrl(p.getBaseUrl(), p.getKind());
+            AiClient.validateProviderCredentialCompatibility(p.getBaseUrl(), p.getKind(), p.getApiKey());
         } catch (IllegalArgumentException e) {
             return R.fail("AI 服务 URL 格式错误或目标地址不允许访问: " + safeUrlError(e));
+        } catch (IllegalStateException e) {
+            return R.fail(e.getMessage());
         }
         try {
             if (p.getMediaCapabilities() != null) p.setModels(mediaCatalog.mergeMediaConfig(p.getModels(), p.getMediaCapabilities()));
@@ -91,16 +94,27 @@ public class AiController {
         if (p == null) return R.fail("供应商不存在");
         ProviderKind requestedKind = in.getKind() == null ? p.getKind() : in.getKind();
         String requestedBaseUrl = in.getBaseUrl() == null ? p.getBaseUrl() : in.getBaseUrl();
+        boolean replacingKey = in.getApiKey() != null && !in.getApiKey().isBlank() && !in.getApiKey().contains("****");
+        boolean kindChanged = in.getKind() != null && in.getKind() != p.getKind();
+        boolean baseUrlChanged = in.getBaseUrl() != null
+                && !normalizedBaseUrl(in.getBaseUrl()).equals(normalizedBaseUrl(p.getBaseUrl()));
+        boolean credentialBindingChanged = replacingKey || kindChanged || baseUrlChanged;
         try {
             AiClient.validateProviderBaseUrl(requestedBaseUrl, requestedKind);
+            if (credentialBindingChanged) {
+                String requestedKey = replacingKey ? in.getApiKey() : credentialCipher.decrypt(p.getApiKey());
+                AiClient.validateProviderCredentialCompatibility(requestedBaseUrl, requestedKind, requestedKey);
+            }
         } catch (IllegalArgumentException e) {
             return R.fail("AI 服务 URL 格式错误或目标地址不允许访问: " + safeUrlError(e));
+        } catch (IllegalStateException e) {
+            return R.fail(e.getMessage());
         }
         if (in.getName() != null) p.setName(in.getName());
         if (in.getKind() != null) p.setKind(in.getKind());
         if (in.getBaseUrl() != null) p.setBaseUrl(in.getBaseUrl());
         // 前端回传掩码时不覆盖已保存的 key
-        if (in.getApiKey() != null && !in.getApiKey().isBlank() && !in.getApiKey().contains("****")) {
+        if (replacingKey) {
             try {
                 p.setApiKey(credentialCipher.encrypt(in.getApiKey()));
             } catch (IllegalStateException e) {
@@ -119,7 +133,7 @@ public class AiController {
         }
         if (in.getDefaultModel() != null) p.setDefaultModel(in.getDefaultModel());
         AiProvider saved = providerRepo.save(p);
-        if (in.getApiKey() != null && !in.getApiKey().isBlank() && !in.getApiKey().contains("****")) {
+        if (credentialBindingChanged) {
             discoverAndPersist(saved);
             saved = providerRepo.findById(saved.getId()).orElse(saved);
         }
@@ -163,15 +177,51 @@ public class AiController {
     public R<Map<String, Object>> discoverModels(@PathVariable Long id) {
         AiProvider provider = providerRepo.findById(id).orElse(null);
         if (provider == null) return R.fail("供应商不存在");
+        return discoverModels(provider, true);
+    }
+
+    @PostMapping("/providers/discover-models")
+    public R<Map<String, Object>> discoverDraftModels(@RequestBody AiProvider in) {
+        if (in == null) return R.fail("缺少供应商配置");
+        AiProvider stored = in.getId() == null ? null : providerRepo.findById(in.getId()).orElse(null);
+        AiProvider provider = new AiProvider();
+        provider.setId(in.getId());
+        provider.setName(in.getName() != null ? in.getName() : stored == null ? "未命名供应商" : stored.getName());
+        provider.setKind(in.getKind() != null ? in.getKind() : stored == null ? ProviderKind.openai : stored.getKind());
+        provider.setBaseUrl(in.getBaseUrl() != null ? in.getBaseUrl() : stored == null ? "" : stored.getBaseUrl());
+        provider.setApiKey(in.getApiKey() != null && !in.getApiKey().isBlank()
+                ? in.getApiKey() : stored == null ? "" : stored.getApiKey());
+        provider.setModels(stored == null ? in.getModels() : stored.getModels());
+        try {
+            AiClient.validateProviderBaseUrl(provider.getBaseUrl(), provider.getKind());
+            AiClient.validateProviderCredentialCompatibility(provider.getBaseUrl(), provider.getKind(),
+                    credentialCipher.decrypt(provider.getApiKey()));
+        } catch (IllegalArgumentException e) {
+            return R.fail("AI 服务 URL 格式错误或目标地址不允许访问: " + safeUrlError(e));
+        } catch (IllegalStateException e) {
+            return R.fail(e.getMessage());
+        }
+        return discoverModels(provider, false);
+    }
+
+    private R<Map<String, Object>> discoverModels(AiProvider provider, boolean persist) {
         AiClient.ModelDiscovery discovery = aiClient.discoverModels(provider);
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("ok", discovery.ok());
         result.put("models", discovery.models());
         result.put("textModels", discovery.textModels());
-        result.put("imageModels", discovery.imageModels());
-        result.put("videoModels", discovery.videoModels());
-        result.put("voiceModels", discovery.voiceModels());
+        List<String> executableImageModels = strongestExecutableFirst(provider, "image", discovery.imageModels());
+        List<String> executableVideoModels = strongestExecutableFirst(provider, "video", discovery.videoModels());
+        List<String> executableVoiceModels = strongestExecutableFirst(provider, "voice", discovery.voiceModels());
+        result.put("imageModels", executableImageModels);
+        result.put("videoModels", executableVideoModels);
+        result.put("voiceModels", executableVoiceModels);
+        result.put("observedMediaModels", Map.of(
+                "image", discovery.imageModels(),
+                "video", discovery.videoModels(),
+                "voice", discovery.voiceModels()));
         result.put("visionModels", discovery.visionModels());
+        result.put("modelRoutes", mediaCatalog.suggestRoutes(provider, executableImageModels, executableVideoModels, executableVoiceModels));
         result.put("latencyMs", discovery.latencyMs());
         result.put("discoveredAt", discovery.discoveredAt());
         result.put("provider", provider.getName());
@@ -180,12 +230,14 @@ public class AiController {
             return R.fail(discovery.error());
         }
         try {
-            provider.setModels(mergeDiscoveredModels(provider.getModels(), discovery));
-            selectDefaultTextModel(provider, discovery.textModels());
-            AiProvider saved = providerRepo.save(provider);
-            result.put("providerView", providerView(saved));
+            if (persist) {
+                provider.setModels(mergeDiscoveredModels(provider, provider.getModels(), discovery));
+                selectDefaultTextModel(provider, discovery.textModels());
+                AiProvider saved = providerRepo.save(provider);
+                result.put("providerView", providerView(saved));
+            }
             result.put("recommendations", recommendModels(discovery.textModels(), provider.getKind()));
-            result.put("message", discovery.imageModels().isEmpty() && discovery.videoModels().isEmpty() && discovery.voiceModels().isEmpty()
+            result.put("message", executableImageModels.isEmpty() && executableVideoModels.isEmpty() && executableVoiceModels.isEmpty()
                     ? "已同步最新文本模型；该 Provider 当前未返回可确认的图片、视频或配音模型"
                     : "已同步最新文本及媒体模型能力");
             return R.ok(result);
@@ -359,7 +411,7 @@ public class AiController {
         AiClient.ModelDiscovery discovery = aiClient.discoverModels(provider);
         try {
             if (discovery.ok()) {
-                provider.setModels(mergeDiscoveredModels(provider.getModels(), discovery));
+                provider.setModels(mergeDiscoveredModels(provider, provider.getModels(), discovery));
                 selectDefaultTextModel(provider, discovery.textModels());
             } else {
                 provider.setModels(markDiscoveryFailure(provider.getModels(), discovery.error()));
@@ -383,10 +435,16 @@ public class AiController {
     private int modelStrengthScore(String model) {
         String id = model == null ? "" : model.toLowerCase(java.util.Locale.ROOT);
         int score = 0;
-        if (id.matches(".*(gpt-5|gpt-4|o1|o3|o4|opus|sonnet|pro|max|reason|reasoning|deepseek-r1|qwen-max|glm-4-plus).*")) score += 100;
-        if (id.matches(".*(mini|flash|haiku|small|lite|turbo|instant|nano|micro|free).*")) score -= 30;
+        if (id.matches(".*(gpt-5|o1|o3|o4|opus|reason|reasoning|deepseek-r1|qwen-max|glm-4-plus|(?:^|[-_./])max(?:$|[-_./])).*")) score += 1000;
+        else if (id.matches(".*(gpt-4|sonnet|(?:^|[-_./])pro(?:$|[-_./])).*")) score += 700;
+        if (id.matches(".*(?:^|[-_./])(?:mini|flash|haiku|small|lite|turbo|instant|nano|micro|free)(?:$|[-_./]).*")) score -= 800;
+        java.util.regex.Matcher version = java.util.regex.Pattern.compile("qwen([0-9]+)(?:\\.([0-9]+))?").matcher(id);
+        if (version.find()) {
+            score += Integer.parseInt(version.group(1)) * 100;
+            if (version.group(2) != null) score += Integer.parseInt(version.group(2)) * 10;
+        }
         java.util.regex.Matcher size = java.util.regex.Pattern.compile("\\b([0-9]{1,3})b\\b").matcher(id);
-        if (size.find()) score += Integer.parseInt(size.group(1));
+        if (size.find()) score += Math.min(200, Integer.parseInt(size.group(1)));
         return score;
     }
 
@@ -417,7 +475,8 @@ public class AiController {
         }
     }
 
-    private String mergeDiscoveredModels(String existing, AiClient.ModelDiscovery discovery) {
+    private String mergeDiscoveredModels(AiProvider provider, String existing, AiClient.ModelDiscovery discovery) {
+        boolean executableDiscovery = autoAdoptDiscoveredMedia(provider);
         try {
             JsonNode root = existing == null || existing.isBlank() ? objectMapper.createObjectNode() : objectMapper.readTree(existing);
             com.fasterxml.jackson.databind.node.ObjectNode normalized = root != null && root.isObject()
@@ -441,8 +500,11 @@ public class AiController {
             normalized.set("vision", objectMapper.valueToTree(discovery.visionModels()));
             com.fasterxml.jackson.databind.node.ObjectNode media = normalized.with("media");
             media.set("vision", objectMapper.valueToTree(discovery.visionModels()));
-            // Discovery is advisory. Keep paid media execution allowlists under media unchanged.
-            // Users must explicitly confirm image/video/voice models through the provider editor.
+            if (executableDiscovery) {
+                media.set("image", objectMapper.valueToTree(strongestExecutableFirst(provider, "image", discovery.imageModels())));
+                media.set("video", objectMapper.valueToTree(strongestExecutableFirst(provider, "video", discovery.videoModels())));
+                media.set("voice", objectMapper.valueToTree(strongestExecutableFirst(provider, "voice", discovery.voiceModels())));
+            }
             com.fasterxml.jackson.databind.node.ObjectNode observed = normalized.putObject("observed");
             observed.set("text", objectMapper.valueToTree(discovery.textModels()));
             observed.set("image", objectMapper.valueToTree(discovery.imageModels()));
@@ -456,14 +518,47 @@ public class AiController {
             return objectMapper.writeValueAsString(normalized);
         } catch (Exception e) {
             try {
-                return objectMapper.writeValueAsString(Map.of(
-                        "text", discovery.textModels(),
-                        "media", Map.of("image", discovery.imageModels(), "video", discovery.videoModels(), "voice", discovery.voiceModels(), "vision", discovery.visionModels()),
-                        "vision", discovery.visionModels(),
-                        "discoveryStatus", "success",
-                        "discoveredAt", discovery.discoveredAt()));
+                var fallback = objectMapper.createObjectNode();
+                fallback.set("text", objectMapper.valueToTree(discovery.textModels()));
+                fallback.set("vision", objectMapper.valueToTree(discovery.visionModels()));
+                var media = fallback.putObject("media");
+                media.set("vision", objectMapper.valueToTree(discovery.visionModels()));
+                if (executableDiscovery) {
+                    media.set("image", objectMapper.valueToTree(strongestExecutableFirst(provider, "image", discovery.imageModels())));
+                    media.set("video", objectMapper.valueToTree(strongestExecutableFirst(provider, "video", discovery.videoModels())));
+                    media.set("voice", objectMapper.valueToTree(strongestExecutableFirst(provider, "voice", discovery.voiceModels())));
+                }
+                var observed = fallback.putObject("observed");
+                observed.set("text", objectMapper.valueToTree(discovery.textModels()));
+                observed.set("image", objectMapper.valueToTree(discovery.imageModels()));
+                observed.set("video", objectMapper.valueToTree(discovery.videoModels()));
+                observed.set("voice", objectMapper.valueToTree(discovery.voiceModels()));
+                observed.set("vision", objectMapper.valueToTree(discovery.visionModels()));
+                fallback.put("discoveryStatus", "success");
+                fallback.put("discoveredAt", discovery.discoveredAt());
+                return objectMapper.writeValueAsString(fallback);
             } catch (Exception ignored) { return "{\"text\":[],\"media\":{\"image\":[],\"video\":[],\"voice\":[]}}"; }
         }
+    }
+
+    private List<String> strongestFirst(List<String> models) {
+        if (models == null || models.isEmpty()) return List.of();
+        return models.stream().filter(model -> model != null && !model.isBlank()).distinct()
+                .sorted(Comparator.comparingInt(this::modelStrengthScore).reversed()
+                        .thenComparing(model -> model, String.CASE_INSENSITIVE_ORDER))
+                .toList();
+    }
+
+    private List<String> strongestExecutableFirst(AiProvider provider, String operation, List<String> models) {
+        return strongestFirst(models).stream()
+                .filter(model -> mediaCatalog.supportsInferredRoute(provider, operation, model))
+                .toList();
+    }
+
+    private boolean autoAdoptDiscoveredMedia(AiProvider provider) {
+        return com.douyin.mixcut.service.MediaProviderCatalog.officialOpenAi(provider)
+                || com.douyin.mixcut.service.MediaProviderCatalog.officialDashScope(provider)
+                || com.douyin.mixcut.service.MediaProviderCatalog.officialAlibabaWorkspace(provider);
     }
 
     private Map<String, List<String>> recommendModels(List<String> models, ProviderKind kind) {
@@ -511,6 +606,14 @@ public class AiController {
     private String safeUrlError(IllegalArgumentException e) {
         String message = e.getMessage();
         return message == null || message.isBlank() ? "无效 URL" : message;
+    }
+
+    private static String normalizedBaseUrl(String value) {
+        String normalized = value == null ? "" : value.trim();
+        while (normalized.endsWith("/") && normalized.length() > 1) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+        return normalized;
     }
 
     /**

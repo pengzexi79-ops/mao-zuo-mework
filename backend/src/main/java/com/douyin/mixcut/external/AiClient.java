@@ -121,6 +121,7 @@ public class AiClient {
                 if (id.isBlank()) continue;
                 Set<String> declared = declaredCapabilities(item);
                 String lower = id.toLowerCase(java.util.Locale.ROOT);
+                boolean isImageEdit = isImageEditingModel(lower);
                 boolean isImage = isImageGenerationModel(lower, declared)
                         || hasAny(declared, "output_image", "image_output");
                 boolean isVideo = hasAny(declared, "video_generation", "video-generation", "text-to-video", "text_to_video")
@@ -130,7 +131,7 @@ public class AiClient {
                 boolean isVision = hasAny(declared, "vision", "image_input", "image-input", "input_image", "image_understanding", "multimodal")
                         || lower.matches(".*(vision|vl|multimodal|qwen2-vl|qwen-vl|gemini).*" )
                         || looksVisionCapableGpt(lower);
-                if (!isImage && !isVideo && !isVoice) addUnique(text, id);
+                if (!isImage && !isImageEdit && !isVideo && !isVoice) addUnique(text, id);
                 if (isImage) addUnique(image, id);
                 if (isVideo) addUnique(video, id);
                 if (isVoice) addUnique(voice, id);
@@ -144,6 +145,8 @@ public class AiClient {
                     System.currentTimeMillis() - started, now);
         } catch (IllegalArgumentException e) {
             return ModelDiscovery.fail("模型探测地址不允许访问：" + safeUrlError(e));
+        } catch (IllegalStateException e) {
+            return ModelDiscovery.fail(safeUrlError(e));
         } catch (Exception e) {
             return ModelDiscovery.fail("模型探测失败：" + safeUrlError(e));
         }
@@ -222,8 +225,13 @@ public class AiClient {
     }
 
     static boolean isImageGenerationModel(String lower, Set<String> declared) {
+        if (isImageEditingModel(lower)) return false;
         return hasAnyStatic(declared, "image_generation", "image-generation", "text-to-image", "text_to_image")
                 || lower.matches(".*(gpt-image|dall[-.]e|imagen|stable-diffusion|stable_diffusion|flux|seedream|jimeng|qwen-image|wan[0-9.]*[-_]?image|image-gen|image-generation).*" );
+    }
+
+    static boolean isImageEditingModel(String lower) {
+        return lower != null && (lower.contains("image-edit") || lower.contains("image_edit"));
     }
 
     private static boolean hasAnyStatic(Set<String> values, String... expected) {
@@ -531,7 +539,11 @@ public class AiClient {
     }
 
     private String discoveryHttpError(int status) {
-        return classifyHttpStatus(status) + ": Provider 返回 HTTP " + status;
+        String base = classifyHttpStatus(status) + ": Provider 返回 HTTP " + status;
+        if (status == 401 || status == 403) {
+            return base + "。请核对密钥类型、服务地址、区域和账号权限；订阅工具密钥不一定是应用 API Key";
+        }
+        return base;
     }
 
     private void backoff(int attempt) {
@@ -595,10 +607,33 @@ public class AiClient {
         buildValidatedUrl(baseUrl == null || baseUrl.isBlank() ? defaultBase : baseUrl, "/");
     }
 
+    /** Reject only a known Alibaba Cloud endpoint/key mismatch; unknown gateways own their credential format. */
+    public static void validateProviderCredentialCompatibility(String baseUrl, ProviderKind kind, String apiKey) {
+        if (apiKey == null || apiKey.isBlank()) return;
+        String key = apiKey.trim();
+        if (kind != null && kind != ProviderKind.openai) return;
+
+        String rawBase = baseUrl == null || baseUrl.isBlank() ? "https://api.openai.com" : baseUrl.trim();
+        String host;
+        try {
+            host = URI.create(rawBase).getHost();
+        } catch (IllegalArgumentException ignored) {
+            return;
+        }
+        host = host == null ? "" : host.toLowerCase(java.util.Locale.ROOT);
+        boolean publicDashScope = host.matches("dashscope(?:-[a-z0-9-]+)?\\.aliyuncs\\.com");
+        if (publicDashScope
+                && (key.startsWith("sk-ws-") || key.startsWith("sk-sp-") || key.startsWith("o1_"))) {
+            throw new IllegalStateException("当前是百炼标准 API 地址，不能搭配工作空间 / Coding Plan / Token Plan 订阅密钥；请使用该地址对应的标准 API Key，或改用与订阅密钥匹配的服务地址");
+        }
+    }
+
     private String secret(AiProvider provider) {
         String value = credentialCipher.decrypt(provider.getApiKey());
         if (value == null || value.isBlank()) throw new IllegalArgumentException("该供应商未配置密钥");
-        return value.trim();
+        value = value.trim();
+        validateProviderCredentialCompatibility(provider.getBaseUrl(), provider.getKind(), value);
+        return value;
     }
 
     private String safeUrlError(Exception e) {

@@ -26,6 +26,8 @@ MinVersion=10.0
 PrivilegesRequired=lowest
 DisableProgramGroupPage=yes
 WizardStyle=modern
+SetupIconFile=Mework.ico
+UninstallDisplayIcon={app}\Mework.ico
 
 [Files]
 Source: "..\start.bat"; DestDir: "{app}"; Flags: ignoreversion
@@ -38,6 +40,7 @@ Source: "..\.env.example"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\INSTALLATION_GUIDE.md"; DestDir: "{app}\docs"; Flags: ignoreversion
 Source: "..\AI_INSTALLATION_GUIDE.md"; DestDir: "{app}\docs"; Flags: ignoreversion
 Source: "..\PRIVACY_RELEASE.md"; DestDir: "{app}\docs"; Flags: ignoreversion
+Source: ".\Mework.ico"; DestDir: "{app}"; Flags: ignoreversion
 ; The installer only accepts the just-built delivery artifact. Historical or fallback JARs are never packaged.
 Source: "..\backend\target\mixcut-delivery.jar"; DestDir: "{app}\backend\target"; Flags: ignoreversion
 Source: "..\backend\requirements-windows.txt"; DestDir: "{app}\backend"; Flags: ignoreversion
@@ -59,8 +62,8 @@ Source: "..\portable\imagemagick\*"; DestDir: "{app}\portable\imagemagick"; Flag
 Source: "..\backend\.venv\*"; DestDir: "{app}\backend\.venv"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "**\__pycache__\**;**\*.pyc;**\*.pyo;**\*.log"
 
 [Icons]
-Name: "{autodesktop}\{#AppName}"; Filename: "{app}\start.bat"; WorkingDir: "{app}"; IconFilename: "{sys}\shell32.dll"; IconIndex: 14
-Name: "{group}\{#AppName}"; Filename: "{app}\start.bat"; WorkingDir: "{app}"
+Name: "{autodesktop}\{#AppName}"; Filename: "{app}\start.bat"; WorkingDir: "{app}"; IconFilename: "{app}\Mework.ico"
+Name: "{group}\{#AppName}"; Filename: "{app}\start.bat"; WorkingDir: "{app}"; IconFilename: "{app}\Mework.ico"
 Name: "{group}\检查运行环境"; Filename: "{app}\setup_runtime.bat"; WorkingDir: "{app}"
 
 [Run]

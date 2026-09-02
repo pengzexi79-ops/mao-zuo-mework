@@ -1,6 +1,11 @@
 <template>
   <teleport to="body">
     <div class="ai-chat" :class="{ dragging: drag.active }" :style="launcherPosition">
+      <button v-if="!visible && importIndicator" class="ai-chat-import-status" type="button" title="打开全局任务中心" @pointerdown.stop @click.stop="openTaskCenter">
+        <span class="ai-chat-import-dot" :class="importIndicator.status"></span>
+        <span>{{ importIndicator.label }}</span>
+        <b>{{ importIndicator.progress }}%</b>
+      </button>
       <button v-if="!visible" class="ai-chat-launcher" type="button" title="打开猫作 AI 助手" @pointerdown="startDrag" @click="openFromClick">
         <img src="/icon-512.png" alt="猫作 AI 助手" draggable="false" />
       </button>
@@ -30,12 +35,21 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'v
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { api } from '../api'
+import { materialImportState } from '../materialImportQueue'
 import GameCenter from './GameCenter.vue'
 
 const router = useRouter(); const visible = ref(false); const gameVisible = ref(false); const draft = ref(''); const sending = ref(false); const aiReady = ref(false); const messages = ref([]); const messageBox = ref(null); const challenge = ref(null); const stickToBottom = ref(true)
+const importNotice = ref(null)
+let importNoticeTimer = null
 const launcher = reactive({ right: 24, bottom: 96 }); const drag = reactive({ active: false, over: false, moved: false, pointerId: null, startX: 0, startY: 0, startRight: 24, startBottom: 96 })
 const challenges = [{ title: '三秒钩子挑战', prompt: '用项目里已经能证明的一个画面事实，写一句不夸大、不承诺功效的前三秒开场。' }, { title: '镜头排序挑战', prompt: '把“问题、证据、产品、使用场景、收尾”排成 5 个镜头，并说出每一段最少需要几秒。' }, { title: '节奏诊断挑战', prompt: '挑一条当前成片，找出一个可能重复或切断动作的位置，再决定是延长镜头还是替换素材。' }]
 const launcherPosition = computed(() => ({ right: `${launcher.right}px`, bottom: `${launcher.bottom}px` }))
+const activeImportBatch = computed(() => materialImportState.batches.find((batch) => ['queued', 'uploading', 'processing'].includes(batch.status)) || null)
+const importIndicator = computed(() => {
+  const batch = activeImportBatch.value
+  if (batch) return { label: ({ queued: '素材等待导入', uploading: '素材上传中', processing: '素材处理中' })[batch.status] || '素材导入中', progress: batch.progress || 0, status: batch.status }
+  return importNotice.value
+})
 function readPosition () { try { const value = JSON.parse(localStorage.getItem('ai-chat-launcher-position')); if (value && Number.isFinite(value.right) && Number.isFinite(value.bottom)) { launcher.right = value.right; launcher.bottom = value.bottom } } catch {} clampPosition() }
 function savePosition () { try { localStorage.setItem('ai-chat-launcher-position', JSON.stringify({ right: launcher.right, bottom: launcher.bottom })) } catch {} }
 function clampPosition () { const size = window.innerWidth <= 640 ? 44 : 52; launcher.right = Math.max(8, Math.min(window.innerWidth - size - 8, launcher.right)); launcher.bottom = Math.max(8, Math.min(window.innerHeight - size - 8, launcher.bottom)) }
@@ -59,15 +73,38 @@ function endDrag (event) { if (!drag.active || event.pointerId !== drag.pointerI
 function cancelDrag (event) { if (event.pointerId === drag.pointerId) { savePosition(); clearDrag() } }
 function openFromClick () { if (!drag.moved) visible.value = true; drag.moved = false }
 function onResize () { clampPosition(); if (!drag.active) savePosition() }
+function openTaskCenter () { window.dispatchEvent(new Event('mework-open-task-center')) }
 async function refreshReady () { try { aiReady.value = !!(await api.aiReady()) } catch { aiReady.value = false } }
 function goSettings () { visible.value = false; router.push('/ai') }; function go (path) { visible.value = false; router.push(path) }; function newChallenge () { challenge.value = challenges[Math.floor(Math.random() * challenges.length)] }; function clear () { messages.value = []; draft.value = '' }
 function closeChat () { draft.value = ''; sending.value = false }
 function onMessageScroll () { const box = messageBox.value; if (box) stickToBottom.value = box.scrollHeight - box.scrollTop - box.clientHeight < 36 }
 async function scrollIfNeeded () { await nextTick(); const box = messageBox.value; if (box && stickToBottom.value) box.scrollTop = box.scrollHeight }
 async function send () { const content = draft.value.trim(); if (!content || sending.value) return; messages.value.push({ role: 'user', content }); draft.value = ''; sending.value = true; await scrollIfNeeded(); try { const result = await api.chat({ messages: messages.value.map(({ role, content: text }) => ({ role, content: text })) }); messages.value.push({ role: 'assistant', content: result.text || 'AI 没有返回内容，请重试。' }); await scrollIfNeeded() } catch (error) { ElMessage.error(`AI 对话失败：${error.message}`) } finally { sending.value = false } }
-onMounted(() => { readPosition(); window.addEventListener('resize', onResize) }); onBeforeUnmount(() => { window.removeEventListener('resize', onResize); clearDrag() })
+function onMaterialImportFinished (event) {
+  const detail = event.detail || {}
+  const failed = detail.status === 'failed'
+  const content = failed
+    ? `${detail.label || '素材导入'}已结束，但存在失败项。${detail.message || '请打开顶部任务中心查看具体原因。'}`
+    : `${detail.label || '素材导入'}已完成。${detail.message || '素材现在可以在素材库中使用。'}`
+  messages.value.push({ role: 'assistant', content })
+  importNotice.value = { label: failed ? '素材导入有失败' : '素材导入完成', progress: 100, status: failed ? 'failed' : 'done' }
+  if (importNoticeTimer) window.clearTimeout(importNoticeTimer)
+  importNoticeTimer = window.setTimeout(() => { importNotice.value = null; importNoticeTimer = null }, 12000)
+  if (visible.value) void scrollIfNeeded()
+}
+onMounted(() => {
+  readPosition()
+  window.addEventListener('resize', onResize)
+  window.addEventListener('mework-material-import-finished', onMaterialImportFinished)
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', onResize)
+  window.removeEventListener('mework-material-import-finished', onMaterialImportFinished)
+  if (importNoticeTimer) window.clearTimeout(importNoticeTimer)
+  clearDrag()
+})
 </script>
 
 <style>
-.ai-chat img,.ai-chat .ai-chat-launcher,.ai-chat .ai-chat-message img{ -webkit-user-drag:none;user-drag:none }.ai-chat{position:fixed;z-index:3000}.ai-chat-launcher{display:block;width:52px;height:52px;padding:5px;border:0;border-radius:50%;background:#409eff;cursor:pointer;box-shadow:0 4px 14px rgba(31,36,48,.22);touch-action:none}.ai-chat-launcher img{width:100%;height:100%;border-radius:50%;object-fit:cover}.ai-chat.dragging{z-index:3200}.ai-chat-dialog{z-index:3100!important}.ai-chat-dialog .el-dialog{z-index:3100!important}.ai-chat-intro{display:flex;align-items:center;gap:10px;margin-bottom:12px}.ai-chat-intro img{width:42px;height:42px;border-radius:12px;object-fit:cover}.ai-chat-tools{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}.ai-chat-challenge{margin-bottom:10px}.ai-chat-messages{min-height:180px;max-height:330px;overflow:auto;padding:12px 2px}.ai-chat-empty{color:#8b93a5;text-align:center;padding:48px 16px}.ai-chat-message{display:flex;gap:8px;margin:10px 0;align-items:flex-start}.ai-chat-message.user{justify-content:flex-end}.ai-chat-message img{width:28px;height:28px;border-radius:8px;object-fit:cover}.ai-chat-bubble{max-width:82%;white-space:pre-wrap;line-height:1.6;padding:8px 11px;border-radius:8px;background:#f2f5f9}.ai-chat-message.user .ai-chat-bubble{background:#ecf5ff}.ai-chat-bubble.muted{color:#8b93a5}@media(max-width:640px){.ai-chat-launcher{width:44px;height:44px;padding:4px}.ai-chat-dialog{width:calc(100vw - 20px)!important;max-width:560px;margin-top:2vh!important}.ai-chat-dialog .el-dialog{width:100%!important;margin-top:2vh!important}.ai-chat-messages{max-height:240px}.ai-chat-intro{flex-direction:column;text-align:center}.ai-chat-intro img{width:36px;height:36px}}
+.ai-chat img,.ai-chat .ai-chat-launcher,.ai-chat .ai-chat-message img{ -webkit-user-drag:none;user-drag:none }.ai-chat{position:fixed;z-index:3000}.ai-chat-launcher{display:block;width:52px;height:52px;padding:5px;border:0;border-radius:50%;background:#409eff;cursor:pointer;box-shadow:0 4px 14px rgba(31,36,48,.22);touch-action:none}.ai-chat-launcher img{width:100%;height:100%;border-radius:50%;object-fit:cover}.ai-chat-import-status{position:absolute;right:60px;bottom:5px;display:flex;align-items:center;gap:6px;width:max-content;max-width:min(240px,calc(100vw - 92px));min-height:34px;padding:7px 10px;border:1px solid #d9ecff;border-radius:6px;background:#fff;color:#303133;box-shadow:0 4px 14px rgba(31,36,48,.16);cursor:pointer;white-space:nowrap}.ai-chat-import-status span:not(.ai-chat-import-dot){overflow:hidden;text-overflow:ellipsis}.ai-chat-import-status b{color:#409eff;font-size:12px}.ai-chat-import-dot{flex:0 0 8px;width:8px;height:8px;border-radius:50%;background:#409eff}.ai-chat-import-dot.done{background:#67c23a}.ai-chat-import-dot.failed{background:#e6a23c}.ai-chat.dragging{z-index:3200}.ai-chat-dialog{z-index:3100!important}.ai-chat-dialog .el-dialog{z-index:3100!important}.ai-chat-intro{display:flex;align-items:center;gap:10px;margin-bottom:12px}.ai-chat-intro img{width:42px;height:42px;border-radius:12px;object-fit:cover}.ai-chat-tools{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}.ai-chat-challenge{margin-bottom:10px}.ai-chat-messages{min-height:180px;max-height:330px;overflow:auto;padding:12px 2px}.ai-chat-empty{color:#8b93a5;text-align:center;padding:48px 16px}.ai-chat-message{display:flex;gap:8px;margin:10px 0;align-items:flex-start}.ai-chat-message.user{justify-content:flex-end}.ai-chat-message img{width:28px;height:28px;border-radius:8px;object-fit:cover}.ai-chat-bubble{max-width:82%;white-space:pre-wrap;line-height:1.6;padding:8px 11px;border-radius:8px;background:#f2f5f9}.ai-chat-message.user .ai-chat-bubble{background:#ecf5ff}.ai-chat-bubble.muted{color:#8b93a5}@media(max-width:640px){.ai-chat-launcher{width:44px;height:44px;padding:4px}.ai-chat-import-status{right:52px;bottom:4px;max-width:calc(100vw - 76px);min-height:32px;padding:6px 8px}.ai-chat-dialog{width:calc(100vw - 20px)!important;max-width:560px;margin-top:2vh!important}.ai-chat-dialog .el-dialog{width:100%!important;margin-top:2vh!important}.ai-chat-messages{max-height:240px}.ai-chat-intro{flex-direction:column;text-align:center}.ai-chat-intro img{width:36px;height:36px}}
 </style>

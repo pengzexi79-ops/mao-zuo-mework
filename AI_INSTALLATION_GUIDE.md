@@ -5,10 +5,10 @@
 ## 安装合同
 
 - 产品：猫作·Mework
-- 版本：`2.2.158`
+- 版本：`2.2.163`
 - 平台：Windows 10/11 x64
 - 仓库：`pengzexi79-ops/mao-zuo-mework`，private
-- Release：`v2.2.158`
+- Release：`v2.2.163`
 - 默认目录：有 D 盘时 `D:\Mework`，否则 `%LOCALAPPDATA%\Programs\Mework`
 - 机器清单：`installer\ai-setup-manifest.json`
 
@@ -18,14 +18,14 @@
 2. 在 D 盘临时目录下载完整 Release，不能只下载 EXE：
 
 ```powershell
-gh release download v2.2.158 --repo pengzexi79-ops/mao-zuo-mework --pattern 'Mework-Setup-2.2.158*' --pattern 'SHA256SUMS.txt' --pattern 'release-manifest.json' --pattern 'ai-setup-manifest.json'
+gh release download v2.2.163 --repo pengzexi79-ops/mao-zuo-mework --pattern 'Mework-Setup-2.2.163*' --pattern 'SHA256SUMS.txt' --pattern 'release-manifest.json' --pattern 'ai-setup-manifest.json'
 ```
 
 3. 校验 `SHA256SUMS.txt`，确认 EXE 和全部 `.bin` 分片在同一目录。
 4. 以普通用户运行安装器。需要静默安装时：
 
 ```powershell
-Start-Process .\Mework-Setup-2.2.158.exe -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait
+Start-Process .\Mework-Setup-2.2.163.exe -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait
 ```
 
 5. 首次启动后等待 `http://127.0.0.1:<port>/api/system/env` 返回 HTTP 200。端口以安装目录 `.env` 的 `PORT` 为准，读取时不得输出该文件中的秘密值。

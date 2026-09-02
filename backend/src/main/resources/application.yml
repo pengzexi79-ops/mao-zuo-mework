@@ -2,16 +2,16 @@ server:
   port: ${PORT:8760}
   address: ${APP_BIND_ADDRESS:127.0.0.1}
   tomcat:
-    # Keep Tomcat from rejecting large multipart requests before Spring's 2GB limits apply.
-    max-http-form-post-size: 2GB
-    max-swallow-size: 2GB
+    # Imports are bounded by available disk space and archive safety checks, not a fixed file size.
+    max-http-form-post-size: -1
+    max-swallow-size: -1
     connection-timeout: 10m
 
 spring:
   servlet:
     multipart:
-      max-file-size: 2GB
-      max-request-size: 2GB
+      max-file-size: -1
+      max-request-size: -1
   task:
     scheduling:
       pool:

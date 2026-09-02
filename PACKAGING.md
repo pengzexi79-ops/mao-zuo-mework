@@ -1,6 +1,6 @@
 # 猫作·Mework Windows 发行构建
 
-目标版本：`2.2.158`，Windows 10/11 x64。
+目标版本：`2.2.163`，Windows 10/11 x64。
 
 ## 构建原则
 
@@ -51,8 +51,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\verify_fresh_install.ps1
 
 ## 发行文件
 
-- `Mework-Setup-2.2.158.exe`
-- `Mework-Setup-2.2.158-*.bin`
+- `Mework-Setup-2.2.163.exe`
+- `Mework-Setup-2.2.163-*.bin`
 - `SHA256SUMS.txt`
 - `release-manifest.json`
 - `ai-setup-manifest.json`
@@ -60,4 +60,4 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\verify_fresh_install.ps1
 - `AI_INSTALLATION_GUIDE.md`
 - `PRIVACY_RELEASE.md`
 
-GitHub Release 标签为 `v2.2.158`。EXE、全部分片和校验文件必须同时上传；缺少任一 `.bin` 的下载目录无法完成安装。
+GitHub Release 标签为 `v2.2.163`。EXE、全部分片和校验文件必须同时上传；缺少任一 `.bin` 的下载目录无法完成安装。

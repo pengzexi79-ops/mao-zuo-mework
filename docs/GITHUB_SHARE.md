@@ -1,6 +1,6 @@
 # GitHub 私人分享说明：猫作·Mework
 
-本仓库是猫作·Mework 的完整私人源码与发行仓库。当前正式发行版为 `v2.2.158`，支持 Windows 10/11 x64。
+本仓库是猫作·Mework 的完整私人源码与发行仓库。当前正式发行版为 `v2.2.163`，支持 Windows 10/11 x64。
 
 ## 分享给好友
 
@@ -8,9 +8,9 @@
 
 ## Release 下载内容
 
-在 `v2.2.158` Release 中下载并放在同一目录：
+在 `v2.2.163` Release 中下载并放在同一目录：
 
-- `Mework-Setup-2.2.158.exe`
+- `Mework-Setup-2.2.163.exe`
 - 安装器生成的全部同版本 `.bin` 分片
 - `SHA256SUMS.txt`
 - `release-manifest.json`

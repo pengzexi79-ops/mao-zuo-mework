@@ -5,6 +5,7 @@ import com.douyin.mixcut.domain.AiProvider;
 import com.douyin.mixcut.domain.MediaGenerationTask;
 import com.douyin.mixcut.domain.Material;
 import com.douyin.mixcut.domain.MaterialRole;
+import com.douyin.mixcut.external.AiClient;
 import com.douyin.mixcut.repository.Repositories.AiProviderRepo;
 import com.douyin.mixcut.repository.Repositories.MediaGenerationTaskRepo;
 import com.douyin.mixcut.security.CredentialCipher;
@@ -171,6 +172,10 @@ public class MediaGenerationService {
         private int progress;
         private String message;
         private String errorCode;
+        private Long providerId;
+        private String providerName;
+        private boolean providerAvailable;
+        private String model;
         private Integer attemptCount;
         private Integer maxAttempts;
         private Long materialId;
@@ -178,13 +183,13 @@ public class MediaGenerationService {
         private long createdAt = System.currentTimeMillis();
         private long updatedAt = createdAt;
     }
-    @Data public static class ImageRequest { private Long providerId; private String prompt; private String model = "gpt-image-1"; private String size = "1024x1024"; private String quality = "medium"; private Boolean confirm = false; }
-    @Data public static class VideoRequest { private Long providerId; private String prompt; private String model = "sora-2"; private String size = "1280x720"; private Integer seconds = 4; private Boolean confirm = false; }
-    @Data public static class VoiceRequest { private Long providerId; private String input; private String model = "gpt-4o-mini-tts"; private String voice = "coral"; private String instructions = ""; private Boolean confirm = false; }
+    @Data public static class ImageRequest { private Long providerId; private String prompt; private String model = ""; private String size = "1024x1024"; private String quality = "medium"; private Boolean confirm = false; }
+    @Data public static class VideoRequest { private Long providerId; private String prompt; private String model = ""; private String size = "1280x720"; private Integer seconds = 4; private Boolean confirm = false; }
+    @Data public static class VoiceRequest { private Long providerId; private String input; private String model = ""; private String voice = ""; private String instructions = ""; private Boolean confirm = false; }
 
     public List<Map<String, Object>> imageProviders() {
         return providers.findByEnabledTrueOrderByPriorityAsc().stream()
-                .filter(p -> p.getApiKey() != null && !p.getApiKey().isBlank())
+                .filter(this::hasUsableCredential)
                 .map(p -> {
                     MediaProviderCatalog.Capability capability = mediaCatalog.read(p);
                     Map<String, Object> view = new java.util.LinkedHashMap<>();
@@ -229,8 +234,8 @@ public class MediaGenerationService {
         if (prompt.length() < 1 || prompt.length() > 4000) throw new IllegalArgumentException("提示词长度必须在 1 到 4000 个字符之间");
         AiProvider provider = supportedProvider(request.getProviderId());
         MediaProviderCatalog.Capability capability = mediaCapability(provider);
-        mediaAdapterRegistry.adapterFor(provider, "image", capability);
         String model = requiredModel(provider, "image", request.getModel());
+        mediaAdapterRegistry.adapterFor(provider, "image", capability, model);
         String size = supportedImageSize(request.getSize());
         String quality = List.of("low", "medium", "high").contains(request.getQuality()) ? request.getQuality() : "medium";
         Task task = newTask("ai-image", "已确认官方计费，正在提交图片生成", provider, model,
@@ -245,8 +250,8 @@ public class MediaGenerationService {
         if (prompt.length() < 2 || prompt.length() > 4000) throw new IllegalArgumentException("视频提示词长度必须在 2 到 4000 个字符之间");
         AiProvider provider = supportedProvider(request.getProviderId());
         MediaProviderCatalog.Capability capability = mediaCapability(provider);
-        mediaAdapterRegistry.adapterFor(provider, "video", capability);
         String model = requiredModel(provider, "video", request.getModel());
+        mediaAdapterRegistry.adapterFor(provider, "video", capability, model);
         String size = List.of("1280x720", "720x1280", "1024x1024").contains(request.getSize()) ? request.getSize() : "1280x720";
         int seconds = request.getSeconds() == null ? 4 : Math.max(2, Math.min(12, request.getSeconds()));
         Task task = newTask("ai-video", "已确认官方计费，正在提交视频生成", provider, model,
@@ -261,8 +266,8 @@ public class MediaGenerationService {
         if (input.length() < 2 || input.length() > 6000) throw new IllegalArgumentException("配音文本长度必须在 2 到 6000 个字符之间");
         AiProvider provider = supportedProvider(request.getProviderId());
         MediaProviderCatalog.Capability capability = mediaCapability(provider);
-        mediaAdapterRegistry.adapterFor(provider, "voice", capability);
         String model = requiredModel(provider, "voice", request.getModel());
+        mediaAdapterRegistry.adapterFor(provider, "voice", capability, model);
         String voice = normalizeVoice(provider, model, request.getVoice());
         Task task = newTask("ai-voice", "已确认官方计费，正在生成配音", provider, model,
                 Map.of("providerId", provider.getId(), "input", input, "model", model, "voice", voice, "instructions", request.getInstructions() == null ? "" : request.getInstructions().substring(0, Math.min(1000, request.getInstructions().length()))));
@@ -274,14 +279,15 @@ public class MediaGenerationService {
         if (id == null) throw new IllegalArgumentException("请选择已配置且使用已注册媒体协议的供应商");
         AiProvider provider = providers.findById(id).orElseThrow(() -> new IllegalArgumentException("供应商不存在"));
         if (!Boolean.TRUE.equals(provider.getEnabled()) || provider.getApiKey() == null || provider.getApiKey().isBlank()) throw new IllegalArgumentException("该供应商未启用、缺少 API Key，或不支持已注册媒体协议");
+        secret(provider);
         return provider;
     }
 
     private String requiredModel(AiProvider provider, String operation, String requested) {
-        List<String> available = mediaCatalog.read(provider).models(operation);
+        List<String> available = executableModels(mediaCatalog.read(provider), operation);
         if (available.isEmpty()) throw new IllegalArgumentException("该供应商尚未在 AI 接入页配置" + operation + "模型");
         if (requested == null || requested.isBlank()) return available.get(0);
-        if (!available.contains(requested)) throw new IllegalArgumentException("所选模型不在该供应商已配置的" + operation + "能力中");
+        if (!available.contains(requested)) throw new IllegalArgumentException("所选模型不是该供应商当前可执行的" + operation + "模型");
         return requested;
     }
 
@@ -293,11 +299,10 @@ public class MediaGenerationService {
     }
 
     private String normalizeVoice(AiProvider provider, String model, String requested) {
-        String value = requested == null ? "" : requested.trim();
-        if (!value.matches("[A-Za-z0-9._:/-]{1,80}")) value = "";
-        String lower = model.toLowerCase(java.util.Locale.ROOT);
-        if (lower.contains("qwen3-tts") || lower.contains("qwen-tts")) return value.isBlank() ? "Cherry" : value;
-        return value.isBlank() ? "coral" : value;
+        MediaProviderCatalog.Capability capability = mediaCapability(provider);
+        String protocol = capability == null ? "" : capability.protocol("voice", model);
+        return OpenAiCompatibleMediaAdapter.normalizeVoiceForProtocol(
+                protocol, model, requested, MediaProviderCatalog.officialOpenAi(provider));
     }
 
     private MediaProviderCatalog.Capability mediaCapability(AiProvider provider) {
@@ -305,21 +310,40 @@ public class MediaGenerationService {
     }
 
     private List<String> executableModels(MediaProviderCatalog.Capability capability, String operation) {
-        try {
-            mediaAdapterRegistry.adapterFor(null, operation, capability);
-            return capability.models(operation);
-        } catch (Exception ignored) {
-            return List.of();
+        java.util.stream.Stream<String> models = capability.models(operation).stream()
+                .filter(model -> mediaCatalog.isExecutionEligible(operation, model))
+                .filter(model -> {
+            try { mediaAdapterRegistry.adapterFor(null, operation, capability, model); return true; }
+            catch (Exception ignored) { return false; }
+        });
+        if ("image".equals(operation)) {
+            models = models.sorted(java.util.Comparator.comparingInt(this::imageModelPriority));
         }
+        return models.toList();
     }
 
-    private OpenAiCompatibleMediaAdapter.ProviderContext mediaContext(AiProvider provider) {
+    private int imageModelPriority(String model) {
+        String lower = model.toLowerCase(java.util.Locale.ROOT);
+        if (lower.equals("qwen-image-3.0-pro")) return 0;
+        if (lower.startsWith("qwen-image-3.0")) return 1;
+        if (lower.equals("qwen-image-2.0-pro")) return 2;
+        if (lower.equals("qwen-image-max")) return 3;
+        return 10;
+    }
+
+    private OpenAiCompatibleMediaAdapter.ProviderContext mediaContext(AiProvider provider, String operation, String model) {
         MediaProviderCatalog.Capability capability = mediaCapability(provider);
         if (capability == null) {
             return new OpenAiCompatibleMediaAdapter.ProviderContext(normalizedBase(provider), secret(provider), "");
         }
+        MediaProviderCatalog.ModelRoute route = capability.route(operation, model);
         return new OpenAiCompatibleMediaAdapter.ProviderContext(normalizedBase(provider), secret(provider),
-                capability.imageEndpoint(), capability.videoEndpoint(), capability.voiceEndpoint(), capability.voiceProtocol());
+                "image".equals(operation) ? route.endpoint() : capability.imageEndpoint(),
+                "video".equals(operation) ? route.endpoint() : capability.videoEndpoint(),
+                "voice".equals(operation) ? route.endpoint() : capability.voiceEndpoint(),
+                "voice".equals(operation) ? route.protocol() : capability.voiceProtocol(),
+                "image".equals(operation) ? route.protocol() : capability.imageProtocol(),
+                "video".equals(operation) ? route.protocol() : capability.videoProtocol());
     }
 
     private Task newTask(String kind, String message) { return newTask(kind, message, null, null, Map.of()); }
@@ -331,6 +355,10 @@ public class MediaGenerationService {
         task.setMessage(message);
         task.setAttemptCount(0);
         task.setMaxAttempts(2);
+        task.setProviderId(provider == null ? null : provider.getId());
+        task.setProviderName(provider == null ? "" : provider.getName());
+        task.setProviderAvailable(hasUsableCredential(provider));
+        task.setModel(model);
         tasks.put(task.getId(), task);
         MediaGenerationTask persisted = new MediaGenerationTask();
         persisted.setTaskKey(task.getId());
@@ -461,6 +489,11 @@ public class MediaGenerationService {
         Task task = new Task();
         task.setId(persisted.getTaskKey()); task.setKind(persisted.getKind()); task.setStatus(persisted.getStatus()); task.setPhase(persisted.getPhase());
         task.setProgress(persisted.getProgress() == null ? 0 : persisted.getProgress()); task.setMessage(persisted.getMessage()); task.setErrorCode(persisted.getErrorCode()); task.setAttemptCount(persisted.getAttemptCount()); task.setMaxAttempts(persisted.getMaxAttempts()); task.setRemoteTaskId(persisted.getRemoteTaskId()); task.setMaterialId(persisted.getMaterialId());
+        task.setProviderId(persisted.getProviderId()); task.setModel(persisted.getModel());
+        AiProvider provider = persisted.getProviderId() == null ? null : providers.findById(persisted.getProviderId()).orElse(null);
+        task.setProviderAvailable(hasUsableCredential(provider));
+        task.setProviderName(provider != null ? provider.getName()
+                : persisted.getProviderId() == null ? "未记录供应商" : "历史供应商 #" + persisted.getProviderId());
         if (persisted.getCreatedAt() != null) task.setCreatedAt(persisted.getCreatedAt().atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli());
         if (persisted.getUpdatedAt() != null) task.setUpdatedAt(persisted.getUpdatedAt().atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli());
         return task;
@@ -469,8 +502,8 @@ public class MediaGenerationService {
     private void generateVideo(Task task, AiProvider provider, String prompt, String model, String size, int seconds) {
         try {
             beginSubmission(task, 10, "正在调用 OpenAI-compatible 视频生成接口");
-            OpenAiCompatibleMediaAdapter mediaAdapter = mediaAdapterRegistry.adapterFor(provider, "video", mediaCapability(provider));
-            var submission = mediaAdapter.submitVideo(mediaContext(provider), prompt, model, size, seconds);
+            OpenAiCompatibleMediaAdapter mediaAdapter = mediaAdapterRegistry.adapterFor(provider, "video", mediaCapability(provider), model);
+            var submission = mediaAdapter.submitVideo(mediaContext(provider, "video", model), prompt, model, size, seconds);
             if (!submission.base64().isBlank() || !submission.url().isBlank()) {
                 finishSynchronousVideo(task, provider, model, submission);
                 return;
@@ -491,11 +524,11 @@ public class MediaGenerationService {
             update(task, "polling", Math.max(25, task.getProgress()), "轮询远端视频任务状态");
             for (int i = 0; i < 120; i++) {
                 Thread.sleep(3000);
-                OpenAiCompatibleMediaAdapter mediaAdapter = mediaAdapterRegistry.adapterFor(provider, "video", mediaCapability(provider));
-                var poll = mediaAdapter.pollVideo(mediaContext(provider), remoteId);
+                OpenAiCompatibleMediaAdapter mediaAdapter = mediaAdapterRegistry.adapterFor(provider, "video", mediaCapability(provider), model);
+                var poll = mediaAdapter.pollVideo(mediaContext(provider, "video", model), remoteId);
                 int progress = poll.progress() > 0 ? poll.progress() : Math.min(90, 25 + i / 2);
                 update(task, "polling", Math.max(25, Math.min(90, progress)), "供应商视频状态：" + poll.state().name().toLowerCase(java.util.Locale.ROOT));
-                if (poll.state() == OpenAiCompatibleMediaAdapter.VideoState.SUCCEEDED) { downloadVideo(task, provider, remoteId); return; }
+                if (poll.state() == OpenAiCompatibleMediaAdapter.VideoState.SUCCEEDED) { downloadVideo(task, provider, model, remoteId); return; }
                 if (java.util.Set.of(OpenAiCompatibleMediaAdapter.VideoState.FAILED, OpenAiCompatibleMediaAdapter.VideoState.EXPIRED,
                         OpenAiCompatibleMediaAdapter.VideoState.CANCELLED).contains(poll.state())) {
                     throw new IllegalStateException("供应商视频任务未完成：" + poll.state());
@@ -508,7 +541,7 @@ public class MediaGenerationService {
         }
     }
 
-    private void downloadVideo(Task task, AiProvider provider, String remoteId) throws Exception {
+    private void downloadVideo(Task task, AiProvider provider, String model, String remoteId) throws Exception {
         update(task, "downloading", 92, "正在下载并校验生成视频");
         Path dir = props.mediaToolsOutput().resolve("generated-ai-videos");
         Path stagingDir = dir.resolve(".staging");
@@ -521,8 +554,8 @@ public class MediaGenerationService {
         Path output = dir.resolve("video-" + task.getId() + ".mp4");
         boolean registered = false;
         try {
-            OpenAiCompatibleMediaAdapter mediaAdapter = mediaAdapterRegistry.adapterFor(provider, "video", mediaCapability(provider));
-            mediaAdapter.downloadVideo(mediaContext(provider), remoteId, staging, props.getNetworkMaxDownloadBytes());
+            OpenAiCompatibleMediaAdapter mediaAdapter = mediaAdapterRegistry.adapterFor(provider, "video", mediaCapability(provider), model);
+            mediaAdapter.downloadVideo(mediaContext(provider, "video", model), remoteId, staging, props.getNetworkMaxDownloadBytes());
             Files.createDirectories(dir);
             Files.move(staging, output, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
             update(task, "validating", 95, "正在验证视频并登记素材");
@@ -537,6 +570,10 @@ public class MediaGenerationService {
             clearStagingFilePath(task.getId());
             throw error;
         }
+    }
+
+    private void downloadVideo(Task task, AiProvider provider, String remoteId) throws Exception {
+        downloadVideo(task, provider, task.getModel(), remoteId);
     }
 
     private void finishSynchronousVideo(Task task, AiProvider provider, String model,
@@ -591,8 +628,8 @@ public class MediaGenerationService {
         try {
             beginSubmission(task, 15, "正在调用配音接口");
             MediaProviderCatalog.Capability capability = mediaCapability(provider);
-            OpenAiCompatibleMediaAdapter mediaAdapter = mediaAdapterRegistry.adapterFor(provider, "voice", capability);
-            var artifact = mediaAdapter.submitVoice(mediaContext(provider), input, model, voice, instructions);
+            OpenAiCompatibleMediaAdapter mediaAdapter = mediaAdapterRegistry.adapterFor(provider, "voice", capability, model);
+            var artifact = mediaAdapter.submitVoice(mediaContext(provider, "voice", model), input, model, voice, instructions);
             Path dir = props.mediaToolsOutput().resolve("generated-ai-audio");
             Files.createDirectories(dir);
             output = dir.resolve("voice-" + Instant.now().toEpochMilli() + ".mp3");
@@ -634,7 +671,24 @@ public class MediaGenerationService {
         });
     }
 
-    private String secret(AiProvider provider) { String value = cipher.decrypt(provider.getApiKey()); if (value == null || value.isBlank()) throw new IllegalStateException("供应商密钥不可用，请在 AI 接入页重新配置"); return value.trim(); }
+    private boolean hasUsableCredential(AiProvider provider) {
+        if (provider == null || !Boolean.TRUE.equals(provider.getEnabled())
+                || provider.getApiKey() == null || provider.getApiKey().isBlank()) return false;
+        try {
+            secret(provider);
+            return true;
+        } catch (RuntimeException ignored) {
+            return false;
+        }
+    }
+
+    private String secret(AiProvider provider) {
+        String value = cipher.decrypt(provider.getApiKey());
+        if (value == null || value.isBlank()) throw new IllegalStateException("供应商密钥不可用，请在 AI 接入页重新配置");
+        value = value.trim();
+        AiClient.validateProviderCredentialCompatibility(provider.getBaseUrl(), provider.getKind(), value);
+        return value;
+    }
     private HttpURLConnection openPost(String endpoint, String secret, String contentType, byte[] body, int timeout) throws Exception { HttpURLConnection conn = (HttpURLConnection) new URL(endpoint).openConnection(); conn.setRequestMethod("POST"); conn.setDoOutput(true); conn.setConnectTimeout(20000); conn.setReadTimeout(timeout); conn.setRequestProperty("Content-Type", contentType); conn.setRequestProperty("Authorization", "Bearer " + secret); conn.setFixedLengthStreamingMode(body.length); try (var out = conn.getOutputStream()) { out.write(body); } return conn; }
     private HttpURLConnection openGet(String endpoint, String secret, int timeout) throws Exception { HttpURLConnection conn = (HttpURLConnection) new URL(endpoint).openConnection(); conn.setRequestMethod("GET"); conn.setConnectTimeout(20000); conn.setReadTimeout(timeout); conn.setRequestProperty("Authorization", "Bearer " + secret); return conn; }
     private JsonNode getJson(String endpoint, String secret) throws Exception { HttpURLConnection conn = openGet(endpoint, secret, 30000); int status = conn.getResponseCode(); if (status < 200 || status >= 300) throw providerFailure(status, "视频状态查询"); try (InputStream in = conn.getInputStream()) { return om.readTree(in); } finally { conn.disconnect(); } }
@@ -654,8 +708,8 @@ public class MediaGenerationService {
         Path output = null;
         try {
             beginSubmission(task, 15, "正在调用 OpenAI-compatible 图片生成接口");
-            OpenAiCompatibleMediaAdapter mediaAdapter = mediaAdapterRegistry.adapterFor(provider, "image", mediaCapability(provider));
-            var submission = mediaAdapter.submitImage(mediaContext(provider), prompt, model, size, quality);
+            OpenAiCompatibleMediaAdapter mediaAdapter = mediaAdapterRegistry.adapterFor(provider, "image", mediaCapability(provider), model);
+            var submission = mediaAdapter.submitImage(mediaContext(provider, "image", model), prompt, model, size, quality);
 
             update(task, "running", 75, "正在校验并登记生成图片");
             Path dir = props.mediaToolsOutput().resolve("generated-ai-images");

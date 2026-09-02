@@ -49,6 +49,8 @@ echo [3/7] Build frontend static bundle...
 pushd "%APP_DIR%frontend"
 if exist "node_modules\.bin\vite.cmd" (
   node scripts\verify-text-integrity.mjs
+  if not errorlevel 1 node scripts\verify-material-import-queue.mjs
+  if not errorlevel 1 node scripts\verify-ai-create-routing.mjs
   if not errorlevel 1 call node_modules\.bin\vite.cmd build
   if not errorlevel 1 node scripts\verify-static.mjs
 ) else (

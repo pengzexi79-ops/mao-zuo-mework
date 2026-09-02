@@ -11,7 +11,7 @@ function Require-File([string]$Relative) {
 
 $required = @(
   'start.bat','ensure_env.bat','ensure_env.ps1','start_mysql.bat','start_mysql.ps1','setup_runtime.bat','.env.example',
-  'INSTALLATION_GUIDE.md','AI_INSTALLATION_GUIDE.md','PRIVACY_RELEASE.md','installer\ai-setup-manifest.json',
+  'INSTALLATION_GUIDE.md','AI_INSTALLATION_GUIDE.md','PRIVACY_RELEASE.md','installer\ai-setup-manifest.json','installer\Mework.ico',
   'backend\src\main\resources\db\schema.sql','backend\target\mixcut-delivery.jar',
   'portable\jdk-17\bin\java.exe','portable\mysql\bin\mysqld.exe','portable\mysql\bin\mysql.exe',
   'portable\python\python.exe','portable\ffmpeg\bin\ffmpeg.exe','portable\ffmpeg\bin\ffprobe.exe',
@@ -62,12 +62,14 @@ foreach ($allowed in @('jdk-17','mysql','ffmpeg','python','whisper','whisper-mod
   if ($filesSection -notmatch [regex]::Escape("portable\$allowed\*")) { $errors.Add("installer allowlist missing portable\$allowed") }
 }
 if ($iss -notmatch 'DefaultDirName=\{code:GetDefaultInstallDir\}' -or $iss -notmatch "Result := 'D:\\Mework'") { $errors.Add('installer does not prefer D:\Mework') }
+if ($iss -notmatch 'SetupIconFile=Mework\.ico' -or $iss -notmatch 'IconFilename: "\{app\}\\Mework\.ico"') { $errors.Add('installer does not use the Mework application icon') }
 $runSection = if ($iss -match '(?s)\[Run\](.*?)(?:\r?\n\[|$)') { $Matches[1] } else { '' }
 if (([regex]::Matches($runSection, 'Filename:')).Count -ne 1 -or $runSection -notmatch 'start\.bat') { $errors.Add('installer must launch only start.bat after installation') }
 
 try {
+  $releaseVersion = [string](Get-Content -Raw -LiteralPath (Join-Path $rootPath 'backend\src\main\resources\release-notes.json') -Encoding UTF8 | ConvertFrom-Json).version
   $aiManifest = Get-Content -Raw -LiteralPath (Join-Path $rootPath 'installer\ai-setup-manifest.json') -Encoding UTF8 | ConvertFrom-Json
-  if ($aiManifest.product.version -ne '2.2.158') { $errors.Add('ai-setup-manifest version is not 2.2.158') }
+  if ($aiManifest.product.version -ne $releaseVersion) { $errors.Add("ai-setup-manifest version $($aiManifest.product.version) does not match release $releaseVersion") }
   if (-not $aiManifest.privacy.excluded) { $errors.Add('ai-setup-manifest has no privacy exclusions') }
 } catch { $errors.Add("ai-setup-manifest is invalid JSON: $($_.Exception.Message)") }
 

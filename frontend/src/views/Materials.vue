@@ -28,13 +28,13 @@
           <input ref="fileInput" class="native-folder-input" type="file" multiple :accept="acceptTypes" @change="onFilesPicked" />
           <el-button plain @click="fileInput?.click()">选择文件（兼容模式）</el-button>
           <input ref="archiveInput" class="native-folder-input" type="file" accept=".zip,application/zip" @change="onArchivePicked" />
-          <el-button plain :loading="importingArchive" @click="archiveInput?.click()">导入 ZIP 素材总包</el-button>
+          <el-button plain @click="archiveInput?.click()">导入 ZIP 素材总包</el-button>
         </el-form-item>
       </el-form>
-      <div class="material-dropzone" @dragover.prevent @drop.prevent="onMaterialDrop" @click="folderInput?.click()">
+      <div class="material-dropzone" @dragover.stop.prevent @drop.stop.prevent="onMaterialDrop" @click="folderInput?.click()">
         <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
         <div class="el-upload__text">将文件或整个文件夹拖到这里，或点击选择文件夹</div>
-        <div class="el-upload__tip">文件夹会作为一次总包导入，保留文件夹名称；非媒体文件会汇总跳过，单文件最大 2GB。</div>
+        <div class="el-upload__tip">文件夹会作为一次总包导入并保留文件夹名称；应用不设文件大小上限，仅在磁盘空间不足或文件不可读时停止。</div>
       </div>
       <div class="form-hint">
         可直接拖入桌面文件或文件夹，也可使用“选择文件夹导入”“本机目录扫描”或“导入 ZIP 素材包”。目录扫描会继续处理可读媒体，即使遇到锁定或非媒体文件。
@@ -113,14 +113,34 @@
         <el-button size="small" :disabled="!selected.length" @click="clearSelection">清空选择</el-button>
         <span class="muted">先勾选左侧复选框；批量删除只删除记录，不删除本地原文件</span>
       </div>
-      <div v-if="uploadItems.length" class="upload-status-list">
-        <div v-for="item in uploadItems" :key="item.uid" class="upload-status-row">
-          <span class="upload-name">{{ item.name }}</span>
-          <el-progress :percentage="item.percentage" :status="item.status === 'exception' ? 'exception' : (item.status === 'success' ? 'success' : '')" />
-          <span class="muted">{{ item.message }}</span>
-          <el-button v-if="item.status === 'exception' && item.file" link type="primary" size="small" @click="retryUpload(item)">重试</el-button>
-        </div>
-      </div>
+      <el-collapse v-if="materialImportState.batches.length" v-model="expandedImportRecords" class="import-history">
+        <el-collapse-item name="imports">
+          <template #title>
+            <div class="import-history-title">
+              <b>导入记录</b>
+              <el-tag v-if="activeImportCount" size="small" type="primary">进行中 {{ activeImportCount }}</el-tag>
+              <span class="muted">共 {{ materialImportState.batches.length }} 批，默认收起</span>
+            </div>
+          </template>
+          <div class="import-history-toolbar">
+            <span class="muted">切换到其他页面不会中断导入；进度同时显示在顶部“任务”和猫作小助手。</span>
+            <el-button size="small" :disabled="!hasFinishedImports" @click.stop="clearFinishedMaterialImports">清理已结束记录</el-button>
+          </div>
+          <div v-for="batch in materialImportState.batches" :key="batch.id" class="import-batch">
+            <div class="import-batch-head">
+              <b>{{ batch.label }}</b>
+              <el-tag size="small" :type="importStatusType(batch.status)">{{ importStatusLabel(batch.status) }}</el-tag>
+            </div>
+            <el-progress :percentage="batch.progress" :status="batch.status === 'failed' ? 'exception' : (batch.status === 'done' ? 'success' : '')" />
+            <div v-for="item in batch.items" :key="item.id" class="upload-status-row">
+              <span class="upload-name">{{ item.name }}</span>
+              <el-progress :percentage="item.progress" :status="item.status === 'failed' ? 'exception' : (item.status === 'done' ? 'success' : '')" />
+              <span class="muted">{{ item.message }}</span>
+              <el-button v-if="item.status === 'failed' && item.file" link type="primary" size="small" @click="retryUpload(batch, item)">重试</el-button>
+            </div>
+          </div>
+        </el-collapse-item>
+      </el-collapse>
 
       <el-collapse v-model="expandedFolderGroups" class="material-folder-groups" v-loading="loading">
         <el-collapse-item v-for="group in materialGroups" :key="group.key" :name="group.key">
@@ -325,7 +345,15 @@
 import { computed, ref, reactive, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
-import { api, ROLE_LABEL, uploadFile, importMaterialPackage, importMaterialPackageArchive } from '../api'
+import { api, ROLE_LABEL } from '../api'
+import {
+  clearFinishedMaterialImports,
+  enqueueMaterialFiles,
+  enqueueMaterialPackage,
+  enqueueMaterialScan,
+  materialImportState,
+  retryMaterialImportItem
+} from '../materialImportQueue'
 
 const route = useRoute()
 const router = useRouter()
@@ -338,7 +366,7 @@ const folders = ref([])
 const folderTableRef = ref(null)
 const selectedFolders = ref([])
 const batchDeletingFolders = ref(false)
-const uploadItems = ref([])
+const expandedImportRecords = ref([])
 const batchRoleVal = ref('')
 const sliceSec = ref(3)
 const slicing = ref(false)
@@ -350,7 +378,6 @@ const autoRole = ref(true)
 const folderInput = ref(null)
 const fileInput = ref(null)
 const archiveInput = ref(null)
-const importingArchive = ref(false)
 const packageNameVisible = ref(false)
 const packageImporting = ref(false)
 const packageNameDraft = ref('')
@@ -359,7 +386,9 @@ const pendingPackage = ref(null)
 // Browser picker hint only. Final audio/video acceptance is confirmed by local FFprobe.
 const acceptTypes = '.mp4,.mov,.mkv,.avi,.flv,.webm,.m4v,.wmv,.ts,.mts,.m2ts,.3gp,.3g2,.ogv,.vob,.mpg,.mpeg,.m2v,.mxf,.asf,.divx,.f4v,.rm,.rmvb,.qt,.dv,.mp3,.wav,.m4a,.aac,.flac,.ogg,.oga,.opus,.wma,.aiff,.aif,.amr,.ape,.alac,.ac3,.eac3,.dts,.caf,.au,.ra,.jpg,.jpeg,.png,.webp,.bmp,.gif,.avif,.tif,.tiff,.zip'
 const uploadData = reactive({ role: 'none', folderId: '' })
-const scanning = ref(false)
+const scanning = computed(() => materialImportState.batches.some((batch) => batch.type === 'scan' && ['queued', 'processing'].includes(batch.status)))
+const activeImportCount = computed(() => materialImportState.batches.filter((batch) => ['queued', 'uploading', 'processing'].includes(batch.status)).length)
+const hasFinishedImports = computed(() => materialImportState.batches.some((batch) => ['done', 'failed'].includes(batch.status)))
 const scanResult = ref(null)
 const ttsVisible = ref(false)
 const ttsGenerating = ref(false)
@@ -677,13 +706,8 @@ async function separateAudio (row) {
 
 async function doScan() {
   if (!scanPath.value) return ElMessage.warning('请填写目录路径')
-  scanning.value = true
-  try {
-    scanResult.value = await api.scanFolder({ path: scanPath.value, autoRole: autoRole.value })
-    await load()
-  } finally {
-    scanning.value = false
-  }
+  enqueueMaterialScan(scanPath.value, autoRole.value)
+  ElMessage.success('目录扫描已转入后台，可继续使用其他页面')
 }
 
 function isSupportedMediaOrZip (file) {
@@ -702,10 +726,6 @@ function beforeUpload(file) {
   }
   if (/\.(dat|silk)$/i.test(file.name)) {
     ElMessage.warning(`${file.name} 是微信加密缓存文件，请在微信中另存为正常图片、视频或音频后再导入。`)
-    return false
-  }
-  if (file.size > 2 * 1024 * 1024 * 1024) {
-    ElMessage.error(`${file.name}：超过 2GB 限制`)
     return false
   }
   if (!isSupportedMediaOrZip(file)) {
@@ -769,7 +789,7 @@ async function confirmPackageImport () {
           if ((file.size || 0) > 5 * 1024 * 1024) { ElMessage.warning(`${file.name} 超过 5MB，已跳过工作流导入`); continue }
           try {
             const text = await file.text()
-            const expectedFormat = expectedPackFormat(file, text)
+            const expectedFormat = JSON.parse(text)?.format
             if (expectedFormat) staged.push({ name: file.name, expectedFormat, text })
             else ElMessage.warning(`${file.name} 不是可识别的工作流/Skill 包，已跳过`)
           } catch { ElMessage.warning(`${file.name} 读取失败，已跳过`) }
@@ -784,21 +804,17 @@ async function confirmPackageImport () {
         return
       }
     }
-    const importData = { role: uploadData.role, folderId: uploadData.folderId || undefined }
-    const result = payload.kind === 'archive'
-      ? await importMaterialPackageArchive(payload.files[0], { packageName: packageNameDraft.value.trim(), ...importData })
-      : await importMaterialPackage(files, packageNameDraft.value.trim(), payload.relativePaths || files.map((file) => file.webkitRelativePath || file.name), importData)
+    const packageName = packageNameDraft.value.trim()
+    enqueueMaterialPackage({
+      kind: payload.kind,
+      files,
+      packageName,
+      relativePaths: payload.relativePaths || files.map((file) => file.webkitRelativePath || file.name),
+      data: { role: uploadData.role, folderId: uploadData.folderId || undefined }
+    })
     packageNameVisible.value = false
     pendingPackage.value = null
-    scanResult.value = result
-    const importedWorkflowPacks = await importWorkflowPacks((result.workflowPacks || []).map((pack) => ({ name: pack.name, text: pack.content })))
-    await loadFolders()
-    if (result.folderId) {
-      q.folderId = result.folderId
-      await load()
-      await router.push({ path: '/materials', query: { folderId: String(result.folderId) } })
-    }
-    ElMessage.success(`素材总包导入完成：视频 ${result.videoImported || 0}，音频 ${result.audioImported || 0}，图片 ${result.imageImported || 0}，跳过 ${result.skipped || 0}，失败 ${result.failed || 0}`)
+    ElMessage.success('素材总包已转入后台导入，可继续使用其他页面')
   } catch (error) {
     ElMessage.error(`素材总包导入失败：${error.message || '请检查文件是否完整可读'}`)
   } finally {
@@ -809,13 +825,9 @@ async function confirmPackageImport () {
 async function uploadEntries (files) {
   if (!files.length) return
   const validFiles = files.filter((file) => beforeUpload(file))
-  const batchId = Date.now()
-  const entries = validFiles.map((file, index) => ({ file, item: { uid: `upload-${batchId}-${index}`, name: file.webkitRelativePath || file.name, file, percentage: 0, status: 'pending', message: '等待上传' } }))
-  entries.forEach(({ item }) => uploadItems.value.push(item))
-  let nextIndex = 0
-  const worker = async () => { while (nextIndex < entries.length) { const entry = entries[nextIndex++]; await uploadOneItem(entry.file, entry.item); if (entry.item.status === 'exception') ElMessage.error(`${entry.file.name} 导入失败：${entry.item.message}`) } }
-  await Promise.all(Array.from({ length: Math.min(3, entries.length) }, worker))
-  await load()
+  if (!validFiles.length) return
+  enqueueMaterialFiles(validFiles, { role: uploadData.role, folderId: uploadData.folderId })
+  ElMessage.success(`已将 ${validFiles.length} 个素材加入后台导入队列`)
 }
 async function onFolderPicked (event) {
   const files = Array.from(event.target.files || [])
@@ -879,74 +891,25 @@ async function onMaterialDrop (event) {
   await uploadEntries(media.map(({ file }) => file))
 }
 
-async function retryUpload (item) {
-  if (!item.file || item.status === 'uploading') return
-  await uploadOneItem(item.file, item)
-  await load()
+function retryUpload (batch, item) {
+  if (retryMaterialImportItem(batch.id, item.id)) ElMessage.success('失败素材已重新加入后台队列')
 }
 
-async function uploadOneItem (file, item) {
-  item.status = 'uploading'
-  item.percentage = 0
-  item.message = '上传中'
-  try {
-    const result = await uploadFile(file, { role: uploadData.role, folderId: uploadData.folderId }, (percentage) => {
-      item.percentage = percentage
-      item.message = `上传中 ${percentage}%`
-    })
-    item.percentage = 100
-    item.status = result?.status === 'processing' ? 'processing' : 'success'
-    item.message = result?.status === 'processing' ? '文件已接收，正在用本机 FFprobe 检测容器和音视频流' : '已保存并完成媒体探测'
-  } catch (error) {
-    item.status = 'exception'
-    item.message = error.message || '上传失败，可重试'
-  }
+function importStatusLabel (status) {
+  return ({ queued: '等待中', uploading: '上传中', processing: '处理中', done: '已完成', failed: '有失败' })[status] || status
 }
 
-async function uploadFromDrop (options) {
-  const file = options.file
-  if (!beforeUpload(file)) {
-    options.onError(new Error('文件未进入上传队列，请按提示选择可读取的本地媒体文件。'))
-    return
-  }
-  try {
-    const result = await uploadFile(file, { role: uploadData.role, folderId: uploadData.folderId }, (percentage) => {
-      options.onProgress({ percent: percentage })
-    })
-    options.onSuccess({ ok: true, data: result })
-  } catch (error) {
-    options.onError(error)
-  }
+function importStatusType (status) {
+  if (status === 'done') return 'success'
+  if (status === 'failed') return 'danger'
+  if (status === 'queued') return 'warning'
+  return 'primary'
 }
 
-function findUpload(file) {
-  let item = uploadItems.value.find((x) => x.uid === file.uid)
-  if (!item) {
-    item = { uid: file.uid, name: file.name, percentage: 0, status: 'uploading', message: '准备上传' }
-    uploadItems.value.push(item)
-  }
-  return item
-}
-function onUploadProgress(event, file) {
-  const item = findUpload(file)
-  item.percentage = Math.round(event.percent || 0)
-  item.message = `上传中 ${item.percentage}%`
-}
-function onUploadSuccess(response, file) {
-  const item = findUpload(file)
-  item.percentage = 100
-  item.status = response?.ok === false ? 'exception' : 'success'
-  const material = response?.data
-  item.message = item.status === 'success' ? (material?.status === 'processing' ? '文件已接收，正在用本机 FFprobe 检测容器和音视频流' : '已保存并完成媒体探测') : (response?.message || '服务端处理失败')
-  if (item.status === 'success') load()
-}
-function onUploadError(error, file) {
-  const item = findUpload(file)
-  item.status = 'exception'
-  item.message = error?.message || '上传失败；请确认文件已完整保存到本机后重试'
-}
-function removeUpload(file) {
-  uploadItems.value = uploadItems.value.filter((x) => x.uid !== file.uid)
+async function onMaterialImportFinished (event) {
+  const detail = event?.detail || {}
+  if (detail.type === 'scan' && detail.result) scanResult.value = detail.result
+  await Promise.all([load(), loadFolders().catch(() => {})])
 }
 function syncGroupSelection(groupItems, groupSelection) {
   const groupIds = new Set(groupItems.map((item) => item.id))
@@ -1082,10 +1045,12 @@ onMounted(async () => {
   await Promise.all([load(), loadAudioEngineStatus(), loadFolders().catch(() => { folders.value = [] }), api.projects().then((rows) => { projects.value = rows || [] }).catch(() => { projects.value = [] })])
   await openMaterialFromRoute()
   window.addEventListener('mework-global-upload-complete', load)
+  window.addEventListener('mework-material-import-finished', onMaterialImportFinished)
 })
 onBeforeUnmount(() => {
   stopAnalysisPolling()
   window.removeEventListener('mework-global-upload-complete', load)
+  window.removeEventListener('mework-material-import-finished', onMaterialImportFinished)
 })
 </script>
 
@@ -1105,15 +1070,26 @@ onBeforeUnmount(() => {
 .folder-media-type .muted { margin-left:8px; }
 .folder-media-items { margin-top:5px; color:#606266; font-size:12px; line-height:1.7; word-break:break-word; }
 .tts-ai-actions { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:8px; }
-.upload-status-list { margin:10px 0; padding:10px; background:#fafafa; border-radius:6px; }
-.upload-status-row { display:grid; grid-template-columns:220px minmax(180px,1fr) 260px; gap:10px; align-items:center; padding:5px 0; }
- .upload-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.import-history { margin:10px 0 12px; border-top:1px solid #ebeef5; border-bottom:1px solid #ebeef5; }
+.import-history :deep(.el-collapse-item__header) { min-height:44px; height:auto; line-height:1.4; }
+.import-history-title { display:flex; align-items:center; gap:10px; min-width:0; flex-wrap:wrap; }
+.import-history-toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:8px; }
+.import-batch { padding:10px 0; border-top:1px solid #f0f2f5; }
+.import-batch:first-of-type { border-top:0; }
+.import-batch-head { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:6px; }
+.upload-status-row { display:grid; grid-template-columns:minmax(150px,220px) minmax(160px,1fr) minmax(180px,260px) auto; gap:10px; align-items:center; padding:5px 0; }
+.upload-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
  .material-preview { width:100%; max-width:100%; min-width:0; overflow:hidden; box-sizing:border-box; }
  .material-preview img, .material-preview video { display:block; width:auto; max-width:100%; max-height:calc(100vh - 190px); height:auto; object-fit:contain; margin:0 auto; }
  .material-preview audio { display:block; width:100%; max-width:100%; }
  .material-preview-dialog :deep(.el-dialog__body) { max-width:100%; max-height:calc(100vh - 140px); overflow:auto; box-sizing:border-box; }
 .ocr-text { margin-top:6px; line-height:1.7; word-break:break-word; }
  .diagnosis-issues { margin:6px 0 0; padding-left:20px; color:#b54708; line-height:1.7; }
+@media (max-width: 760px) {
+  .import-history-toolbar { align-items:flex-start; flex-direction:column; }
+  .upload-status-row { grid-template-columns:minmax(0,1fr); gap:5px; }
+  .upload-name { white-space:normal; overflow-wrap:anywhere; }
+}
 </style>
 
 <style>

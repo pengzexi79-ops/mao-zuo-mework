@@ -57,6 +57,8 @@ public class MaterialService {
             "ape", "alac", "ac3", "eac3", "dts", "caf", "au", "ra");
     private static final Set<String> IMAGE_EXT = Set.of(
             "jpg", "jpeg", "png", "webp", "bmp", "gif", "avif", "tif", "tiff");
+    private static final long MIN_IMPORT_FREE_BYTES = 256L * 1024 * 1024;
+    private static final long DISK_SPACE_CHECK_INTERVAL_BYTES = 16L * 1024 * 1024;
 
     /** 文件名关键词 → 角色。命中即自动归类。 */
     private static final Map<MaterialRole, List<String>> ROLE_HINTS = new LinkedHashMap<>() {{
@@ -305,13 +307,10 @@ public class MaterialService {
                 ? topLevelName : requestedName;
         final int maxEntries = 2_000;
         final int maxDepth = 12;
-        final long maxEntryBytes = 2L * 1024 * 1024 * 1024;
-        final long maxTotalBytes = 4L * 1024 * 1024 * 1024;
         PackageNameAudit audit = auditPackageName(candidate);
         if (!audit.isValid()) throw new IllegalArgumentException("总包名称不合法：" + audit.getReason() + "。请修改后重新导入");
         PackageImportResult result = preparePackageResult(audit, targetFolderId);
         Path staging = Files.createTempDirectory(props.materials().resolve("uploads"), "package-zip-").toAbsolutePath().normalize();
-        long total = 0;
         int entries = 0;
         try (InputStream raw = archive.getInputStream(); ZipInputStream zip = new ZipInputStream(new BufferedInputStream(raw))) {
             ZipEntry entry;
@@ -348,8 +347,7 @@ public class MaterialService {
                 Path target = staging.resolve(relative).normalize();
                 if (!target.startsWith(staging)) throw new IllegalArgumentException("ZIP 包含越界路径，已拒绝导入");
                 Files.createDirectories(target.getParent());
-                long bytes = copyZipEntry(zip, target, maxEntryBytes, maxTotalBytes - total);
-                total += bytes;
+                copyZipEntry(zip, target);
                 importPackagePath(result, target, entryName, role);
                 zip.closeEntry();
             }
@@ -549,8 +547,6 @@ public class MaterialService {
 
         final int maxEntries = 2_000;
         final int maxDepth = 12;
-        final long maxEntryBytes = 2L * 1024 * 1024 * 1024;
-        final long maxTotalBytes = 4L * 1024 * 1024 * 1024;
         final int maxErrors = 20;
         ScanResult res = new ScanResult();
         Path uploads = props.materials().resolve("uploads");
@@ -569,7 +565,6 @@ public class MaterialService {
             folder = existing;
         }
 
-        long totalBytes = 0;
         int entries = 0;
         try (InputStream raw = archive.getInputStream(); ZipInputStream zip = new ZipInputStream(new BufferedInputStream(raw))) {
             ZipEntry entry;
@@ -602,8 +597,7 @@ public class MaterialService {
                     continue;
                 }
                 Files.createDirectories(target.getParent());
-                long entryBytes = copyZipEntry(zip, target, maxEntryBytes, maxTotalBytes - totalBytes);
-                totalBytes += entryBytes;
+                copyZipEntry(zip, target);
                 res.scanned++;
                 try {
                     register(target.toString(), folder.getId(), role == null || role == MaterialRole.none, Material.Source.local, null);
@@ -627,23 +621,33 @@ public class MaterialService {
         return res;
     }
 
-    private long copyZipEntry(ZipInputStream zip, Path target, long maxEntryBytes, long remainingTotalBytes) throws IOException {
-        if (remainingTotalBytes <= 0) throw new IllegalArgumentException("ZIP 解压后的总大小超过 4GB 限制");
+    private void copyZipEntry(ZipInputStream zip, Path target) throws IOException {
         long written = 0;
+        long nextDiskCheck = 0;
         byte[] buffer = new byte[8192];
+        ensureImportDiskSpace(target);
         try (var output = Files.newOutputStream(target, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE)) {
             int read;
             while ((read = zip.read(buffer)) >= 0) {
-                written += read;
-                if (written > maxEntryBytes) throw new IllegalArgumentException("ZIP 中单个文件超过 2GB 限制");
-                if (written > remainingTotalBytes) throw new IllegalArgumentException("ZIP 解压后的总大小超过 4GB 限制");
+                if (written >= nextDiskCheck) {
+                    ensureImportDiskSpace(target);
+                    nextDiskCheck = written + DISK_SPACE_CHECK_INTERVAL_BYTES;
+                }
                 output.write(buffer, 0, read);
+                written += read;
             }
         } catch (IOException | RuntimeException error) {
             Files.deleteIfExists(target);
             throw error;
         }
-        return written;
+    }
+
+    private void ensureImportDiskSpace(Path target) throws IOException {
+        Path probe = Files.exists(target) ? target : target.getParent();
+        if (probe == null) throw new IOException("无法确认素材导入目录所在磁盘");
+        if (Files.getFileStore(probe).getUsableSpace() < MIN_IMPORT_FREE_BYTES) {
+            throw new IllegalArgumentException("应用数据盘剩余空间不足，已停止导入；请清理磁盘或调整 APP_DATA_DIR 后重试");
+        }
     }
 
     public Material upload(MultipartFile file, MaterialRole role) throws Exception { return upload(file, role, null); }

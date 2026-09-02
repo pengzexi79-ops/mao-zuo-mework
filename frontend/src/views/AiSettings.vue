@@ -10,7 +10,7 @@
       <div class="card-title provider-section-title">
         <div class="provider-section-heading">
           <b>人工智能服务商</b>
-          <span class="hint">支持多种人工智能服务协议，中转服务请选择兼容协议类型</span>
+          <span class="hint">按供应商真实协议接入；兼容协议不代表所有媒体接口都通用</span>
         </div>
         <span style="flex:1"></span>
         <el-button size="small" plain @click="$router.push('/capabilities')">插件接口</el-button>
@@ -186,7 +186,7 @@
               <el-radio-button value="anthropic">Anthropic Messages</el-radio-button>
               <el-radio-button value="gemini">Gemini 原生协议</el-radio-button>
             </el-radio-group>
-            <div class="form-hint">中转站和大多数国产模型请选择通用兼容协议。</div>
+            <div class="form-hint">仅适用于实现 OpenAI-compatible 请求格式的服务；图片、视频和配音仍按模型路由适配。</div>
           </el-form-item>
           <el-form-item label="服务地址">
             <el-input v-model="form.baseUrl" :placeholder="basePlaceholder" />
@@ -196,6 +196,7 @@
             <el-input v-model="form.apiKey" show-password :placeholder="form.id ? '留空则不修改已保存的密钥' : 'sk-...'" />
           </el-form-item>
         </div>
+        <el-alert v-if="credentialNotice" class="credential-notice" type="warning" :closable="false" show-icon :title="credentialNotice" />
         <div v-if="form.discoverySummary" class="discovery-summary" role="status">
           <div class="discovery-summary-head"><span>本次识别已完成</span><small>{{ form.discoverySummary.latencyMs }} ms</small></div>
           <div class="discovery-counts"><span v-for="item in form.discoverySummary.counts" :key="item.label">{{ item.label }} <b>{{ item.count }}</b></span></div>
@@ -204,9 +205,9 @@
         </div>
         <div class="capability-heading">
           <div><b>模型能力</b><span>模型和能力由服务地址返回结果自动匹配，媒体端点统一跟随上面的服务地址。</span></div>
-          <el-button type="primary" plain size="small" :disabled="!form.id" :loading="discoveringId === form.id" @click="discoverFormModels">AI 识别并匹配</el-button>
+          <el-button type="primary" plain size="small" :disabled="!form.baseUrl || (!form.id && !form.apiKey)" :loading="discoveringId === (form.id || 'draft')" @click="discoverFormModels">AI 识别并匹配</el-button>
         </div>
-        <div v-if="!form.id" class="capability-hint">保存供应商后，系统会自动读取模型 ID；编辑时可再次点击“AI 识别并匹配”。</div>
+        <div v-if="!form.id" class="capability-hint">填写服务地址和密钥即可先识别；识别结果点击“保存”后正式生效。</div>
         <div class="capability-editor">
           <div v-for="row in capabilityRows" :key="row.key" :class="['capability-row', { 'capability-row-simple': !row.protocol }]">
             <div class="capability-row-title"><b>{{ row.label }}</b><span>{{ row.note }}</span></div>
@@ -247,7 +248,7 @@ const providerTemplates = [
   { name: 'DeepSeek', description: '国内文本与推理模型', kind: 'openai', baseUrl: 'https://api.deepseek.com' },
   { name: '智谱 GLM', description: 'GLM 兼容接口', kind: 'openai', baseUrl: 'https://open.bigmodel.cn/api/paas/v4' },
   { name: 'Moonshot Kimi', description: 'Kimi 兼容接口', kind: 'openai', baseUrl: 'https://api.moonshot.cn/v1' },
-  { name: '阿里云百炼', description: 'DashScope 兼容接口', kind: 'openai', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1' },
+  { name: '阿里云百炼标准 API', description: '猫作可用：标准 API Key + DashScope 兼容地址', kind: 'openai', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1' },
   { name: '火山方舟 / 豆包', description: '豆包兼容接口', kind: 'openai', baseUrl: 'https://ark.cn-beijing.volces.com/api/v3' },
   { name: '硅基流动', description: '国内多模型聚合接口', kind: 'openai', baseUrl: 'https://api.siliconflow.cn/v1' },
   { name: 'ModelScope', description: '魔搭社区模型接口', kind: 'openai', baseUrl: 'https://api-inference.modelscope.cn/v1' },
@@ -324,7 +325,7 @@ const routesDirty = computed(() => Boolean(routes.value.length) && routeState(ro
 
 const form = reactive({
   id: null, name: '', kind: 'openai', baseUrl: '', apiKey: '', defaultModel: '', priority: 10, enabled: true,
-  textModels: '', imageModels: '', videoModels: '', voiceModels: '', visionModels: '', imageEndpoint: '', videoEndpoint: '', voiceEndpoint: '', imageProtocol: '', videoProtocol: '', voiceProtocol: '', discoverySummary: null
+  textModels: '', imageModels: '', videoModels: '', voiceModels: '', visionModels: '', imageEndpoint: '', videoEndpoint: '', voiceEndpoint: '', imageProtocol: '', videoProtocol: '', voiceProtocol: '', modelRoutes: {}, discoverySummary: null
 })
 
 const basePlaceholder = computed(() => ({
@@ -332,6 +333,16 @@ const basePlaceholder = computed(() => ({
   anthropic: 'https://api.anthropic.com',
   gemini: 'https://generativelanguage.googleapis.com'
 }[form.kind]))
+const credentialNotice = computed(() => {
+  if (!dlgVisible.value) return ''
+  const base = String(form.baseUrl || '').toLowerCase()
+  const key = String(form.apiKey || '').trim()
+  if (!key) return ''
+  if (base.includes('dashscope.aliyuncs.com') && (key.startsWith('sk-sp-') || key.startsWith('o1_'))) {
+    return '当前是百炼标准 API 地址，不能搭配 Coding Plan / Token Plan 订阅密钥；请使用该地址对应的标准 API Key，或改用与订阅密钥匹配的服务地址。'
+  }
+  return ''
+})
 
 function providerModels (provider) {
   try { return typeof provider?.models === 'string' ? JSON.parse(provider.models || '{}') : (provider?.models || {}) } catch { return {} }
@@ -351,12 +362,12 @@ function mediaModelCount (provider) {
 function executableMediaModelCount (provider) {
   const caps = provider?.mediaCapabilities || {}
   return ['image', 'video', 'voice'].reduce((total, key) => {
-    const models = Array.isArray(caps[`${key}Models`]) ? caps[`${key}Models`].length : 0
-    return total + (isExecutableProtocol(caps[`${key}Protocol`]) ? models : 0)
+    const models = Array.isArray(caps[`${key}Models`]) ? caps[`${key}Models`] : []
+    return total + models.filter(model => isExecutableProtocol(caps.modelRoutes?.[key]?.[model]?.protocol || caps[`${key}Protocol`])).length
   }, 0)
 }
 function isExecutableProtocol (protocol) {
-  return ['openai_image_generation', 'openai_video_generation', 'openai_audio_speech'].includes(protocol)
+  return ['openai_image_generation', 'dashscope_image_http', 'dashscope_image_task_http', 'openai_video_generation', 'dashscope_video_task_http', 'openai_audio_speech', 'dashscope_tts_http', 'dashscope_minimax_tts_http'].includes(protocol)
 }
 function providerCapabilities (provider) {
   const caps = provider?.mediaCapabilities || {}
@@ -400,6 +411,7 @@ function applyTemplate (template) {
   form.imageEndpoint = ''
   form.videoEndpoint = ''
   form.voiceEndpoint = ''
+  form.modelRoutes = {}
   form.visionModels = ''
   form.discoverySummary = null
   form.apiKey = ''
@@ -407,6 +419,10 @@ function applyTemplate (template) {
 
 function splitModels (value) {
   return [...new Set(String(value || '').split(/[,，\n]+/).map(item => item.trim()).filter(Boolean))]
+}
+
+function cloneRoutes (value) {
+  try { return JSON.parse(JSON.stringify(value || {})) } catch { return {} }
 }
 
 function capabilityBody () {
@@ -420,7 +436,8 @@ function capabilityBody () {
     voiceEndpoint: form.voiceEndpoint.trim(),
     imageProtocol: form.imageProtocol,
     videoProtocol: form.videoProtocol,
-    voiceProtocol: form.voiceProtocol
+    voiceProtocol: form.voiceProtocol,
+    routes: cloneRoutes(form.modelRoutes)
   })
 }
 
@@ -431,9 +448,14 @@ function capabilityText (row, key) {
 function protocolLabel (protocol) {
   return ({
     openai_image_generation: '已识别：OpenAI 图片接口',
+    dashscope_image_http: '已识别：DashScope 同步图片',
+    dashscope_image_task_http: '已识别：DashScope 异步图片',
+    dashscope_image_edit_http: '已识别：图片编辑模型（需导入原图）',
     openai_video_generation: '已识别：OpenAI 视频接口',
     openai_audio_speech: '已识别：OpenAI 音频接口',
     dashscope_tts_http: '已识别：DashScope TTS HTTP',
+    dashscope_minimax_tts_http: '已识别：DashScope MiniMax TTS',
+    dashscope_video_task_http: '已识别：DashScope 异步视频',
     dashscope_tts_websocket: '已识别：DashScope TTS WebSocket'
   }[protocol] || '等待 AI 识别')
 }
@@ -455,11 +477,6 @@ async function load() {
   loading.value = true
   try {
     providers.value = await api.providers()
-    const pending = providers.value.filter((provider) => provider.hasKey && provider.discoveryStatus !== 'success')
-    if (pending.length) {
-      await Promise.allSettled(pending.map((provider) => api.discoverProviderModels(provider.id)))
-      providers.value = await api.providers()
-    }
     providersError.value = false
   } catch {
     providersError.value = true
@@ -536,10 +553,9 @@ function modelTier (model) {
 
 function routeIntent (useCase) {
   const key = String(useCase || '').toLowerCase()
-  const strong = ['plan', 'script', 'product', 'hook', 'cta', 'qc', 'vision', 'research', 'coding', 'capability', 'image', 'video']
-  const light = ['titles', 'tag', 'tags', 'naming', 'translation', 'summarize', 'voice']
+  const middle = ['naming', 'translation', 'transcription']
   return {
-    tier: strong.includes(key) ? 'strong' : light.includes(key) ? 'light' : 'middle',
+    tier: middle.includes(key) ? 'middle' : 'strong',
     needsVision: ['plan', 'script', 'tag', 'qc', 'vision'].includes(key)
   }
 }
@@ -563,7 +579,7 @@ function chooseRouteModel (provider, useCase) {
       if (model === provider.defaultModel) value += 3
       return value
     }
-    return score(b) - score(a) || String(a).localeCompare(String(b))
+    return score(b) - score(a) || modelStrengthScore(b) - modelStrengthScore(a) || String(a).localeCompare(String(b))
   })[0]
 }
 
@@ -604,16 +620,18 @@ async function loadLogs() {
 }
 
 function openNew() {
+  ElMessage.closeAll()
   Object.assign(form, {
     id: null, name: '', kind: 'openai', baseUrl: '', apiKey: '',
     defaultModel: '', textModels: '', priority: 10, enabled: true,
-    imageModels: '', videoModels: '', voiceModels: '', visionModels: '', imageEndpoint: '', videoEndpoint: '', voiceEndpoint: '', imageProtocol: '', videoProtocol: '', voiceProtocol: '', discoverySummary: null
+    imageModels: '', videoModels: '', voiceModels: '', visionModels: '', imageEndpoint: '', videoEndpoint: '', voiceEndpoint: '', imageProtocol: '', videoProtocol: '', voiceProtocol: '', modelRoutes: {}, discoverySummary: null
   })
   templatesOpen.value = false
   dlgVisible.value = true
 }
 
 function openEdit(row) {
+  ElMessage.closeAll()
   Object.assign(form, {
     id: row.id, name: row.name, kind: row.kind, baseUrl: row.baseUrl, apiKey: '',
     defaultModel: row.defaultModel, textModels: textModels(row).join(','), priority: row.priority, enabled: row.enabled,
@@ -622,6 +640,7 @@ function openEdit(row) {
     imageProtocol: row.mediaCapabilities?.imageProtocol || '',
     videoProtocol: row.mediaCapabilities?.videoProtocol || '',
     voiceProtocol: row.mediaCapabilities?.voiceProtocol || '',
+    modelRoutes: cloneRoutes(row.mediaCapabilities?.modelRoutes),
     discoverySummary: null
   })
   templatesOpen.value = false
@@ -689,10 +708,10 @@ function discoveryCounts (result) {
 }
 
 function applyDiscoveryToForm (result) {
-  const textModels = Array.isArray(result.textModels) ? result.textModels : (Array.isArray(result.models) ? result.models : [])
-  const imageModels = Array.isArray(result.imageModels) ? result.imageModels : []
-  const videoModels = Array.isArray(result.videoModels) ? result.videoModels : []
-  const voiceModels = Array.isArray(result.voiceModels) ? result.voiceModels : []
+  const textModels = strongestFirst(Array.isArray(result.textModels) ? result.textModels : (Array.isArray(result.models) ? result.models : []))
+  const imageModels = strongestFirst(Array.isArray(result.imageModels) ? result.imageModels : [])
+  const videoModels = strongestFirst(Array.isArray(result.videoModels) ? result.videoModels : [])
+  const voiceModels = strongestFirst(Array.isArray(result.voiceModels) ? result.voiceModels : [])
   const visionModels = Array.isArray(result.visionModels) ? result.visionModels : []
   // Recognition is authoritative for the automatic section. Replace stale values instead of
   // appending them, otherwise an old manually-entered text model can masquerade as media support.
@@ -702,12 +721,17 @@ function applyDiscoveryToForm (result) {
   form.videoModels = videoModels.join(',')
   form.voiceModels = voiceModels.join(',')
   form.visionModels = visionModels.join(',')
-  form.imageProtocol = imageModels.length ? 'openai_image_generation' : ''
-  form.videoProtocol = videoModels.length ? 'openai_video_generation' : ''
-  form.voiceProtocol = voiceModels.length ? 'openai_audio_speech' : ''
-  form.imageEndpoint = ''
-  form.videoEndpoint = ''
-  form.voiceEndpoint = ''
+  form.modelRoutes = cloneRoutes(result.modelRoutes)
+  const firstRoute = (operation, models) => form.modelRoutes?.[operation]?.[models[0]] || {}
+  const imageRoute = firstRoute('image', imageModels)
+  const videoRoute = firstRoute('video', videoModels)
+  const voiceRoute = firstRoute('voice', voiceModels)
+  form.imageProtocol = imageRoute.protocol || ''
+  form.videoProtocol = videoRoute.protocol || ''
+  form.voiceProtocol = voiceRoute.protocol || ''
+  form.imageEndpoint = imageRoute.endpoint || ''
+  form.videoEndpoint = videoRoute.endpoint || ''
+  form.voiceEndpoint = voiceRoute.endpoint || ''
   form.discoverySummary = {
     latencyMs: Number(result.latencyMs || 0),
     counts: discoveryCounts(result),
@@ -719,16 +743,23 @@ function applyDiscoveryToForm (result) {
 function modelStrengthScore (model) {
   const id = String(model || '').toLowerCase()
   let score = 0
-  if (/(gpt-5|gpt-4|o1|o3|o4|opus|sonnet|pro|max|reason|reasoning|deepseek-r1|qwen-max|glm-4-plus)/.test(id)) score += 100
-  if (/(mini|flash|haiku|small|lite|turbo|instant|nano|micro|free)/.test(id)) score -= 30
+  if (/(gpt-5|o1|o3|o4|opus|reason|reasoning|deepseek-r1|qwen-max|glm-4-plus|(?:^|[-_./])max(?:$|[-_./]))/.test(id)) score += 1000
+  else if (/(gpt-4|sonnet|(?:^|[-_./])pro(?:$|[-_./]))/.test(id)) score += 700
+  if (/(mini|flash|haiku|small|lite|turbo|instant|nano|micro|free)/.test(id)) score -= 800
+  const version = id.match(/qwen([0-9]+)(?:\.([0-9]+))?/)
+  if (version) score += Number(version[1]) * 100 + Number(version[2] || 0) * 10
   const size = id.match(/\b([0-9]{1,3})b\b/)
-  if (size) score += Number(size[1])
+  if (size) score += Math.min(200, Number(size[1]))
   return score
 }
 
-function strongestModel (models) {
+function strongestFirst (models) {
   return [...new Set((models || []).filter(Boolean))]
-    .sort((a, b) => modelStrengthScore(b) - modelStrengthScore(a) || String(a).localeCompare(String(b)))[0] || ''
+    .sort((a, b) => modelStrengthScore(b) - modelStrengthScore(a) || String(a).localeCompare(String(b)))
+}
+
+function strongestModel (models) {
+  return strongestFirst(models)[0] || ''
 }
 
 async function runDiscovery (providerId, applyToDraft) {
@@ -746,8 +777,20 @@ async function runDiscovery (providerId, applyToDraft) {
 }
 
 async function discoverFormModels () {
-  if (!form.id) return ElMessage.warning('请先保存供应商，再进行 AI 识别')
-  await runDiscovery(form.id, true)
+  if (!form.baseUrl) return ElMessage.warning('请填写服务地址')
+  if (!form.id && !form.apiKey) return ElMessage.warning('请填写服务密钥')
+  discoveringId.value = form.id || 'draft'
+  try {
+    const body = { id: form.id, name: form.name, kind: form.kind, baseUrl: form.baseUrl }
+    if (form.apiKey) body.apiKey = form.apiKey
+    const result = await api.discoverProviderDraftModels(body)
+    applyDiscoveryToForm(result)
+    ElMessage.success('已按当前地址和密钥识别，点击保存后生效')
+  } catch {
+    /* 拦截器已提示 */
+  } finally {
+    discoveringId.value = null
+  }
 }
 
 async function openAndDiscover (row) {
@@ -827,7 +870,7 @@ onMounted(async () => {
 .template-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px; padding:0 10px 10px; border-top:1px solid var(--el-border-color-lighter); }
 .template-option { min-width:0; padding:9px 10px; border:1px solid var(--el-border-color-lighter); border-radius:4px; background:var(--el-bg-color-overlay); color:var(--el-text-color-primary); cursor:pointer; text-align:left; }.template-option:hover { border-color:var(--el-color-primary-light-5); color:var(--el-color-primary); }.template-option b,.template-option small { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }.template-option small { margin-top:3px; color:var(--el-text-color-secondary); font-size:11px; }
 .provider-form { min-width:0; }.provider-basic-grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); column-gap:14px; }.provider-form .el-form-item { min-width:0; margin-bottom:12px; }.provider-form .el-form-item__label { height:auto; padding:0 0 5px; line-height:1.2; }.provider-form .el-radio-group { display:flex; flex-wrap:wrap; max-width:100%; }.provider-form .el-radio-button__inner { padding:8px 10px; }.form-hint { margin-top:5px; color:var(--el-text-color-secondary); font-size:11px; line-height:1.4; }
- .discovery-summary { min-width:0; margin-bottom:14px; padding:9px 10px; border:1px solid var(--el-color-success-light-7); border-radius:5px; background:var(--el-color-success-light-9); color:var(--el-text-color-regular); font-size:12px; }.discovery-summary-head { display:flex; justify-content:space-between; gap:8px; color:var(--el-color-success); font-weight:600; }.discovery-summary-head small { color:var(--el-text-color-secondary); font-weight:400; }.discovery-counts { display:flex; flex-wrap:wrap; gap:8px; margin-top:6px; }.discovery-counts span { white-space:nowrap; }.discovery-text-models { display:flex; flex-wrap:wrap; align-items:center; gap:4px; margin-top:6px; color:var(--el-text-color-secondary); }.discovery-text-models code { max-width:160px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--el-text-color-regular); }.discovery-message { margin-top:6px; color:var(--el-text-color-secondary); font-size:11px; line-height:1.4; }
+ .credential-notice { margin-bottom:12px; }.discovery-summary { min-width:0; margin-bottom:14px; padding:9px 10px; border:1px solid var(--el-color-success-light-7); border-radius:5px; background:var(--el-color-success-light-9); color:var(--el-text-color-regular); font-size:12px; }.discovery-summary-head { display:flex; justify-content:space-between; gap:8px; color:var(--el-color-success); font-weight:600; }.discovery-summary-head small { color:var(--el-text-color-secondary); font-weight:400; }.discovery-counts { display:flex; flex-wrap:wrap; gap:8px; margin-top:6px; }.discovery-counts span { white-space:nowrap; }.discovery-text-models { display:flex; flex-wrap:wrap; align-items:center; gap:4px; margin-top:6px; color:var(--el-text-color-secondary); }.discovery-text-models code { max-width:160px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--el-text-color-regular); }.discovery-message { margin-top:6px; color:var(--el-text-color-secondary); font-size:11px; line-height:1.4; }
 .capability-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:3px 0 6px; padding-top:12px; border-top:1px solid var(--el-border-color-lighter); }.capability-heading > div { min-width:0; }.capability-heading b,.capability-heading span { display:block; }.capability-heading span { margin-top:3px; color:var(--el-text-color-secondary); font-size:11px; }.capability-hint { margin:0 0 9px; color:var(--el-text-color-secondary); font-size:12px; }
  .capability-editor { display:flex; flex-direction:column; gap:7px; margin-bottom:12px; }.capability-row { display:grid; grid-template-columns:118px minmax(190px,1.25fr) minmax(180px,.9fr); align-items:center; gap:7px; min-width:0; }.capability-row-simple { grid-template-columns:118px minmax(0,1fr) auto; }.capability-row-title { display:flex; flex-direction:column; gap:2px; min-width:0; }.capability-row-title span { color:var(--el-text-color-secondary); font-size:11px; }.capability-row :deep(.el-input) { width:100%; min-width:0; }.capability-models :deep(input) { font-family:Consolas,Monaco,monospace; font-size:12px; }.capability-protocol-label { min-width:0; overflow:hidden; color:var(--el-color-success); font-size:11px; text-overflow:ellipsis; white-space:nowrap; }.capability-auto-note { color:var(--el-text-color-secondary); font-size:11px; white-space:nowrap; }
  .provider-options-row { display:flex; align-items:flex-end; gap:28px; }.provider-options-row .el-form-item { margin-bottom:2px; }.provider-options-row .el-form-item__content { min-height:32px; }.priority-control { display:flex; align-items:center; gap:5px; }.priority-help { width:24px; height:24px; min-height:24px; padding:0; color:var(--el-color-primary); font-weight:700; }.priority-help-content b { display:block; margin-bottom:5px; }.priority-help-content p { margin:0; color:var(--el-text-color-regular); font-size:12px; line-height:1.6; }

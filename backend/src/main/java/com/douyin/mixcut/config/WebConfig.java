@@ -1,6 +1,7 @@
 package com.douyin.mixcut.config;
 
 import com.douyin.mixcut.security.AccessTokenFilter;
+import jakarta.servlet.MultipartConfigElement;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
@@ -29,6 +30,11 @@ import java.util.concurrent.ThreadPoolExecutor;
 public class WebConfig implements WebMvcConfigurer {
 
     private final AppProps props;
+
+    @Bean("multipartConfigElement")
+    public MultipartConfigElement multipartConfigElement() {
+        return new MultipartConfigElement(props.tempUploads().toString(), -1L, -1L, 0);
+    }
 
     @Override
     public void addCorsMappings(CorsRegistry registry) {

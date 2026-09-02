@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "product": {
     "name": "猫作·Mework",
-    "version": "2.2.158",
+    "version": "2.2.163",
     "repository": "https://github.com/pengzexi79-ops/mao-zuo-mework",
-    "releaseTag": "v2.2.158",
+    "releaseTag": "v2.2.163",
     "visibility": "private"
   },
   "platform": {
@@ -15,8 +15,8 @@
     "recommendedFreeDiskGiB": 8
   },
   "assets": {
-    "installer": "Mework-Setup-2.2.158.exe",
-    "spannedData": "Mework-Setup-2.2.158-*.bin",
+    "installer": "Mework-Setup-2.2.163.exe",
+    "spannedData": "Mework-Setup-2.2.163-*.bin",
     "checksums": "SHA256SUMS.txt",
     "releaseManifest": "release-manifest.json"
   },

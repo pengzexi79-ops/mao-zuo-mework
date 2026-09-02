@@ -121,6 +121,17 @@ public interface Repositories {
         int transitionPaused(@Param("id") Long id, @Param("statuses") List<String> statuses,
                              @Param("current") Integer current, @Param("progress") Integer progress,
                              @Param("summary") String summary, @Param("now") LocalDateTime now);
+
+        @Transactional
+        @Modifying(flushAutomatically = true, clearAutomatically = true)
+        @Query("update Job j set j.status = 'awaiting_decision', j.version = j.version + 1, j.executionEpoch = j.executionEpoch + 1, "
+                + "j.leaseToken = null, j.leaseExpiresAt = null, j.current = :current, j.progress = :progress, "
+                + "j.summary = :summary, j.error = :error, j.currentStep = :currentStep, j.lastActivityAt = :now "
+                + "where j.id = :id and j.status = 'running' and j.executionEpoch = :epoch and j.leaseToken = :token")
+        int transitionAwaitingDecision(@Param("id") Long id, @Param("epoch") Long epoch, @Param("token") String token,
+                                       @Param("current") Integer current, @Param("progress") Integer progress,
+                                       @Param("summary") String summary, @Param("error") String error,
+                                       @Param("currentStep") String currentStep, @Param("now") LocalDateTime now);
     }
 
     interface CrawlJobRepo extends JpaRepository<CrawlJob, Long> {

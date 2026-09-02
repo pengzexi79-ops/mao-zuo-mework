@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -18,10 +19,27 @@ import java.util.Map;
 public class MediaProviderCatalog {
     private final ObjectMapper om;
 
+    public record ModelRoute(String protocol, String endpoint, String confidence, String source, Long verifiedAt) {
+        public ModelRoute {
+            protocol = protocol == null ? "" : protocol;
+            endpoint = endpoint == null ? "" : endpoint;
+            confidence = confidence == null || confidence.isBlank() ? "medium" : confidence;
+            source = source == null || source.isBlank() ? "automatic" : source;
+        }
+    }
+
     public record Capability(List<String> imageModels, List<String> videoModels, List<String> voiceModels,
                              List<String> visionModels, String imageEndpoint, String videoEndpoint,
                              String voiceEndpoint, String imageProtocol, String videoProtocol,
-                             String voiceProtocol, String setupUrl, String billingUrl) {
+                             String voiceProtocol, String setupUrl, String billingUrl,
+                             Map<String, Map<String, ModelRoute>> modelRoutes) {
+        public Capability(List<String> imageModels, List<String> videoModels, List<String> voiceModels,
+                          List<String> visionModels, String imageEndpoint, String videoEndpoint,
+                          String voiceEndpoint, String imageProtocol, String videoProtocol,
+                          String voiceProtocol, String setupUrl, String billingUrl) {
+            this(imageModels, videoModels, voiceModels, visionModels, imageEndpoint, videoEndpoint, voiceEndpoint,
+                    imageProtocol, videoProtocol, voiceProtocol, setupUrl, billingUrl, Map.of());
+        }
         /** Keeps source compatibility for callers written before image/video endpoints existed. */
         public Capability(List<String> imageModels, List<String> videoModels, List<String> voiceModels,
                           List<String> visionModels, String voiceEndpoint, String imageProtocol,
@@ -37,8 +55,22 @@ public class MediaProviderCatalog {
                 default -> "";
             };
         }
+        public String protocol(String operation, String model) { return route(operation, model).protocol(); }
+        public String endpoint(String operation) {
+            return switch (operation) {
+                case "image" -> imageEndpoint;
+                case "video" -> videoEndpoint;
+                case "voice" -> voiceEndpoint;
+                default -> "";
+            };
+        }
+        public String endpoint(String operation, String model) { return route(operation, model).endpoint(); }
+        public ModelRoute route(String operation, String model) {
+            ModelRoute route = modelRoutes.getOrDefault(operation, Map.of()).get(model == null ? "" : model);
+            return route != null ? route : new ModelRoute(protocol(operation), endpoint(operation), "low", "provider-default", null);
+        }
         public static Capability empty() {
-            return new Capability(List.of(), List.of(), List.of(), List.of(), "", "", "", "", "", "", "", "");
+            return new Capability(List.of(), List.of(), List.of(), List.of(), "", "", "", "", "", "", "", "", Map.of());
         }
 
         public boolean supports(String operation, String model) {
@@ -71,6 +103,7 @@ public class MediaProviderCatalog {
             value.put("imageProtocol", imageProtocol);
             value.put("videoProtocol", videoProtocol);
             value.put("voiceProtocol", voiceProtocol);
+            value.put("modelRoutes", modelRoutes);
             value.put("setupUrl", setupUrl);
             value.put("billingUrl", billingUrl);
             return value;
@@ -89,19 +122,19 @@ public class MediaProviderCatalog {
             List<String> imageModels = models(media.path("image"));
             List<String> videoModels = models(media.path("video"));
             List<String> voiceModels = models(media.path("voice"));
-            String voiceProtocol = resolveVoiceProtocol(provider, media, voiceModels);
+            String imageProtocol = safeProtocol(media.path("imageProtocol").asText(""), defaultProtocol("image", imageModels));
+            String imageEndpoint = safeEndpoint(media.path("imageEndpoint").asText(""));
+            String voiceProtocol = safeProtocol(media.path("voiceProtocol").asText(""), defaultProtocol("voice", voiceModels));
             String voiceEndpoint = safeEndpoint(media.path("voiceEndpoint").asText(""));
-            if (voiceEndpoint.isBlank() && "dashscope_tts_http".equals(voiceProtocol)) {
-                voiceEndpoint = dashScopeTtsEndpoint(provider);
-            }
+            String videoProtocol = safeProtocol(media.path("videoProtocol").asText(""), defaultProtocol("video", videoModels));
+            String videoEndpoint = safeEndpoint(media.path("videoEndpoint").asText(""));
+            Map<String, Map<String, ModelRoute>> routes = buildRoutes(provider, imageModels, videoModels, voiceModels,
+                    readRoutes(media.path("routes")), imageProtocol, imageEndpoint, videoProtocol, videoEndpoint,
+                    voiceProtocol, voiceEndpoint);
             Capability existing = new Capability(imageModels, videoModels, voiceModels, models(media.path("vision")),
-                    safeEndpoint(media.path("imageEndpoint").asText("")), safeEndpoint(media.path("videoEndpoint").asText("")),
-                    voiceEndpoint,
-                    safeProtocol(media.path("imageProtocol").asText(""), defaultProtocol("image", imageModels)),
-                    safeProtocol(media.path("videoProtocol").asText(""), defaultProtocol("video", videoModels)),
-                    voiceProtocol,
+                    imageEndpoint, videoEndpoint, voiceEndpoint, imageProtocol, videoProtocol, voiceProtocol,
                     setup.isBlank() ? officialSetup(provider) : setup,
-                    billing.isBlank() ? officialBilling(provider) : billing);
+                    billing.isBlank() ? officialBilling(provider) : billing, routes);
             return withOfficialLinks(provider, existing);
         } catch (Exception ignored) {
             return withOfficialLinks(provider, Capability.empty());
@@ -113,6 +146,34 @@ public class MediaProviderCatalog {
         if (provider.getKind() != null && provider.getKind() != com.douyin.mixcut.domain.ProviderKind.openai) return false;
         String base = provider.getBaseUrl() == null ? "" : provider.getBaseUrl().trim().replaceAll("/+$", "");
         return "https://api.openai.com".equalsIgnoreCase(base);
+    }
+
+    public static boolean officialDashScope(AiProvider provider) {
+        String host = providerHost(provider);
+        return !host.isBlank() && host.matches("dashscope(?:-[a-z0-9-]+)?\\.aliyuncs\\.com");
+    }
+
+    public static boolean officialAlibabaWorkspace(AiProvider provider) {
+        String host = providerHost(provider);
+        return host.startsWith("ws-") && host.endsWith(".maas.aliyuncs.com");
+    }
+
+    private static String providerHost(AiProvider provider) {
+        if (provider == null || provider.getBaseUrl() == null || provider.getBaseUrl().isBlank()) return "";
+        try {
+            String host = URI.create(provider.getBaseUrl().trim()).getHost();
+            return host == null ? "" : host.toLowerCase(java.util.Locale.ROOT);
+        } catch (IllegalArgumentException ignored) {
+            return "";
+        }
+    }
+
+    public Map<String, Map<String, ModelRoute>> suggestRoutes(AiProvider provider, List<String> imageModels,
+                                                               List<String> videoModels, List<String> voiceModels) {
+        Capability current = read(provider);
+        return buildRoutes(provider, imageModels, videoModels, voiceModels, current.modelRoutes(),
+                current.imageProtocol(), current.imageEndpoint(), current.videoProtocol(), current.videoEndpoint(),
+                current.voiceProtocol(), current.voiceEndpoint());
     }
 
     /** Adopts only models observed from this provider; other media allowlists remain unchanged. */
@@ -160,6 +221,8 @@ public class MediaProviderCatalog {
             if (!imageProtocol.isBlank()) media.put("imageProtocol", imageProtocol);
             if (!videoProtocol.isBlank()) media.put("videoProtocol", videoProtocol);
             if (!voiceProtocol.isBlank()) media.put("voiceProtocol", voiceProtocol);
+            Map<String, Map<String, ModelRoute>> routes = readRoutes(input.path("routes"));
+            if (!routes.isEmpty()) media.set("routes", om.valueToTree(routes));
             String setup = safeExternalUrl(input.path("setupUrl").asText(""));
             String billing = safeExternalUrl(input.path("billingUrl").asText(""));
             if (!setup.isBlank()) media.put("setupUrl", setup);
@@ -177,7 +240,7 @@ public class MediaProviderCatalog {
         String billing = existing.billingUrl() == null || existing.billingUrl().isBlank() ? officialBilling(provider) : existing.billingUrl();
         return new Capability(existing.imageModels(), existing.videoModels(), existing.voiceModels(), existing.visionModels(),
                 existing.imageEndpoint(), existing.videoEndpoint(), existing.voiceEndpoint(), existing.imageProtocol(),
-                existing.videoProtocol(), existing.voiceProtocol(), setup, billing);
+                existing.videoProtocol(), existing.voiceProtocol(), setup, billing, existing.modelRoutes());
     }
 
     private String safeEndpoint(String raw) {
@@ -211,22 +274,42 @@ public class MediaProviderCatalog {
         };
     }
 
-    private String resolveVoiceProtocol(AiProvider provider, JsonNode media, List<String> models) {
-        String raw = media.path("voiceProtocol").asText("").trim().toLowerCase(java.util.Locale.ROOT);
-        String inferred = defaultProtocol("voice", models);
-        // DashScope exposes Qwen TTS through its multimodal HTTP contract, not
-        // /v1/audio/speech. Correct old auto-detected configs at read time so
-        // users do not have to edit an internal protocol field manually.
-        if (isDashScope(provider) && models.stream().anyMatch(this::isQwenTts)
-                && (raw.isBlank() || "openai_audio_speech".equals(raw))) {
-            return "dashscope_tts_http";
-        }
-        return safeProtocol(raw, inferred);
+    private boolean isDashScope(AiProvider provider) {
+        return officialDashScope(provider) || officialAlibabaWorkspace(provider);
     }
 
-    private boolean isDashScope(AiProvider provider) {
-        return provider != null && provider.getBaseUrl() != null
-                && provider.getBaseUrl().toLowerCase(java.util.Locale.ROOT).contains("dashscope.aliyuncs.com");
+    public boolean supportsInferredRoute(AiProvider provider, String operation, String model) {
+        return isExecutionEligible(operation, model)
+                && !inferredRoute(provider, operation, model, "", "").protocol().isBlank();
+    }
+
+    public boolean isExecutionEligible(String operation, String model) {
+        if (!"voice".equals(operation)) return true;
+        String lower = model == null ? "" : model.toLowerCase(java.util.Locale.ROOT);
+        return !lower.isBlank()
+                && !lower.contains("realtime")
+                && !lower.contains("voice-clone")
+                && !lower.contains("voice_clone")
+                && !lower.contains("voice-design")
+                && !lower.contains("voice_design")
+                && !lower.startsWith("qwen3-tts-vd-")
+                && !lower.startsWith("qwen3-tts-vc-");
+    }
+
+    private boolean isDashScopeSyncImage(String model) {
+        String lower = model == null ? "" : model.toLowerCase(java.util.Locale.ROOT);
+        return lower.matches("qwen-image-(?:3(?:[.-].*)?|2\\.0(?:[.-].*)?)")
+                || (lower.startsWith("wan") && lower.contains("image") && !lower.contains("edit"));
+    }
+
+    private boolean isDashScopeAsyncImage(String model) {
+        String lower = model == null ? "" : model.toLowerCase(java.util.Locale.ROOT);
+        return lower.matches("qwen-image-(?:plus|max)(?:[.-].*)?");
+    }
+
+    private boolean isDashScopeImageEdit(String model) {
+        String lower = model == null ? "" : model.toLowerCase(java.util.Locale.ROOT);
+        return lower.contains("image-edit") || (lower.startsWith("wan") && lower.contains("image") && lower.contains("edit"));
     }
 
     private boolean isQwenTts(String model) {
@@ -234,10 +317,131 @@ public class MediaProviderCatalog {
         return lower.contains("qwen3-tts") || lower.contains("qwen-tts");
     }
 
+    private boolean isMiniMaxTts(String model) {
+        String lower = model == null ? "" : model.toLowerCase(java.util.Locale.ROOT);
+        return (lower.contains("minimax")
+                && (lower.contains("speech") || lower.contains("tts") || lower.contains("voice")))
+                || lower.matches(".*(^|[/_:.-])speech-(?:0?[12]|2(?:\\.\\d+)?)(?:[_.-]|$).*");
+    }
+
+    private boolean isWanVideo(String model) {
+        String lower = model == null ? "" : model.toLowerCase(java.util.Locale.ROOT);
+        return lower.startsWith("wan") || lower.contains("/wan") || lower.contains("wan-video");
+    }
+
     private String dashScopeTtsEndpoint(AiProvider provider) {
-        return isDashScope(provider)
-                ? "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
-                : "";
+        return dashScopeEndpoint(provider, "/api/v1/services/aigc/multimodal-generation/generation");
+    }
+
+    private String dashScopeImageEndpoint(AiProvider provider) {
+        return dashScopeEndpoint(provider, "/api/v1/services/aigc/multimodal-generation/generation");
+    }
+
+    private String dashScopeAsyncImageEndpoint(AiProvider provider) {
+        return dashScopeEndpoint(provider, "/api/v1/services/aigc/text2image/image-synthesis");
+    }
+
+    private String dashScopeVideoEndpoint(AiProvider provider) {
+        return dashScopeEndpoint(provider, "/api/v1/services/aigc/video-generation/video-synthesis");
+    }
+
+    private String dashScopeEndpoint(AiProvider provider, String path) {
+        if (!isDashScope(provider)) return "";
+        URI base = URI.create(provider.getBaseUrl().trim());
+        return base.getScheme() + "://" + base.getRawAuthority() + path;
+    }
+
+    private Map<String, Map<String, ModelRoute>> buildRoutes(AiProvider provider, List<String> imageModels,
+                                                              List<String> videoModels, List<String> voiceModels,
+                                                              Map<String, Map<String, ModelRoute>> explicit,
+                                                              String imageProtocol, String imageEndpoint,
+                                                              String videoProtocol, String videoEndpoint,
+                                                              String voiceProtocol, String voiceEndpoint) {
+        Map<String, Map<String, ModelRoute>> result = new LinkedHashMap<>();
+        addRoutes(result, "image", imageModels, explicit, provider, imageProtocol, imageEndpoint);
+        addRoutes(result, "video", videoModels, explicit, provider, videoProtocol, videoEndpoint);
+        addRoutes(result, "voice", voiceModels, explicit, provider, voiceProtocol, voiceEndpoint);
+        return immutableRoutes(result);
+    }
+
+    private void addRoutes(Map<String, Map<String, ModelRoute>> result, String operation, List<String> models,
+                           Map<String, Map<String, ModelRoute>> explicit, AiProvider provider,
+                           String providerProtocol, String providerEndpoint) {
+        Map<String, ModelRoute> routes = new LinkedHashMap<>();
+        for (String model : models == null ? List.<String>of() : models) {
+            ModelRoute saved = explicit.getOrDefault(operation, Map.of()).get(model);
+            routes.put(model, keepSavedRoute(saved)
+                    ? saved
+                    : inferredRoute(provider, operation, model, providerProtocol, providerEndpoint));
+        }
+        if (!routes.isEmpty()) result.put(operation, routes);
+    }
+
+    private boolean keepSavedRoute(ModelRoute route) {
+        if (route == null) return false;
+        String source = route.source().toLowerCase(java.util.Locale.ROOT);
+        return route.verifiedAt() != null || List.of("saved", "manual", "user", "verified").contains(source);
+    }
+
+    private ModelRoute inferredRoute(AiProvider provider, String operation, String model,
+                                     String providerProtocol, String providerEndpoint) {
+        if (isDashScope(provider)) {
+            if ("image".equals(operation) && isDashScopeImageEdit(model)) {
+                return new ModelRoute("dashscope_image_edit_http", dashScopeImageEndpoint(provider), "high", "official-edit-only", null);
+            }
+            if ("image".equals(operation) && isDashScopeSyncImage(model)) {
+                return new ModelRoute("dashscope_image_http", dashScopeImageEndpoint(provider), "high", "official-model-family", null);
+            }
+            if ("image".equals(operation) && isDashScopeAsyncImage(model)) {
+                return new ModelRoute("dashscope_image_task_http", dashScopeAsyncImageEndpoint(provider), "high", "official-model-family", null);
+            }
+            if ("voice".equals(operation) && isMiniMaxTts(model)) {
+                return new ModelRoute("dashscope_minimax_tts_http", dashScopeTtsEndpoint(provider), "high", "official-model-family", null);
+            }
+            if ("voice".equals(operation) && isQwenTts(model)) {
+                return new ModelRoute("dashscope_tts_http", dashScopeTtsEndpoint(provider), "high", "official-model-family", null);
+            }
+            if ("video".equals(operation) && isWanVideo(model)) {
+                return new ModelRoute("dashscope_video_task_http", dashScopeVideoEndpoint(provider), "high", "official-model-family", null);
+            }
+        }
+        if (providerProtocol != null && !providerProtocol.isBlank()) {
+            return new ModelRoute(providerProtocol, providerEndpoint, "medium", "provider-default", null);
+        }
+        return new ModelRoute(defaultProtocol(operation, List.of(model)), "", "medium", "openai-compatible-default", null);
+    }
+
+    private Map<String, Map<String, ModelRoute>> readRoutes(JsonNode node) {
+        if (node == null || !node.isObject()) return Map.of();
+        Map<String, Map<String, ModelRoute>> result = new LinkedHashMap<>();
+        for (String operation : List.of("image", "video", "voice")) {
+            JsonNode operationNode = node.path(operation);
+            if (!operationNode.isObject()) continue;
+            Map<String, ModelRoute> routes = new LinkedHashMap<>();
+            operationNode.fields().forEachRemaining(entry -> {
+                String model = entry.getKey().trim();
+                JsonNode value = entry.getValue();
+                if (!model.matches("[A-Za-z0-9._:/-]{1,120}") || !value.isObject()) return;
+                String protocol = safeProtocol(value.path("protocol").asText(""), "");
+                if (protocol.isBlank()) return;
+                String endpoint = safeEndpoint(value.path("endpoint").asText(""));
+                String confidence = value.path("confidence").asText("medium").trim().toLowerCase(java.util.Locale.ROOT);
+                if (!List.of("low", "medium", "high").contains(confidence)) confidence = "medium";
+                String source = value.path("source").asText("saved").replaceAll("[^A-Za-z0-9._-]", "");
+                if (source.isBlank()) source = "saved";
+                Long verifiedAt = value.path("verifiedAt").canConvertToLong() && value.path("verifiedAt").asLong() > 0
+                        ? value.path("verifiedAt").asLong() : null;
+                routes.put(model, new ModelRoute(protocol, endpoint, confidence, source, verifiedAt));
+            });
+            if (!routes.isEmpty()) result.put(operation, routes);
+        }
+        return immutableRoutes(result);
+    }
+
+    private Map<String, Map<String, ModelRoute>> immutableRoutes(Map<String, Map<String, ModelRoute>> routes) {
+        Map<String, Map<String, ModelRoute>> result = new LinkedHashMap<>();
+        routes.forEach((operation, values) -> result.put(operation, Map.copyOf(values)));
+        return Map.copyOf(result);
     }
 
     private List<String> models(JsonNode node) {

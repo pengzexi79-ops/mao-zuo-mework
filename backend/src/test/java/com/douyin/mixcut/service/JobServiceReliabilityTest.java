@@ -107,6 +107,33 @@ class JobServiceReliabilityTest {
     }
 
     @Test
+    void awaitingDecisionUsesLeaseBoundAtomicTransitionWithoutSavingStaleJob() {
+        Job job = runningJob(18L, 900, 7200);
+        job.setCurrent(2);
+        job.setProgress(40);
+        when(jobRepo.transitionAwaitingDecision(eq(18L), eq(1L), eq("token"), eq(2), eq(40),
+                contains("第 3 条等待人工决策"), eq("质检失败"), eq("等待人工决策"), any())).thenReturn(1);
+
+        ReflectionTestUtils.invokeMethod(service, "markAwaitingDecision", job, 3, "质检失败");
+
+        verify(jobRepo).transitionAwaitingDecision(eq(18L), eq(1L), eq("token"), eq(2), eq(40),
+                contains("第 3 条等待人工决策"), eq("质检失败"), eq("等待人工决策"), any());
+        verify(jobRepo, never()).save(job);
+    }
+
+    @Test
+    void awaitingDecisionDoesNotOverwriteStateWhenLeaseWasAlreadyLost() {
+        Job job = runningJob(19L, 900, 7200);
+        when(jobRepo.transitionAwaitingDecision(eq(19L), eq(1L), eq("token"), any(), any(),
+                anyString(), any(), anyString(), any())).thenReturn(0);
+
+        ReflectionTestUtils.invokeMethod(service, "markAwaitingDecision", job, 1, "旧线程结果");
+
+        assertEquals(JobStatus.running.name(), job.getStatus());
+        verify(jobRepo, never()).save(job);
+    }
+
+    @Test
     void claimLeaseDoesNotClaimNonPendingJob() {
         Job running = runningJob(6L, 900, 7200);
         when(jobRepo.findById(6L)).thenReturn(Optional.of(running));

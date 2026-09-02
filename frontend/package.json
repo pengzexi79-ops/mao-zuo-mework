@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "node scripts/verify-text-integrity.mjs && vite build && node scripts/verify-static.mjs",
+    "build": "node scripts/verify-text-integrity.mjs && node scripts/verify-material-import-queue.mjs && node scripts/verify-ai-create-routing.mjs && vite build && node scripts/verify-static.mjs",
     "clean": "node -e \"const fs=require('fs'),p='../backend/src/main/resources/static';fs.existsSync(p)&&fs.rmSync(p,{recursive:true,force:true});console.log('static bundle cleaned')\"",
     "rebuild": "npm run clean && npm run build",
     "preview": "vite preview"

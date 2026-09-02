@@ -1565,7 +1565,7 @@ public class JobService {
                         saveQcBlockedOutput(jobId, idx, result, plan == null ? Set.of() : plan.segmentKeys(), attempt.retries,
                                 plan == null ? null : plan.getHookStrategy(), buildDowngradeInfo(plan, result, attempt.retries),
                                 buildUsedMaterials(plan), false);
-                        markAwaitingDecision(latest, idx, result.getError());
+                        markAwaitingDecision(ownedAfterRender, idx, result.getError());
                         return;
                     }
                     saveForcedFailureCheckpoint(jobId, idx, result, plan == null ? Set.of() : plan.segmentKeys(), attempt.retries,
@@ -2000,13 +2000,11 @@ public class JobService {
     private void markAwaitingDecision(Job job, int idx, String reason) {
         if (job == null || (workerLease.get() != null && !ownsLease(job))
                 || JobStatus.cancelled.name().equals(job.getStatus()) || cancelled.contains(job.getId())) return;
-        job.setStatus(JobStatus.awaiting_decision.name());
-        job.setLeaseToken(null);
-        job.setLeaseExpiresAt(null);
-        job.setSummary("第 " + idx + " 条等待人工决策，已保留候选版本与质检证据");
-        job.setError(truncate(reason));
-        heartbeat(job, "等待人工决策");
-        jobRepo.save(job);
+        String summary = "第 " + idx + " 条等待人工决策，已保留候选版本与质检证据";
+        int updated = jobRepo.transitionAwaitingDecision(job.getId(), job.getExecutionEpoch(), job.getLeaseToken(),
+                job.getCurrent(), job.getProgress(), summary, truncate(reason), "等待人工决策", LocalDateTime.now());
+        if (updated == 0) return;
+        liveStep.remove(job.getId());
     }
 
     private void markFailed(Job job, String message) {

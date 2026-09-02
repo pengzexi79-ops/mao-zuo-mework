@@ -54,10 +54,10 @@
   <el-drawer v-model="taskCenterVisible" title="全局任务" size="420px">
     <el-empty v-if="!globalTasks.length" description="暂无任务" />
     <div v-for="task in globalTasks" :key="`${task.source}-${task.id}`" class="global-task-row">
-      <div class="global-task-head"><b>{{ task.label || task.type }}</b><el-tag size="small" :type="taskStatusType(task.rawStatus)">{{ task.rawStatus }}</el-tag></div>
+      <div class="global-task-head"><b>{{ task.label || task.type }}</b><el-tag size="small" :type="taskStatusType(task.rawStatus)">{{ taskStatusLabel(task.rawStatus) }}</el-tag></div>
       <el-progress :percentage="task.progress" :stroke-width="8" :show-text="false" />
       <div class="global-task-message">{{ task.message || '等待调度' }}</div>
-      <div class="global-task-meta">{{ task.source }} · {{ task.progress }}%</div>
+      <div class="global-task-meta">{{ taskSourceLabel(task.source) }} · {{ task.progress }}%</div>
     </div>
   </el-drawer>
 
@@ -229,12 +229,13 @@ import { computed, ref, reactive, onMounted, onBeforeUnmount, watch, markRaw } f
 import AiChat from './components/AiChat.vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Menu, Refresh } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElNotification } from 'element-plus'
 import {
   Odometer, FolderOpened, Download, MagicStick, Tools,
   Briefcase, Share, VideoCamera, Film, Reading, List
 } from '@element-plus/icons-vue'
-import { api, uploadFile, importMaterialPackage, importMaterialPackageArchive } from './api'
+import { api } from './api'
+import { enqueueMaterialFiles, enqueueMaterialPackage, materialImportTaskRows } from './materialImportQueue'
 
 const route = useRoute()
 const router = useRouter()
@@ -254,9 +255,10 @@ const aiReady = ref(false)
 const envLoading = ref(false)
 const envLoadError = ref(false)
 const taskCenterVisible = ref(false)
-const globalTasks = ref([])
+const serverTasks = ref([])
+const globalTasks = computed(() => [...materialImportTaskRows(), ...serverTasks.value])
 let taskTimer = null
-const activeTaskCount = computed(() => globalTasks.value.filter(task => ['pending', 'running', 'accepted', 'submitting', 'polling', 'downloading', 'importing'].includes(task.rawStatus)).length)
+const activeTaskCount = computed(() => globalTasks.value.filter(task => ['queued', 'uploading', 'processing', 'pending', 'running', 'accepted', 'submitting', 'polling', 'downloading', 'importing'].includes(task.rawStatus)).length)
 const envDialogVisible = ref(false)
 const fixDialogVisible = ref(false)
 const fixAction = ref('general')
@@ -325,13 +327,25 @@ function openEnvCenter () {
 }
 function openTaskCenter () { taskCenterVisible.value = true; loadGlobalTasks() }
 async function loadGlobalTasks () {
-  try { globalTasks.value = await api.tasks({ params: { limit: 50 }, silent: true }) || [] } catch { /* task center is observational */ }
+  try { serverTasks.value = await api.tasks({ params: { limit: 50 }, silent: true }) || [] } catch { /* task center is observational */ }
 }
 function taskStatusType (status) {
   if (['done'].includes(status)) return 'success'
   if (['failed', 'failed_terminal', 'manual_review'].includes(status)) return 'danger'
   if (['paused', 'awaiting_decision'].includes(status)) return 'warning'
   return 'info'
+}
+function taskStatusLabel (status) {
+  return ({
+    queued: '等待中', pending: '等待中', accepted: '已接收', submitting: '提交中',
+    uploading: '上传中', importing: '导入中', processing: '处理中', running: '进行中',
+    polling: '等待结果', downloading: '下载中', done: '已完成', completed: '已完成',
+    failed: '有失败', failed_terminal: '失败', manual_review: '需要人工检查',
+    paused: '已暂停', awaiting_decision: '等待选择', cancelled: '已取消'
+  })[status] || status || '未知'
+}
+function taskSourceLabel (source) {
+  return ({ 'material-import': '素材导入', media: '媒体工具', 'ai-generation': 'AI 创作', crawl: '素材抓取', preparation: '出片准备', render: '出片渲染' })[source] || source
 }
 async function testMysql () {
   mysqlTesting.value = true
@@ -623,26 +637,21 @@ function onDragEnter (event) { if (event.dataTransfer?.types?.includes('Files'))
 function onDragOver (event) { if (event.dataTransfer?.types?.includes('Files')) event.preventDefault() }
 function onDragLeave (event) { dragDepth = Math.max(0, dragDepth - 1) }
 function onDrop (event) {
+  if (event.defaultPrevented) return
   if (!event.dataTransfer?.types?.includes('Files')) return
   event.preventDefault()
   dragDepth = 0
   prepareGlobalDrop(event)
 }
-async function importDroppedWorkflowPacks (packs) {
-  let imported = 0
-  for (const pack of packs || []) {
-    try {
-      const text = pack.text || pack.content || ''
-      const format = pack.expectedFormat || JSON.parse(text).format
-      if (format === 'mixcut-workflow') await api.importWorkflow({ pack: text })
-      else if (format === 'mixcut-skill') await api.importSkill({ pack: text })
-      else continue
-      imported++
-    } catch (error) {
-      ElMessage.warning(`${pack.name || 'JSON 包'} 导入失败：${error.message || '格式校验未通过'}`)
-    }
-  }
-  return imported
+function clearGlobalDropStage () {
+  globalDropVisible.value = false
+  globalDropFiles.value = []
+  globalDropRelativePaths.value = []
+  globalDropPackageMode.value = false
+  globalDropPackageName.value = ''
+  globalDropPackageAudit.value = null
+  globalDropFolderId.value = null
+  globalDropRole.value = 'none'
 }
 async function uploadDroppedFiles () {
   if (!globalDropFiles.value.length) return
@@ -653,40 +662,60 @@ async function uploadDroppedFiles () {
       const audit = await api.auditMaterialPackageName(packageName)
       globalDropPackageAudit.value = audit
       if (!audit?.valid) { ElMessage.warning(`名称不合法：${audit?.reason || '请修改后重试'}`); return }
-      const importData = { packageName, role: 'none', folderId: globalDropFolderId.value || undefined }
-      const result = /\.zip$/i.test(globalDropFiles.value[0].name)
-        ? await importMaterialPackageArchive(globalDropFiles.value[0], importData)
-        : await importMaterialPackage(globalDropFiles.value, packageName, globalDropRelativePaths.value, importData)
-      const importedWorkflowPacks = await importDroppedWorkflowPacks((result.workflowPacks || []).map((pack) => ({ name: pack.name, text: pack.content })))
-      globalDropVisible.value = false
-      if (result.folderId) {
-        await router.push({ path: '/materials', query: { folderId: String(result.folderId) } })
-        window.setTimeout(() => window.dispatchEvent(new Event('mework-global-upload-complete')), 100)
-      }
-      ElMessage.success(`素材总包导入完成：视频 ${result.videoImported || 0}，音频 ${result.audioImported || 0}，图片 ${result.imageImported || 0}，跳过 ${result.skipped || 0}，失败 ${result.failed || 0}`)
+      const batchId = enqueueMaterialPackage({
+        kind: /\.zip$/i.test(globalDropFiles.value[0].name) ? 'archive' : 'folder',
+        files: globalDropFiles.value,
+        packageName,
+        relativePaths: globalDropRelativePaths.value,
+        data: { role: 'none', folderId: globalDropFolderId.value || undefined }
+      })
+      if (!batchId) throw new Error('未能创建素材总包导入任务')
+      clearGlobalDropStage()
+      ElMessage.success('素材总包已加入后台导入队列，可继续使用其他页面')
       return
     }
-    let done = 0; let failed = 0
-    const files = [...globalDropFiles.value]
-    let nextIndex = 0
-    const worker = async () => {
-      while (nextIndex < files.length) {
-        const file = files[nextIndex++]
-        try { await uploadFile(file, { role: globalDropRole.value || 'none', folderId: globalDropFolderId.value }); done++ } catch { failed++ }
-      }
-    }
-    await Promise.all(Array.from({ length: Math.min(3, files.length) }, worker))
-    globalDropVisible.value = false
-    await router.push('/materials')
-    window.setTimeout(() => window.dispatchEvent(new Event('mework-global-upload-complete')), 100)
-    if (failed) window.alert(`已导入 ${done} 个文件，${failed} 个失败；失败条目可在素材库重新选择后重试。`)
+    const fileCount = globalDropFiles.value.length
+    const batchId = enqueueMaterialFiles(globalDropFiles.value, { role: globalDropRole.value || 'none', folderId: globalDropFolderId.value || undefined })
+    if (!batchId) throw new Error('未能创建素材导入任务')
+    clearGlobalDropStage()
+    ElMessage.success(`已将 ${fileCount} 个素材加入后台导入队列`)
+  } catch (error) {
+    ElMessage.error(`无法开始导入：${error?.message || '请重新选择文件'}`)
   } finally {
     globalUploading.value = false
-    globalDropPackageMode.value = false
   }
 }
-onMounted(() => { loadEnv(); loadGlobalTasks(); taskTimer = window.setInterval(loadGlobalTasks, 5000); window.addEventListener('dragenter', onDragEnter); window.addEventListener('dragover', onDragOver); window.addEventListener('dragleave', onDragLeave); window.addEventListener('drop', onDrop) })
-onBeforeUnmount(() => { if (taskTimer) window.clearInterval(taskTimer); window.removeEventListener('dragenter', onDragEnter); window.removeEventListener('dragover', onDragOver); window.removeEventListener('dragleave', onDragLeave); window.removeEventListener('drop', onDrop) })
+function onMaterialImportFinished (event) {
+  const detail = event.detail || {}
+  const failed = detail.status === 'failed'
+  ElNotification({
+    title: failed ? '素材导入已结束' : '素材导入完成',
+    message: detail.message || (failed ? '部分素材导入失败，请在任务中心查看' : '素材已经可以在素材库中使用'),
+    type: failed ? 'warning' : 'success',
+    duration: failed ? 8000 : 4500
+  })
+  window.dispatchEvent(new Event('mework-global-upload-complete'))
+}
+onMounted(() => {
+  loadEnv()
+  loadGlobalTasks()
+  taskTimer = window.setInterval(loadGlobalTasks, 5000)
+  window.addEventListener('dragenter', onDragEnter)
+  window.addEventListener('dragover', onDragOver)
+  window.addEventListener('dragleave', onDragLeave)
+  window.addEventListener('drop', onDrop)
+  window.addEventListener('mework-material-import-finished', onMaterialImportFinished)
+  window.addEventListener('mework-open-task-center', openTaskCenter)
+})
+onBeforeUnmount(() => {
+  if (taskTimer) window.clearInterval(taskTimer)
+  window.removeEventListener('dragenter', onDragEnter)
+  window.removeEventListener('dragover', onDragOver)
+  window.removeEventListener('dragleave', onDragLeave)
+  window.removeEventListener('drop', onDrop)
+  window.removeEventListener('mework-material-import-finished', onMaterialImportFinished)
+  window.removeEventListener('mework-open-task-center', openTaskCenter)
+})
 </script>
 
 <style scoped>

@@ -8,7 +8,7 @@
 
 ## 当前进展
 
-当前发行版本为 `2.2.158`。截至 2026-08-29，D 盘工作树已包含媒体能力路由、音频合同与响度质检、渲染前置检查、AI 媒体适配器、任务恢复与取消、生成任务结果入库、素材/成片批量操作修复、资产识别交接，以及经过真实空库验收的 Windows 全量安装流程。
+当前发行版本为 `2.2.163`。截至 2026-09-02，D 盘工作树已包含按真实协议分流的文本、图片、视频和配音链路，OpenAI、Qwen、MiniMax 与未知兼容网关的音色隔离，素材后台导入、持续出片、生成结果入库、成片质检与修复，以及使用初代猫作图标的 Windows 全量安装流程。2026-08-30、2026-08-31 和 2026-09-02 的独立更新均已写入应用内历史。
 
 完整开发提交记录见 [`docs/zcode-handoff/GIT_HISTORY.md`](docs/zcode-handoff/GIT_HISTORY.md) 及 GitHub 的 [`legacy-history-sanitized` 分支](https://github.com/pengzexi79-ops/mao-zuo-mework/tree/legacy-history-sanitized)；`main` 是可直接分享的最新源码快照。
 
@@ -16,7 +16,7 @@
 
 ## Windows 安装包
 
-私人仓库的 `v2.2.158` Release 提供 Windows 10/11 x64 全量安装包。下载 EXE 和全部 `.bin` 分片后即可安装；有 D 盘时默认安装到 `D:\Mework`，没有 D 盘时回退当前用户应用目录。
+私人仓库的 `v2.2.163` Release 提供 Windows 10/11 x64 全量安装包。下载 EXE 和全部 `.bin` 分片后即可安装；有 D 盘时默认安装到 `D:\Mework`，没有 D 盘时回退当前用户应用目录。
 
 安装包内置 Java 17、MySQL 8、FFmpeg/FFprobe、Python 媒体环境、whisper.cpp、离线 ASR 模型和 ImageMagick。首次启动会创建空数据库并生成每台机器独立的随机密钥，不包含开发者素材、任务、成片、数据库、API Key、中转站地址、账号或 Cookie。
 

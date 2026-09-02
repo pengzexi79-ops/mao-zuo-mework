@@ -24,6 +24,10 @@ class FreshInstallContractTest {
         assertFalse(text.contains("taskkill"), "gate must not use broad taskkill");
         assertFalse(text.contains(".env.example"), "gate must not copy env templates into install test");
         assertTrue(text.contains("APP_DATA_DIR"));
-        assertTrue(text.contains("Stop-Process -Id $pid"));
+        assertTrue(text.contains("Stop-Process -Id $processId"));
+        assertTrue(text.contains("release-notes.json"));
+        assertTrue(text.contains("$releaseVersion"));
+        assertTrue(text.contains("Mework-Setup-$releaseVersion.exe"));
+        assertFalse(text.contains("Mework-Setup-2.2.158.exe"), "installer version must not be hard-coded");
     }
 }

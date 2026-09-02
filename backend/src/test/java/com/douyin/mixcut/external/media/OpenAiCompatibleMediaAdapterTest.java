@@ -40,6 +40,66 @@ class OpenAiCompatibleMediaAdapterTest {
     }
 
     @Test
+    void dashScopeImageUsesNativeMultimodalContractAndParsesImageUrl() throws Exception {
+        AtomicReference<MediaHttpTransport.Request> captured = new AtomicReference<>();
+        OpenAiCompatibleMediaAdapter adapter = new OpenAiCompatibleMediaAdapter(new ObjectMapper(), request -> {
+            captured.set(request);
+            return new MediaHttpTransport.Response(200, Map.of(),
+                    "{\"output\":{\"choices\":[{\"message\":{\"content\":[{\"image\":\"https://cdn.example.com/result.png\"}]}}]}}".getBytes(StandardCharsets.UTF_8));
+        });
+
+        var result = adapter.submitImage(new OpenAiCompatibleMediaAdapter.ProviderContext(
+                        "https://dashscope.aliyuncs.com", "secret",
+                        "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation",
+                        "", "", "openai_audio_speech", "dashscope_image_http"),
+                "a product", "qwen-image-3.0-pro", "1024x1536", "high");
+
+        assertEquals("https://cdn.example.com/result.png", result.url());
+        assertEquals("https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation", captured.get().url());
+        var body = new ObjectMapper().readTree(captured.get().body());
+        assertEquals("a product", body.path("input").path("messages").path(0).path("content").path(0).path("text").asText());
+        assertEquals("1024*1536", body.path("parameters").path("size").asText());
+        assertFalse(body.has("prompt"));
+    }
+
+    @Test
+    void dashScopeLegacyImageUsesAsyncTaskContract() throws Exception {
+        List<MediaHttpTransport.Request> captured = new ArrayList<>();
+        OpenAiCompatibleMediaAdapter adapter = new OpenAiCompatibleMediaAdapter(new ObjectMapper(), request -> {
+            captured.add(request);
+            if ("POST".equals(request.method())) {
+                return new MediaHttpTransport.Response(200, Map.of("Content-Type", "application/json"),
+                        "{\"output\":{\"task_id\":\"image-task-1\"}}".getBytes(StandardCharsets.UTF_8));
+            }
+            return new MediaHttpTransport.Response(200, Map.of("Content-Type", "application/json"),
+                    "{\"output\":{\"task_status\":\"SUCCEEDED\",\"results\":[{\"url\":\"https://cdn.example.com/async.png\"}]}}".getBytes(StandardCharsets.UTF_8));
+        });
+        var provider = new OpenAiCompatibleMediaAdapter.ProviderContext(
+                "https://dashscope.aliyuncs.com/compatible-mode/v1", "secret",
+                "https://dashscope.aliyuncs.com/api/v1/services/aigc/text2image/image-synthesis",
+                "", "", "openai_audio_speech", "dashscope_image_task_http", "openai_video_generation");
+
+        var result = adapter.submitImage(provider, "a product", "qwen-image-max", "1024x1024", "medium");
+
+        assertEquals("https://cdn.example.com/async.png", result.url());
+        assertEquals("enable", captured.get(0).headers().get("X-DashScope-Async"));
+        assertEquals("https://dashscope.aliyuncs.com/api/v1/tasks/image-task-1", captured.get(1).url());
+    }
+
+    @Test
+    void missingMediaEndpointHasStableActionableErrorCode() {
+        OpenAiCompatibleMediaAdapter adapter = new OpenAiCompatibleMediaAdapter(new ObjectMapper(), request ->
+                new MediaHttpTransport.Response(404, Map.of(), new byte[0]));
+
+        var error = assertThrows(OpenAiCompatibleMediaAdapter.MediaAdapterException.class, () ->
+                adapter.submitImage(new OpenAiCompatibleMediaAdapter.ProviderContext("https://api.openai.com", "secret", ""),
+                        "a product", "image-model", "1024x1024", "medium"));
+
+        assertEquals("MEDIA_ENDPOINT_NOT_FOUND", error.code());
+        assertTrue(error.getMessage().contains("协议不匹配"));
+    }
+
+    @Test
     void imageUsesConfiguredRelativeEndpoint() throws Exception {
         AtomicReference<MediaHttpTransport.Request> captured = new AtomicReference<>();
         OpenAiCompatibleMediaAdapter adapter = new OpenAiCompatibleMediaAdapter(new ObjectMapper(), request -> {
@@ -251,6 +311,206 @@ class OpenAiCompatibleMediaAdapterTest {
         assertTrue(body.contains("\"voice\":\"Cherry\""));
         assertFalse(body.contains("instructions"));
         assertEquals("https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation", captured.get().url());
+    }
+
+    @Test
+    void miniMaxVoiceUsesModelSpecificBodyAndAcceptsHexAudio() throws Exception {
+        AtomicReference<MediaHttpTransport.Request> captured = new AtomicReference<>();
+        OpenAiCompatibleMediaAdapter adapter = new OpenAiCompatibleMediaAdapter(new ObjectMapper(), request -> {
+            captured.set(request);
+            return new MediaHttpTransport.Response(200, Map.of("Content-Type", "application/json"),
+                    ("{\"output\":{\"base_resp\":{\"status_code\":0},\"audio\":\"" + "ff".repeat(2048) + "\"}}")
+                            .getBytes(StandardCharsets.UTF_8));
+        });
+
+        var result = adapter.submitVoice(new OpenAiCompatibleMediaAdapter.ProviderContext(
+                        "https://dashscope.aliyuncs.com", "secret", "", "",
+                        "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation",
+                        "dashscope_minimax_tts_http"),
+                "你好，猫作", "MiniMax/speech-2.8-hd", "male-qn-qingse", "");
+
+        assertEquals(2048, result.bytes().length);
+        var body = new ObjectMapper().readTree(captured.get().body());
+        assertEquals("male-qn-qingse", body.path("input").path("voice_setting").path("voice_id").asText());
+        assertEquals("mp3", body.path("input").path("audio_setting").path("format").asText());
+        assertEquals(32000, body.path("input").path("audio_setting").path("sample_rate").asInt());
+        assertEquals(128000, body.path("input").path("audio_setting").path("bitrate").asInt());
+        assertEquals(1, body.path("input").path("audio_setting").path("channel").asInt());
+        assertTrue(body.path("input").path("output_format").isMissingNode());
+        assertTrue(body.path("input").path("language_type").isMissingNode());
+    }
+
+    @Test
+    void voiceProtocolReplacesIncompatibleDefaultsBeforeBuildingRequestBody() throws Exception {
+        List<MediaHttpTransport.Request> captured = new ArrayList<>();
+        String encoded = java.util.Base64.getEncoder().encodeToString(new byte[2048]);
+        OpenAiCompatibleMediaAdapter adapter = new OpenAiCompatibleMediaAdapter(new ObjectMapper(), request -> {
+            captured.add(request);
+            return new MediaHttpTransport.Response(200, Map.of("Content-Type", "application/json"),
+                    ("{\"output\":{\"audio\":{\"data\":\"" + encoded + "\"}}}").getBytes(StandardCharsets.UTF_8));
+        });
+
+        adapter.submitVoice(new OpenAiCompatibleMediaAdapter.ProviderContext(
+                        "https://dashscope.aliyuncs.com", "secret", "", "",
+                        "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation",
+                        "dashscope_minimax_tts_http"),
+                "hello", "custom-minimax-model", "coral", "");
+        adapter.submitVoice(new OpenAiCompatibleMediaAdapter.ProviderContext(
+                        "https://dashscope.aliyuncs.com", "secret", "", "",
+                        "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation",
+                        "dashscope_tts_http"),
+                "hello", "custom-qwen-model", "coral", "");
+
+        var miniMaxBody = new ObjectMapper().readTree(captured.get(0).body());
+        var qwenBody = new ObjectMapper().readTree(captured.get(1).body());
+        assertEquals("male-qn-qingse", miniMaxBody.path("input").path("voice_setting").path("voice_id").asText());
+        assertEquals("Cherry", qwenBody.path("input").path("voice").asText());
+    }
+
+    @Test
+    void openAiVoiceReplacesProviderSpecificDefaultButKeepsCustomVoiceIds() {
+        assertEquals("coral", OpenAiCompatibleMediaAdapter.normalizeVoiceForProtocol("openai_audio_speech", "gpt-4o-mini-tts", ""));
+        assertEquals("male-qn-qingse", OpenAiCompatibleMediaAdapter.normalizeVoiceForProtocol("openai_audio_speech", "speech-2.8-hd", "coral"));
+        assertEquals("", OpenAiCompatibleMediaAdapter.normalizeVoiceForProtocol("openai_audio_speech", "custom-voice-model", ""));
+        assertEquals("male-qn-qingse", OpenAiCompatibleMediaAdapter.normalizeVoiceForProtocol("openai_audio_speech", "male-qn-qingse"));
+        assertEquals("cloned_voice_42", OpenAiCompatibleMediaAdapter.normalizeVoiceForProtocol("openai_audio_speech", "cloned_voice_42"));
+        assertEquals("cloned_voice_42", OpenAiCompatibleMediaAdapter.normalizeVoiceForProtocol("dashscope_minimax_tts_http", "cloned_voice_42"));
+        assertEquals("", OpenAiCompatibleMediaAdapter.normalizeVoiceForProtocol("custom_voice_http", "custom-voice-model", ""));
+        assertEquals("voice_vendor_7", OpenAiCompatibleMediaAdapter.normalizeVoiceForProtocol("custom_voice_http", "custom-voice-model", "voice_vendor_7"));
+    }
+
+    @Test
+    void openAiVoiceUsesOpenAiBodyAfterSwitchingFromMiniMaxVoice() throws Exception {
+        AtomicReference<MediaHttpTransport.Request> captured = new AtomicReference<>();
+        String encoded = java.util.Base64.getEncoder().encodeToString(new byte[2048]);
+        OpenAiCompatibleMediaAdapter adapter = new OpenAiCompatibleMediaAdapter(new ObjectMapper(), request -> {
+            captured.set(request);
+            return new MediaHttpTransport.Response(200, Map.of("Content-Type", "application/json"),
+                    ("{\"audio\":{\"base64\":\"" + encoded + "\"}}").getBytes(StandardCharsets.UTF_8));
+        });
+
+        adapter.submitVoice(new OpenAiCompatibleMediaAdapter.ProviderContext(
+                        "https://api.openai.com", "secret", "", "", "/v1/audio/speech", "openai_audio_speech"),
+                "hello", "gpt-4o-mini-tts", "male-qn-qingse", "calm");
+
+        var body = new ObjectMapper().readTree(captured.get().body());
+        assertEquals("gpt-4o-mini-tts", body.path("model").asText());
+        assertEquals("hello", body.path("input").asText());
+        assertEquals("coral", body.path("voice").asText());
+        assertEquals("mp3", body.path("response_format").asText());
+        assertEquals("calm", body.path("instructions").asText());
+    }
+
+    @Test
+    void genericGatewayMiniMaxModelDoesNotReuseCoralInOpenAiBody() throws Exception {
+        AtomicReference<MediaHttpTransport.Request> captured = new AtomicReference<>();
+        String encoded = java.util.Base64.getEncoder().encodeToString(new byte[2048]);
+        OpenAiCompatibleMediaAdapter adapter = new OpenAiCompatibleMediaAdapter(new ObjectMapper(), request -> {
+            captured.set(request);
+            return new MediaHttpTransport.Response(200, Map.of("Content-Type", "application/json"),
+                    ("{\"audio\":{\"base64\":\"" + encoded + "\"}}").getBytes(StandardCharsets.UTF_8));
+        });
+
+        adapter.submitVoice(new OpenAiCompatibleMediaAdapter.ProviderContext(
+                        "https://example.com/v1", "secret", "", "", "/v1/audio/speech", "openai_audio_speech"),
+                "hello", "MiniMax/speech-2.8-hd", "coral", "");
+
+        var body = new ObjectMapper().readTree(captured.get().body());
+        assertEquals("male-qn-qingse", body.path("voice").asText());
+    }
+
+    @Test
+    void genericGatewayQwenModelDoesNotReuseCoralInOpenAiBody() throws Exception {
+        AtomicReference<MediaHttpTransport.Request> captured = new AtomicReference<>();
+        String encoded = java.util.Base64.getEncoder().encodeToString(new byte[2048]);
+        OpenAiCompatibleMediaAdapter adapter = new OpenAiCompatibleMediaAdapter(new ObjectMapper(), request -> {
+            captured.set(request);
+            return new MediaHttpTransport.Response(200, Map.of("Content-Type", "application/json"),
+                    ("{\"audio\":{\"base64\":\"" + encoded + "\"}}").getBytes(StandardCharsets.UTF_8));
+        });
+
+        adapter.submitVoice(new OpenAiCompatibleMediaAdapter.ProviderContext(
+                        "https://example.com/v1", "secret", "", "", "/v1/audio/speech", "openai_audio_speech"),
+                "hello", "qwen3-tts-flash", "coral", "");
+
+        var body = new ObjectMapper().readTree(captured.get().body());
+        assertEquals("Cherry", body.path("voice").asText());
+    }
+
+    @Test
+    void unknownGatewayDoesNotInjectCoralIntoCustomVoiceModel() throws Exception {
+        AtomicReference<MediaHttpTransport.Request> captured = new AtomicReference<>();
+        String encoded = java.util.Base64.getEncoder().encodeToString(new byte[2048]);
+        OpenAiCompatibleMediaAdapter adapter = new OpenAiCompatibleMediaAdapter(new ObjectMapper(), request -> {
+            captured.set(request);
+            return new MediaHttpTransport.Response(200, Map.of("Content-Type", "application/json"),
+                    ("{\"audio\":{\"base64\":\"" + encoded + "\"}}").getBytes(StandardCharsets.UTF_8));
+        });
+
+        adapter.submitVoice(new OpenAiCompatibleMediaAdapter.ProviderContext(
+                        "https://example.com/v1", "secret", "", "", "/v1/audio/speech", "openai_audio_speech"),
+                "hello", "custom-voice-model", "", "");
+
+        var body = new ObjectMapper().readTree(captured.get().body());
+        assertTrue(body.path("voice").isMissingNode());
+    }
+
+    @Test
+    void miniMaxVoiceSurfacesBusinessErrorInsideHttp200() {
+        OpenAiCompatibleMediaAdapter adapter = new OpenAiCompatibleMediaAdapter(new ObjectMapper(), request ->
+                new MediaHttpTransport.Response(200, Map.of("Content-Type", "application/json"),
+                        "{\"output\":{\"base_resp\":{\"status_code\":1008,\"status_msg\":\"voice_id required\"}}}"
+                                .getBytes(StandardCharsets.UTF_8)));
+
+        var error = assertThrows(OpenAiCompatibleMediaAdapter.MediaAdapterException.class, () ->
+                adapter.submitVoice(new OpenAiCompatibleMediaAdapter.ProviderContext(
+                                "https://dashscope.aliyuncs.com", "secret", "", "",
+                                "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation",
+                                "dashscope_minimax_tts_http"),
+                        "hello", "MiniMax/speech-2.8-hd", "male-qn-qingse", ""));
+
+        assertEquals("REMOTE_BUSINESS_ERROR", error.code());
+        assertTrue(error.getMessage().contains("1008"));
+    }
+
+    @Test
+    void miniMaxHttp400SurfacesSanitizedSupplierDetail() {
+        OpenAiCompatibleMediaAdapter adapter = new OpenAiCompatibleMediaAdapter(new ObjectMapper(), request ->
+                new MediaHttpTransport.Response(400, Map.of("Content-Type", "application/json"),
+                        "{\"code\":\"InvalidParameter\",\"message\":\"voice_id is not supported; token=sk-secret-value\"}"
+                                .getBytes(StandardCharsets.UTF_8)));
+
+        var error = assertThrows(OpenAiCompatibleMediaAdapter.MediaAdapterException.class, () ->
+                adapter.submitVoice(new OpenAiCompatibleMediaAdapter.ProviderContext(
+                                "https://ws-example.cn-beijing.maas.aliyuncs.com", "secret", "", "",
+                                "https://ws-example.cn-beijing.maas.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation",
+                                "dashscope_minimax_tts_http"),
+                        "hello", "MiniMax/speech-2.8-hd", "male-qn-qingse", ""));
+
+        assertEquals("REMOTE_HTTP_ERROR", error.code());
+        assertTrue(error.getMessage().contains("HTTP 400"));
+        assertTrue(error.getMessage().contains("voice_id is not supported"));
+        assertFalse(error.getMessage().contains("sk-secret-value"));
+    }
+
+    @Test
+    void dashScopeVideoUsesAsyncTaskContract() throws Exception {
+        AtomicReference<MediaHttpTransport.Request> captured = new AtomicReference<>();
+        OpenAiCompatibleMediaAdapter adapter = new OpenAiCompatibleMediaAdapter(new ObjectMapper(), request -> {
+            captured.set(request);
+            return new MediaHttpTransport.Response(200, Map.of("Content-Type", "application/json"),
+                    "{\"output\":{\"task_id\":\"task-1\"}}".getBytes(StandardCharsets.UTF_8));
+        });
+        var provider = new OpenAiCompatibleMediaAdapter.ProviderContext(
+                "https://dashscope.aliyuncs.com", "secret", "",
+                "https://dashscope.aliyuncs.com/api/v1/services/aigc/video-generation/video-synthesis", "",
+                "openai_audio_speech", "openai_image_generation", "dashscope_video_task_http");
+
+        var result = adapter.submitVideo(provider, "一只猫在工作", "wan2.6-t2v", "1280x720", 4);
+
+        assertEquals("task-1", result.remoteTaskId());
+        assertEquals("enable", captured.get().headers().get("X-DashScope-Async"));
+        assertTrue(new String(captured.get().body(), StandardCharsets.UTF_8).contains("\"size\":\"1280*720\""));
     }
 
     @Test

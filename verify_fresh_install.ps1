@@ -50,8 +50,19 @@ function Remove-VerifiedTree([string]$Path, [string]$Base) {
 
 $root = (Resolve-Path -LiteralPath $ProjectRoot).Path
 if ([string]::IsNullOrWhiteSpace($SetupExe)) {
-  $candidate = Get-ChildItem -LiteralPath (Join-Path $root 'installer\output') -Filter 'Mework-Setup-2.2.158.exe' -File -ErrorAction SilentlyContinue | Select-Object -First 1
-  if (-not $candidate) { Fail 2 'Mework-Setup-2.2.158.exe is missing' }
+  $releaseNotesPath = Join-Path $root 'backend\src\main\resources\release-notes.json'
+  Require-File $releaseNotesPath 'release-notes.json'
+  try {
+    $releaseVersion = [string](Get-Content -Raw -LiteralPath $releaseNotesPath -Encoding UTF8 | ConvertFrom-Json).version
+  } catch {
+    Fail 2 'release-notes.json is not valid JSON'
+  }
+  if ([string]::IsNullOrWhiteSpace($releaseVersion) -or $releaseVersion -notmatch '^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$') {
+    Fail 2 'release-notes.json has an invalid version'
+  }
+  $expectedSetupName = "Mework-Setup-$releaseVersion.exe"
+  $candidate = Get-ChildItem -LiteralPath (Join-Path $root 'installer\output') -Filter $expectedSetupName -File -ErrorAction SilentlyContinue | Select-Object -First 1
+  if (-not $candidate) { Fail 2 "$expectedSetupName is missing" }
   $SetupExe = $candidate.FullName
 }
 Require-File $SetupExe 'Setup EXE'

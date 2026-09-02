@@ -159,6 +159,8 @@ class MediaGenerationServiceTest {
         persisted.setStatus("failed_terminal");
         persisted.setPhase("polling");
         persisted.setErrorCode("RATE_LIMITED");
+        persisted.setProviderId(4L);
+        persisted.setModel("gpt-image-2");
         persisted.setAttemptCount(1);
         persisted.setMaxAttempts(2);
         MediaGenerationTaskRepo taskRepo = mock(MediaGenerationTaskRepo.class);
@@ -173,6 +175,67 @@ class MediaGenerationServiceTest {
         assertEquals("RATE_LIMITED", view.getErrorCode());
         assertEquals(1, view.getAttemptCount());
         assertEquals(2, view.getMaxAttempts());
+        assertEquals("历史供应商 #4", view.getProviderName());
+        assertFalse(view.isProviderAvailable());
+        assertEquals("gpt-image-2", view.getModel());
+    }
+
+    @Test
+    void legacyDashScopeWorkspaceKeyIsExcludedFromExecutableProviders() {
+        AiProviderRepo providerRepo = mock(AiProviderRepo.class);
+        CredentialCipher cipher = mock(CredentialCipher.class);
+        AiProvider provider = new AiProvider();
+        provider.setId(3L);
+        provider.setName("错误地址密钥组合");
+        provider.setBaseUrl("https://dashscope.aliyuncs.com/compatible-mode/v1");
+        provider.setApiKey("encrypted-key");
+        provider.setEnabled(true);
+        when(providerRepo.findByEnabledTrueOrderByPriorityAsc()).thenReturn(java.util.List.of(provider));
+        when(cipher.decrypt("encrypted-key")).thenReturn("sk-ws-test");
+        MediaGenerationService service = new MediaGenerationService(
+                providerRepo, cipher, mock(MaterialService.class), mock(MediaProviderCatalog.class),
+                new AppProps(), new ObjectMapper(), mock(MediaGenerationTaskRepo.class),
+                mock(AudioContractService.class), mock(OpenAiCompatibleMediaAdapter.class), (Executor) Runnable::run);
+
+        assertTrue(service.imageProviders().isEmpty());
+    }
+
+    @Test
+    void executableVoiceModelsExcludeCloneAndRealtimeVariants() {
+        AiProvider provider = configuredProvider("{\"media\":{\"voice\":[\"qwen3-tts-vd-demo\",\"qwen3-tts-vc-demo\",\"qwen3-tts-flash-realtime\",\"qwen3-tts-instruct-flash-realtime-2026-01-22\",\"MiniMax/voice-clone\",\"qwen3-tts-flash\"]}}");
+        MediaGenerationService service = configuredService(provider, mock(MediaGenerationTaskRepo.class));
+
+        assertEquals(java.util.List.of("qwen3-tts-flash"), service.imageProviders().get(0).get("voiceModels"));
+    }
+
+    @Test
+    void omittedImageModelSelectsStrongestExecutableProviderModelWithoutCallingRemote() {
+        AiProvider provider = configuredProvider("{\"media\":{\"image\":[\"qwen-image-max\",\"qwen-image-2.0-pro\",\"qwen-image-3.0\",\"qwen-image-3.0-pro\"]}}");
+        MediaGenerationTaskRepo taskRepo = mock(MediaGenerationTaskRepo.class);
+        MediaGenerationService service = configuredService(provider, taskRepo);
+        MediaGenerationService.ImageRequest request = new MediaGenerationService.ImageRequest();
+        request.setProviderId(provider.getId());
+        request.setPrompt("product image");
+        request.setConfirm(true);
+
+        MediaGenerationService.Task task = service.image(request);
+
+        assertEquals("qwen-image-3.0-pro", task.getModel());
+    }
+
+    @Test
+    void requiredModelRejectsFilteredAndUnregisteredVoiceModelsBeforeCallingRemote() {
+        AiProvider provider = configuredProvider("{\"media\":{\"voice\":[\"qwen3-tts-vd-demo\",\"qwen3-tts-flash\"]}}");
+        MediaGenerationService service = configuredService(provider, mock(MediaGenerationTaskRepo.class));
+
+        for (String model : java.util.List.of("qwen3-tts-vd-demo", "qwen3-tts-instruct-flash-realtime-2026-01-22", "not-configured")) {
+            MediaGenerationService.VoiceRequest request = new MediaGenerationService.VoiceRequest();
+            request.setProviderId(provider.getId());
+            request.setInput("test voice");
+            request.setModel(model);
+            request.setConfirm(true);
+            assertThrows(IllegalArgumentException.class, () -> service.voice(request));
+        }
     }
 
     @Test
@@ -203,5 +266,31 @@ class MediaGenerationServiceTest {
 
         assertEquals("RATE_LIMITED", persisted.getErrorCode());
         assertEquals("failed_terminal", task.getStatus());
+    }
+
+    private AiProvider configuredProvider(String models) {
+        AiProvider provider = new AiProvider();
+        provider.setId(9L);
+        provider.setName("test provider");
+        provider.setBaseUrl("https://dashscope.aliyuncs.com/compatible-mode/v1");
+        provider.setApiKey("encrypted-key");
+        provider.setEnabled(true);
+        provider.setModels(models);
+        return provider;
+    }
+
+    private MediaGenerationService configuredService(AiProvider provider, MediaGenerationTaskRepo taskRepo) {
+        AiProviderRepo providerRepo = mock(AiProviderRepo.class);
+        CredentialCipher cipher = mock(CredentialCipher.class);
+        when(providerRepo.findById(provider.getId())).thenReturn(Optional.of(provider));
+        when(providerRepo.findByEnabledTrueOrderByPriorityAsc()).thenReturn(java.util.List.of(provider));
+        when(cipher.decrypt("encrypted-key")).thenReturn("sk-test");
+        ObjectMapper mapper = new ObjectMapper();
+        MediaProviderCatalog catalog = new MediaProviderCatalog(mapper);
+        OpenAiCompatibleMediaAdapter adapter = new OpenAiCompatibleMediaAdapter(mapper, request -> {
+            throw new AssertionError("remote media calls are forbidden in this test");
+        });
+        return new MediaGenerationService(providerRepo, cipher, mock(MaterialService.class), catalog,
+                new AppProps(), mapper, taskRepo, mock(AudioContractService.class), adapter, command -> { });
     }
 }

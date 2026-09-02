@@ -1,48 +1,232 @@
 {
-  "id": "release-2-2-158",
-  "version": "2.2.158",
-  "releasedAt": "2026-08-29",
+  "id": "release-2-2-163",
+  "version": "2.2.163",
+  "releasedAt": "2026-09-02",
   "kind": "正式发行",
-  "title": "Windows 全量离线安装与隐私发布",
-  "summary": "将猫作整理为可在 Windows 10/11 x64 新电脑直接安装的全量发行包，首次启动创建空数据库和本机随机密钥，并附带普通用户、AI 助手和机器可读安装说明。",
+  "title": "初代品牌图标恢复与通用 AI 音色路由收尾",
+  "summary": "恢复猫作初代应用图标，并从供应商身份、模型家族、协议和请求体四层收紧配音路由，根治模型切换后错误继承 coral 音色及未知中转被套用官方默认值的问题。",
   "changes": [
-    "Inno Setup 改为运行时显式白名单，D 盘存在时默认安装到 D:\\Mework，没有 D 盘时回退当前用户应用目录。",
-    "随包提供 Java 17、MySQL 8 程序、FFmpeg/FFprobe、Python 媒体环境、whisper.cpp、离线 ASR 模型和 ImageMagick。",
-    "首次启动自动选择空闲端口、创建空 MySQL 数据目录、载入 schema，并分别生成数据库应用密码、root 密码和 Provider 凭据加密主密钥。",
-    "新增普通用户安装手册、AI 助手安装手册、隐私发布说明和机器可读 ai-setup-manifest。",
-    "发行 manifest 对应用文件和八个运行时目录生成 SHA-256、体积与文件数清单。"
+    "网页、PWA、Windows 安装器、卸载项、桌面和开始菜单快捷方式统一使用猫作初代应用图标。",
+    "AI 创作在切换 OpenAI、Qwen、MiniMax 或自定义网关模型时按真实音色族重新适配，提交前再次校验最终选择。",
+    "新增 AI 创作路由离线构建门禁，并把 Windows 安装版本检查改为读取当前发行记录，避免源码、清单与安装器版本漂移。",
+    "按真实开发日期补齐 2026-08-30、2026-08-31 和 2026-09-02 的应用更新记录。"
   ],
   "fixes": [
-    "修复旧安装器使用 portable 通配符导致开发数据库和 Maven 可能进入安装包的问题。",
-    "修复新机数据库初始化依赖预装 mysqldata 和历史固定数据库密码的问题。",
-    "修复使用 mysqladmin ping 只能证明服务存活、不能证明应用账号可登录的身份误判。",
-    "修复安装验证只检查进程启动、不验证空素材、空 Provider、空任务和随机密钥的问题。",
-    "移除发行文档中的历史固定密码和开发机绝对路径。"
+    "修复未知 OpenAI 兼容中转在用户未指定音色时被强制写入 coral，导致供应商拒绝请求或错误发音的问题。",
+    "修复从 OpenAI 切换至 Qwen 或 MiniMax 后继续复用 coral；Qwen 使用 Cherry，MiniMax 使用 male-qn-qingse，自定义网关空音色保持为空。",
+    "修复 MiniMax/speech-2.8-hd 及裸 speech-2.8-hd 型号无法被识别为 MiniMax 同步配音模型的问题。",
+    "修复安装器生成版本落后于应用发行版本，以及 2.2.158 实际发行日期误记的问题。"
   ],
   "verification": [
-    "隔离 MySQL 端口实测空数据目录初始化、20 张表创建、应用账号和 root 随机密码登录及二次启动幂等。",
-    "verify_release_privacy.ps1 检查 Git 跟踪文件、安装器输入和可选安装目录的隐私边界。",
-    "verify_windows_install.ps1 检查运行时白名单、随机密钥脚本、真实 SELECT 1 身份验证和 D 盘优先目录。",
-    "verify_fresh_install.ps1 在隔离目录静默安装并验证应用 API、五张用户表为空、用户 Key 为空和受控进程清理。",
-    "前端生产构建、后端 Maven 测试、离线媒体 smoke、Inno Setup 编译和 Release SHA-256 校验通过。"
+    "后端 Maven 全量测试共 508 项通过、0 项失败、0 项错误，3 项按环境跳过。",
+    "AI 媒体适配器、媒体生成服务、供应商目录和 AI 控制器定向测试通过，覆盖 OpenAI、Qwen、MiniMax 与未知中转的最终请求体。",
+    "verify-ai-create-routing、verify-material-import-queue、verify-text-integrity 和 git diff --check 均通过。",
+    "所有媒体生成验证均使用源码检查、模拟传输或既有任务记录，未调用真实图片、视频或语音付费接口。"
   ],
-  "compatibility": "支持 Windows 10/11 x64。安装包不迁移开发机数据库或素材；已有用户升级前应自行备份 data 目录。AI Provider、素材 API Key、账号登录、显卡驱动、代理和企业证书仍由用户按自身授权配置。",
+  "compatibility": "保留用户明确填写的自定义音色。官方 OpenAI 与明确 OpenAI TTS 型号仍可自动使用 coral；Qwen 与 MiniMax 使用各自同步配音默认值；无法可靠识别的中转不再猜测音色，空值不会写入请求体。Provider 密钥、订阅令牌、素材和本机数据库不进入发行包或仓库。",
   "evidence": [
+    "frontend/public/brand-icon.jpg",
+    "installer/Mework.ico",
     "installer/Mework.iss",
-    "ensure_env.ps1",
-    "start_mysql.ps1",
-    "backend/src/main/resources/db/schema.sql",
-    "installer/generate_release_manifest.ps1",
-    "installer/ai-setup-manifest.json",
-    "verify_release_privacy.ps1",
-    "verify_windows_install.ps1",
-    "verify_fresh_install.ps1",
-    "INSTALLATION_GUIDE.md",
-    "AI_INSTALLATION_GUIDE.md",
-    "PRIVACY_RELEASE.md"
+    "frontend/src/views/AiCreate.vue",
+    "frontend/scripts/verify-ai-create-routing.mjs",
+    "backend/src/main/java/com/douyin/mixcut/external/media/OpenAiCompatibleMediaAdapter.java",
+    "backend/src/main/java/com/douyin/mixcut/service/MediaProviderCatalog.java",
+    "backend/src/test/java/com/douyin/mixcut/external/media/OpenAiCompatibleMediaAdapterTest.java",
+    "backend/src/test/java/com/douyin/mixcut/service/MediaGenerationServiceTest.java",
+    "verify_windows_install.ps1"
   ],
   "source": "backend/src/main/resources/release-notes.json",
   "history": [
+    {
+      "id": "release-2-2-162",
+      "version": "2.2.162",
+      "releasedAt": "2026-09-01",
+      "kind": "历史开发阶段",
+      "title": "AI 配音流式型号执行边界修复",
+      "summary": "修复模型识别把实时流式、音色克隆和音色设计型号误填入同步配音执行列表的问题，统一识别、展示、默认选择和提交前校验的可执行边界。",
+      "changes": [
+        "MediaProviderCatalog 提供统一的媒体型号执行资格判断，所有配音入口共用同一规则。",
+        "AI 接入识别结果区分可执行型号与仅观测到的型号，实时流式、克隆和音色设计型号不会再自动写入执行配置。",
+        "AI 创作供应商列表、默认型号选择和生成提交均只使用当前同步链路真实可执行的配音型号。"
+      ],
+      "fixes": [
+        "修复仅过滤以 -realtime 结尾的旧规则漏掉带日期后缀实时型号的问题。",
+        "修复 qwen3-tts-vc、qwen3-tts-vd、voice-clone 和 voice-design 型号被误当成普通文本转语音模型的问题。",
+        "修复识别页面返回的不可执行型号仍可能进入模型路由、默认选择或后续提交的问题。"
+      ],
+      "verification": [
+        "MediaProviderCatalogTest、MediaGenerationServiceTest 与 AiControllerTest 定向测试共 37 项通过。",
+        "新增无网络回归，覆盖带日期后缀 realtime、Qwen 克隆/设计型号、MiniMax 克隆/设计型号及提交前拒绝。",
+        "后端全量测试共 507 项通过、0 项失败、3 项按环境跳过，持续出片、渲染准备、渲染和质检链路均通过。",
+        "未调用任何真实图片、视频或音频生成接口，未产生付费请求。"
+      ],
+      "compatibility": "保留 OpenAI、Qwen、MiniMax 及兼容网关的现有同步配音协议。实时流式、音色克隆和音色设计属于独立工作流，在应用提供对应执行链路前只作为识别观测结果保留，不再冒充同步配音能力。",
+      "evidence": [
+        "backend/src/main/java/com/douyin/mixcut/service/MediaProviderCatalog.java",
+        "backend/src/main/java/com/douyin/mixcut/service/MediaGenerationService.java",
+        "backend/src/main/java/com/douyin/mixcut/web/AiController.java",
+        "backend/src/test/java/com/douyin/mixcut/service/MediaProviderCatalogTest.java",
+        "backend/src/test/java/com/douyin/mixcut/service/MediaGenerationServiceTest.java",
+        "backend/src/test/java/com/douyin/mixcut/web/AiControllerTest.java"
+      ]
+    },
+    {
+      "id": "release-2-2-161",
+      "version": "2.2.161",
+      "releasedAt": "2026-09-01",
+      "kind": "正式发行",
+      "title": "AI 工作空间配音适配与持续出片并发修复",
+      "summary": "修复 AI 接入把不同供应商模型套用同一协议、默认模型和音色的问题，并修正持续出片渲染后沿用旧任务所有权导致的停顿或状态覆盖。",
+      "changes": [
+        "AI 媒体能力按供应商、操作类型和具体模型选择已注册协议，工作空间地址保留原主机并支持 Qwen 与 MiniMax 配音分流。",
+        "AI 创作只展示当前供应商真实可执行的图片、视频和配音模型；未指定模型时从该供应商列表自动选择，图片优先使用最强可执行型号。",
+        "配音音色按 OpenAI、Qwen 与 MiniMax 模型族自动匹配，自定义协议不再被强行填入 OpenAI coral 音色。",
+        "持续出片在每次渲染后重新读取任务所有权，等待人工决策改为带执行轮次和租约令牌的原子状态迁移。"
+      ],
+      "fixes": [
+        "修复 API 请求漏传模型时后端硬编码 gpt-image-1 或 sora-2，导致非 OpenAI 供应商被错误拒绝的问题。",
+        "修复 Qwen 配音克隆、音色设计和实时流式型号被误当作普通同步配音模型执行的问题。",
+        "修复 MiniMax 原生配音请求沿用 OpenAI 字段和 coral 音色的问题，改用对应的 audio_setting 与默认音色。",
+        "修复持续出片旧线程在租约丢失后仍可能覆盖继续、取消或新一轮任务状态的问题。"
+      ],
+      "verification": [
+        "MediaProviderCatalogTest、OpenAiCompatibleMediaAdapterTest、MediaGenerationServiceTest 与 JobServiceReliabilityTest 共 74 项通过。",
+        "新增无网络回归，覆盖配音模型过滤、图片最强模型自动选择和无效模型在远端调用前被拒绝。",
+        "未调用任何真实图片、视频或音频生成接口，未产生付费请求。"
+      ],
+      "compatibility": "保留 OpenAI 兼容供应商与官方接口；已保存的模型按自身协议执行。旧配置仍可读取，但不可执行或模型与密钥地址不匹配时会在提交前明确拒绝，不再静默套用其他供应商默认值。",
+      "evidence": [
+        "backend/src/main/java/com/douyin/mixcut/service/MediaProviderCatalog.java",
+        "backend/src/main/java/com/douyin/mixcut/external/media/MediaAdapterRegistry.java",
+        "backend/src/main/java/com/douyin/mixcut/external/media/OpenAiCompatibleMediaAdapter.java",
+        "backend/src/main/java/com/douyin/mixcut/service/MediaGenerationService.java",
+        "backend/src/main/java/com/douyin/mixcut/service/JobService.java",
+        "backend/src/main/java/com/douyin/mixcut/repository/Repositories.java",
+        "frontend/src/views/AiCreate.vue",
+        "backend/src/test/java/com/douyin/mixcut/service/MediaProviderCatalogTest.java",
+        "backend/src/test/java/com/douyin/mixcut/external/media/OpenAiCompatibleMediaAdapterTest.java",
+        "backend/src/test/java/com/douyin/mixcut/service/MediaGenerationServiceTest.java",
+        "backend/src/test/java/com/douyin/mixcut/service/JobServiceReliabilityTest.java"
+      ]
+    },
+    {
+      "id": "release-2-2-160",
+      "version": "2.2.160",
+      "releasedAt": "2026-08-31",
+      "kind": "历史开发阶段",
+      "title": "AI 图片原生协议与任务诊断修复",
+      "summary": "修复 AI 创作把 DashScope Qwen Image 模型误发到 OpenAI 图片端点的问题，新增原生请求与深层图片结果解析，并让历史失败任务明确显示供应商、模型和可操作诊断。",
+      "changes": [
+        "新增 dashscope_image_http 图片协议，将 Qwen Image 3.x 与 2.0 系列请求分流到 DashScope 多模态图片生成端点。",
+        "DashScope 原生请求使用 input.messages.content 文本结构，并把应用画幅转换为供应商要求的星号尺寸格式。",
+        "AI 生成任务接口和页面新增非敏感的供应商名称、模型、供应商可用状态与针对性处理建议。"
+      ],
+      "fixes": [
+        "修复 qwen-image-3.0-pro 被错误提交到 /v1/images/generations 并返回 HTTP 404 的根因。",
+        "修复供应商把图片 URL 放在 output.choices.message.content.image 时，应用无法递归解析并显示生成结果的问题。",
+        "修复已删除或停用供应商留下的 HTTP 401 历史任务被误认为当前可执行配置故障的问题。",
+        "HTTP 404 图片失败改为稳定的 MEDIA_ENDPOINT_NOT_FOUND 诊断，避免与普通远端错误混淆。"
+      ],
+      "verification": [
+        "OpenAiCompatibleMediaAdapterTest、MediaProviderCatalogTest 与 MediaGenerationServiceTest 共 36 项通过。",
+        "前端文本完整性、素材导入队列检查、Vite 生产构建和静态资源引用校验通过。",
+        "未使用用户付费 API Key 发起真实生成请求，避免未经确认产生费用。"
+      ],
+      "compatibility": "OpenAI 兼容供应商继续使用 /v1/images/generations；DashScope 仅开放官方同步接口支持的 Qwen Image 3.x 与 2.0 型号。旧任务和数据库记录保留不删除，页面会标注历史供应商状态。",
+      "evidence": [
+        "backend/src/main/java/com/douyin/mixcut/external/media/OpenAiCompatibleMediaAdapter.java",
+        "backend/src/main/java/com/douyin/mixcut/external/media/MediaAdapterRegistry.java",
+        "backend/src/main/java/com/douyin/mixcut/service/MediaProviderCatalog.java",
+        "backend/src/main/java/com/douyin/mixcut/service/MediaGenerationService.java",
+        "frontend/src/views/AiCreate.vue",
+        "backend/src/test/java/com/douyin/mixcut/external/media/OpenAiCompatibleMediaAdapterTest.java",
+        "backend/src/test/java/com/douyin/mixcut/service/MediaProviderCatalogTest.java",
+        "backend/src/test/java/com/douyin/mixcut/service/MediaGenerationServiceTest.java"
+      ]
+    },
+    {
+      "id": "release-2-2-159",
+      "version": "2.2.159",
+      "releasedAt": "2026-08-31",
+      "kind": "历史开发阶段",
+      "title": "素材后台导入与大文件链路修复",
+      "summary": "重构素材导入为应用级后台队列，修复拖放弹层重叠、导入记录无法收起、固定 2GB 限制和长任务阻塞页面的问题，并将上传临时文件统一落到 D 盘应用数据目录。",
+      "changes": [
+        "普通文件、文件夹、ZIP 素材总包和本机目录扫描统一进入应用级导入队列，切换页面时继续执行。",
+        "素材页导入记录默认收起并可手动展开，顶部任务中心和猫作小助手同步显示等待、上传、处理、完成与失败状态。",
+        "Spring、Tomcat 与 Multipart 配置取消应用侧固定文件和请求体大小阈值，临时上传目录改为 APP_DATA_DIR/tmp/uploads。",
+        "ZIP 导入继续保留越界路径、目录深度、条目数量和磁盘余量保护，但不再使用固定 2GB 单文件与 4GB 总包阈值。"
+      ],
+      "fixes": [
+        "修复素材页拖放事件被页面入口和全局入口重复消费，导致父级确认框与素材总包子级弹层同时显示的问题。",
+        "修复多个失败文件连续重试时，先完成的子任务会提前结束整批并重复通知的问题。",
+        "修复失败的超大 ZIP File 对象被导入历史长期保留、持续占用浏览器内存的问题。",
+        "修复已有 MySQL 正常运行时仍强制要求 MYSQL_ROOT_PASSWORD、导致 D 盘计划任务重启失败的问题。"
+      ],
+      "verification": [
+        "素材导入队列回归检查覆盖并发重试不得提前完成，以及失败总包必须释放 File 引用。",
+        "MaterialImportSafetyTest 共 4 项通过，覆盖微信加密缓存拒绝、显式归档目录和 ZIP 越界路径。",
+        "Vue 生产构建完成 1704 个模块转换，静态资源引用校验通过；Maven package 构建成功。",
+        "D 盘 8762 实例使用新 JAR 重启后 actuator 为 UP，C 盘 8760 实例保持原进程未修改。"
+      ],
+      "compatibility": "后台队列支持应用内页面切换期间持续导入；关闭或刷新整个浏览器会中止尚未完成的浏览器上传。应用不设置固定文件大小阈值，但磁盘空间、文件系统、操作系统和外部反向代理仍可能形成实际限制。",
+      "evidence": [
+        "frontend/src/materialImportQueue.js",
+        "frontend/scripts/verify-material-import-queue.mjs",
+        "frontend/src/views/Materials.vue",
+        "frontend/src/App.vue",
+        "frontend/src/components/AiChat.vue",
+        "backend/src/main/java/com/douyin/mixcut/config/WebConfig.java",
+        "backend/src/main/java/com/douyin/mixcut/service/MaterialService.java",
+        "backend/src/main/resources/application.yml",
+        "start_mysql.ps1"
+      ]
+    },
+    {
+      "id": "release-2-2-158",
+      "version": "2.2.158",
+      "releasedAt": "2026-08-30",
+      "kind": "正式发行",
+      "title": "Windows 全量离线安装与隐私发布",
+      "summary": "将猫作整理为可在 Windows 10/11 x64 新电脑直接安装的全量发行包，首次启动创建空数据库和本机随机密钥，并附带普通用户、AI 助手和机器可读安装说明。",
+      "changes": [
+        "Inno Setup 改为运行时显式白名单，D 盘存在时默认安装到 D:\\Mework，没有 D 盘时回退当前用户应用目录。",
+        "随包提供 Java 17、MySQL 8 程序、FFmpeg/FFprobe、Python 媒体环境、whisper.cpp、离线 ASR 模型和 ImageMagick。",
+        "首次启动自动选择空闲端口、创建空 MySQL 数据目录、载入 schema，并分别生成数据库应用密码、root 密码和 Provider 凭据加密主密钥。",
+        "新增普通用户安装手册、AI 助手安装手册、隐私发布说明和机器可读 ai-setup-manifest。",
+        "发行 manifest 对应用文件和八个运行时目录生成 SHA-256、体积与文件数清单。"
+      ],
+      "fixes": [
+        "修复旧安装器使用 portable 通配符导致开发数据库和 Maven 可能进入安装包的问题。",
+        "修复新机数据库初始化依赖预装 mysqldata 和历史固定数据库密码的问题。",
+        "修复使用 mysqladmin ping 只能证明服务存活、不能证明应用账号可登录的身份误判。",
+        "修复安装验证只检查进程启动、不验证空素材、空 Provider、空任务和随机密钥的问题。",
+        "移除发行文档中的历史固定密码和开发机绝对路径。"
+      ],
+      "verification": [
+        "隔离 MySQL 端口实测空数据目录初始化、20 张表创建、应用账号和 root 随机密码登录及二次启动幂等。",
+        "verify_release_privacy.ps1 检查 Git 跟踪文件、安装器输入和可选安装目录的隐私边界。",
+        "verify_windows_install.ps1 检查运行时白名单、随机密钥脚本、真实 SELECT 1 身份验证和 D 盘优先目录。",
+        "verify_fresh_install.ps1 在隔离目录静默安装并验证应用 API、五张用户表为空、用户 Key 为空和受控进程清理。",
+        "前端生产构建、后端 Maven 测试、离线媒体 smoke、Inno Setup 编译和 Release SHA-256 校验通过。"
+      ],
+      "compatibility": "支持 Windows 10/11 x64。安装包不迁移开发机数据库或素材；已有用户升级前应自行备份 data 目录。AI Provider、素材 API Key、账号登录、显卡驱动、代理和企业证书仍由用户按自身授权配置。",
+      "evidence": [
+        "installer/Mework.iss",
+        "ensure_env.ps1",
+        "start_mysql.ps1",
+        "backend/src/main/resources/db/schema.sql",
+        "installer/generate_release_manifest.ps1",
+        "installer/ai-setup-manifest.json",
+        "verify_release_privacy.ps1",
+        "verify_windows_install.ps1",
+        "verify_fresh_install.ps1",
+        "INSTALLATION_GUIDE.md",
+        "AI_INSTALLATION_GUIDE.md",
+        "PRIVACY_RELEASE.md"
+      ]
+    },
     {
       "id": "release-2-2-157",
       "version": "2.2.157",
